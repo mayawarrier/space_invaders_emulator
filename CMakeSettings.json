@@ -20,8 +20,7 @@
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
-      "inheritEnvironments": [ "msvc_x64_x64" ],
-      "variables": []
+      "inheritEnvironments": [ "msvc_x64_x64" ]
     },
     {
       "name": "x64-Clang-Debug",
@@ -32,8 +31,7 @@
       "cmakeCommandArgs": "",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
-      "inheritEnvironments": [ "clang_cl_x64_x64" ],
-      "variables": []
+      "inheritEnvironments": [ "clang_cl_x64_x64" ]
     },
     {
       "name": "x64-Clang-Release",
@@ -45,7 +43,18 @@
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "clang_cl_x64_x64" ],
-      "variables": []
+      "variables": [
+        {
+          "name": "SDL2_PATH",
+          "value": "./libs/SDL2",
+          "type": "STRING"
+        },
+        {
+          "name": "SDL2_LIBRARY",
+          "value": "./libs/SDL2/SDL2.dll",
+          "type": "FILEPATH"
+        }
+      ]
     }
   ]
 }
