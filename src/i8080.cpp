@@ -2,6 +2,7 @@
 // References
 // Intel manual: https://altairclone.com/downloads/manuals/8080%20Programmers%20Manual.pdf
 // Tandy manual: https://archive.org/details/8080-8085_Assembly_Language_Programming_1977_Intel
+// 8080 Data sheet: https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf
 // opcode table: http://pastraiser.com/cpu/i8080/i8080_opcodes.html
 // 
 // This is mostly a straight port from the ANSI C version.
@@ -658,8 +659,8 @@ static int i8080_exec(i8080* cpu, i8080_word_t opcode)
     case i8080_RST_7: i8080_call_addr(cpu, 0x0038); break;
 
     /* Enable / disable interrupts */
-    case i8080_EI: cpu->inte = 1; break;
-    case i8080_DI: cpu->inte = 0; break;
+    case i8080_EI: cpu->int_en = 1; break;
+    case i8080_DI: cpu->int_en = 0; break;
 
     /* Halt */
     case i8080_HLT: cpu->halt = 1; break;
@@ -672,28 +673,44 @@ static int i8080_exec(i8080* cpu, i8080_word_t opcode)
 void i8080::reset() 
 {
     pc = 0;
-    inte = 0;
-    intr = 0;
+    int_en = 0;
+    int_rq = 0;
+    int_ff = 0;
     halt = 0;
     cycles = 0;
 }
 
-void i8080::interrupt() { intr = inte; }
+void i8080::interrupt() { int_rq = 1; }
 
+// Follows the state transitions as closely as possible.
+// (8080 data sheet pg 7)
 int i8080::step() 
 {
-    // check interrupt first as it removes HALT
-    if (intr) {
+    // execute interrupt if there is one
+    if (int_ff) {
         IF_UNLIKELY(!intr_read) { 
             return -1; 
         }
-        inte = 0;
-        intr = 0;
-        halt = 0;
+        int_en = 0;
+        int_ff = 0;
+        int_rq = 0;
         return i8080_exec(this, intr_read(this));
     }
-    IF_UNLIKELY(halt) { return 0; }
 
-    // execute from memory
-    return i8080_exec(this, read_word_adv(this));
+    int ret;
+    IF_UNLIKELY(halt) { 
+        ret = 0;
+    }  else {
+        // normal execution
+        ret = i8080_exec(this, read_word_adv(this));
+    }
+
+    // Sync incoming interrupt with end of 
+    // instruction cycle (8080 data sheet pg 11).
+    // This delays execution by one instruction.
+    if (int_rq && int_en) {     
+        int_ff = 1;
+        halt = 0;
+    }
+    return ret;
 }

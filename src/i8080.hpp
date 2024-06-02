@@ -1,10 +1,10 @@
 // 
 // Emulate an Intel 8080 microprocessor.
-// All instructions are supported.
+// All opcodes (0-0xff) are supported.
 // 
 // Example usage:
 //
-// void example(uint64_t cycles_to_run) 
+// void run_8080(uint64_t num_clk_cycles) 
 // {
 //     i8080 cpu;
 //     cpu.mem_read = my_mem_read_cb;
@@ -15,13 +15,13 @@
 //     
 //     cpu.reset();
 //     
-//     while (cpu.step() == 0 && cpu.cycles < cycles_to_run) {
-//         continue;
+//     while (cpu.step() == 0 && cpu.cycles < num_clk_cycles) {
+//         // some code
+//         // call cpu.interrupt() here
 //     }
 //     printf("Done!");
 // }
 //
-
 
 #ifndef I8080_HPP
 #define I8080_HPP
@@ -40,15 +40,19 @@ struct i8080
     i8080_addr_t sp; // Stack pointer
     i8080_addr_t pc; // Program counter
 
+    i8080_word_t int_rq; // Interrupt request
+
     // Flags
-    i8080_word_t s;  // Sign
-    i8080_word_t z;  // Zero
-    i8080_word_t cy; // Carry
-    i8080_word_t ac; // Aux carry
-    i8080_word_t p;  // Parity
-    i8080_word_t inte; // Interrupt enable
-    i8080_word_t intr; // Interrupt request
-    i8080_word_t halt; // HALT state
+    i8080_word_t s : 1;  // Sign
+    i8080_word_t z : 1;  // Zero
+    i8080_word_t cy : 1; // Carry
+    i8080_word_t ac : 1; // Aux carry
+    i8080_word_t p : 1;  // Parity
+
+    i8080_word_t halt : 1; // In HALT state?
+
+    i8080_word_t int_en : 1; // Interrupts enabled (INTE pin)  
+    i8080_word_t int_ff : 1; // Interrupt latch
 
     // Clock cycles elapsed since last reset
     std::uint64_t cycles;
@@ -70,16 +74,16 @@ struct i8080
     // Reset chip. Eq. to low on RESET pin.
     void reset();
 
-    // Send an interrupt request.
-    // If interrupts are enabled, the next call to 
-    // step() will invoke intr_read() and execute
-    // the returned opcode.
-    void interrupt();
-
-    // Run the next instruction.
+    // Run one instruction.
     // Returns 0 on success, or -1 for 
     // missing IO/intr callback.
     int step();
+
+    // Send an interrupt request.
+    // If interrupts are enabled, intr_read() will be
+    // invoked by step() and the returned opcode 
+    // will be executed.
+    void interrupt();
 };
 
 #endif /* I8080_H */
