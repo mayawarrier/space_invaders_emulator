@@ -27,6 +27,7 @@
 #define I8080_HPP
 
 #include <cstdint>
+#include <cstdio>
 
 using i8080_word_t = std::uint8_t;
 using i8080_addr_t = std::uint16_t;
@@ -78,6 +79,13 @@ struct i8080
     // Returns 0 on success, or -1 for 
     // missing IO/intr callback.
     int step();
+
+    // Disassemble one instruction.
+    // This can be called before i8080_step() to print the
+    // instruction that is about to be executed.
+    // It can also be called in a loop to disassemble a section of memory.
+    // Returns 0 on success.
+    void disassemble(std::FILE* os);
 
     // Send an interrupt request.
     // If interrupts are enabled, intr_read() will be

@@ -11,6 +11,8 @@
 #include "i8080.hpp"
 #include "i8080_opcodes.h"
 
+#include <cstring>
+
 #ifdef __has_cpp_attribute
 #if __has_cpp_attribute(unlikely)
 #define IF_UNLIKELY(x) if (x) [[unlikely]] 
@@ -18,16 +20,21 @@
 #endif
 
 #ifndef IF_UNLIKELY
-#ifdef __has_builtin
-#if __has_builtin(__builtin_expect)
-#define IF_UNLIKELY(x) if (__builtin_expect(!!(x), 0))
+#if defined(__has_builtin)
+    #if __has_builtin(__builtin_expect)
+    #define HAS_BUILTIN_EXPECT
+    #endif
+#elif __GNUC__ >= 3
+#define HAS_BUILTIN_EXPECT
 #endif
+
+#ifdef HAS_BUILTIN_EXPECT
+    #define IF_UNLIKELY(x) if (__builtin_expect(!!(x), 0))
+#else
+    #define IF_UNLIKELY(x) if (x)
 #endif
 #endif
 
-#ifndef IF_UNLIKELY
-#define IF_UNLIKELY(x) if (x)
-#endif
 
 #define min2(a, b) (((a) < (b)) ? (a) : (b))
 
@@ -700,7 +707,7 @@ int i8080::step()
     int ret;
     IF_UNLIKELY(halt) { 
         ret = 0;
-    }  else {
+    } else {
         // normal execution
         ret = i8080_exec(this, read_word_adv(this));
     }
@@ -713,4 +720,145 @@ int i8080::step()
         halt = 0;
     }
     return ret;
+}
+
+// '?' indicates that the instruction is undocumented
+static const char* OP_TO_STR[] = {
+    "nop",  "lxi", "stax", "inx", "inr", "dcr", "mvi", "rlc",
+    "?nop", "dad", "ldax", "dcx", "inr", "dcr", "mvi", "rrc",
+    "?nop", "lxi", "stax", "inx", "inr", "dcr", "mvi", "ral",
+    "?nop", "dad", "ldax", "dcx", "inr", "dcr", "mvi", "rar",
+    "?nop", "lxi", "shld", "inx", "inr", "dcr", "mvi", "daa",
+    "?nop", "dad", "lhld", "dcx", "inr", "dcr", "mvi", "cma",
+    "?nop", "lxi", "sta",  "inx", "inr", "dcr", "mvi", "stc",
+    "?nop", "dad", "lda",  "dcx", "inr", "dcr", "mvi", "cmc",
+
+    "mov", "mov", "mov", "mov", "mov", "mov", "mov", "mov",
+    "mov", "mov", "mov", "mov", "mov", "mov", "mov", "mov",
+    "mov", "mov", "mov", "mov", "mov", "mov", "mov", "mov",
+    "mov", "mov", "mov", "mov", "mov", "mov", "mov", "mov",
+    "mov", "mov", "mov", "mov", "mov", "mov", "mov", "mov",
+    "mov", "mov", "mov", "mov", "mov", "mov", "mov", "mov",
+    "mov", "mov", "mov", "mov", "mov", "mov", "hlt", "mov",
+    "mov", "mov", "mov", "mov", "mov", "mov", "mov", "mov",
+
+    "add", "add", "add", "add", "add", "add", "add", "add",
+    "adc", "adc", "adc", "adc", "adc", "adc", "adc", "adc",
+    "sub", "sub", "sub", "sub", "sub", "sub", "sub", "sub",
+    "sbb", "sbb", "sbb", "sbb", "sbb", "sbb", "sbb", "sbb",
+
+    "ana", "ana", "ana", "ana", "ana", "ana", "ana", "ana",
+    "xra", "xra", "xra", "xra", "xra", "xra", "xra", "xra",
+    "ora", "ora", "ora", "ora", "ora", "ora", "ora", "ora",
+    "cmp", "cmp", "cmp", "cmp", "cmp", "cmp", "cmp", "cmp",
+
+    "rnz", "pop",  "jnz", "jmp",  "cnz", "push",  "adi", "rst",
+    "rz",  "ret",  "jz",  "?jmp", "cz",  "call",  "aci", "rst",
+    "rnc", "pop",  "jnc", "out",  "cnc", "push",  "sui", "rst",
+    "rc",  "?ret", "jc",  "in",   "cc",  "?call", "sbi", "rst",
+    "rpo", "pop",  "jpo", "xthl", "cpo", "push",  "ani", "rst",
+    "rpe", "pchl", "jpe", "xchg", "cpe", "?call", "xri", "rst",
+    "rp",  "pop",  "jp",  "di",   "cp",  "push",  "ori", "rst",
+    "rm",  "sphl", "jm",  "ei",   "cm",  "?call", "cpi", "rst"
+};
+
+static const char* OPARGS_TO_STR[] = {
+    NULL, "b, %04xh",  "b",     "b",  "b", "b", "b, %02xh", NULL,
+    NULL, "b",         "b",     "b",  "c", "c", "c, %02xh", NULL,
+    NULL, "d, %04xh",  "d",     "d",  "d", "d", "d, %02xh", NULL,
+    NULL, "d",         "d",     "d",  "e", "e", "e, %02xh", NULL,
+    NULL, "h, %04xh",  "%04xh", "h",  "h", "h", "h, %02xh", NULL,
+    NULL, "h",         "%04xh", "h",  "l", "l", "l, %02xh", NULL,
+    NULL, "sp, %04xh", "%04xh", "sp", "m", "m", "m, %02xh", NULL,
+    NULL, "sp",        "%04xh", "sp", "a", "a", "a, %02xh", NULL,
+
+    "b, b", "b, c", "b, d", "b, e", "b, h", "b, l", "b, m", "b, a",
+    "c, b", "c, c", "c, d", "c, e", "c, h", "c, l", "c, m", "c, a",
+    "d, b", "d, c", "d, d", "d, e", "d, h", "d, l", "d, m", "d, a",
+    "e, b", "e, c", "e, d", "e, e", "e, h", "e, l", "e, m", "e, a",
+    "h, b", "h, c", "h, d", "h, e", "h, h", "h, l", "h, m", "h, a",
+    "l, b", "l, c", "l, d", "l, e", "l, h", "l, l", "l, m", "l, a",
+    "m, b", "m, c", "m, d", "m, e", "m, h", "m, l", NULL,   "m, a",
+    "a, b", "a, c", "a, d", "a, e", "a, h", "a, l", "a, m", "a, a",
+
+    "b", "c", "d", "e", "h", "l", "m", "a",
+    "b", "c", "d", "e", "h", "l", "m", "a",
+    "b", "c", "d", "e", "h", "l", "m", "a",
+    "b", "c", "d", "e", "h", "l", "m", "a",
+
+    "b", "c", "d", "e", "h", "l", "m", "a",
+    "b", "c", "d", "e", "h", "l", "m", "a",
+    "b", "c", "d", "e", "h", "l", "m", "a",
+    "b", "c", "d", "e", "h", "l", "m", "a",
+
+    NULL, "b",   "%04xh", "%04xh", "%04xh", "b",     "%02xh", "0",
+    NULL, NULL,  "%04xh", "%04xh", "%04xh", "%04xh", "%02xh", "1",
+    NULL, "d",   "%04xh", "%02xh", "%04xh", "d",     "%02xh", "2",
+    NULL, NULL,  "%04xh", "%02xh", "%04xh", "%04xh", "%02xh", "3",
+    NULL, "h",   "%04xh", NULL,    "%04xh", "h",     "%02xh", "4",
+    NULL, NULL,  "%04xh", NULL,    "%04xh", "%04xh", "%02xh", "5",
+    NULL, "psw", "%04xh", NULL,    "%04xh", "psw",   "%02xh", "6",
+    NULL, NULL,  "%04xh", NULL,    "%04xh", "%04xh", "%02xh", "7"
+};
+
+void i8080::disassemble(std::FILE* os)
+{
+    i8080_word_t opcode = read_word_adv(this);
+
+    const char* opname = OP_TO_STR[opcode];
+    const char* opargs = OPARGS_TO_STR[opcode];
+
+    std::fprintf(os, "0x%04x\t", pc);
+
+    if (opargs == NULL) {
+        fputs(opname, os);
+    }
+    else { 
+        // requires special formatting
+        char fmtbuf[64];
+        std::strcpy(fmtbuf, "%-6s");
+        std::strcat(fmtbuf, opargs);
+
+        switch (opcode)
+        {
+            // 3 byte instructions
+        case i8080_LXI_B: case i8080_LXI_D:
+        case i8080_LXI_H: case i8080_LXI_SP:
+        case i8080_SHLD: case i8080_LHLD:
+        case i8080_STA: case i8080_LDA:
+        case i8080_JNZ: case i8080_JZ:
+        case i8080_JNC: case i8080_JC:
+        case i8080_JPO: case i8080_JPE:
+        case i8080_JP:  case i8080_JM:
+        case i8080_JMP: case i8080_UD_JMP:
+        case i8080_CNZ: case i8080_CZ:
+        case i8080_CNC: case i8080_CC:
+        case i8080_CPO: case i8080_CPE:
+        case i8080_CP:  case i8080_CM:
+        case i8080_CALL:
+        case i8080_UD_CALL1:
+        case i8080_UD_CALL2:
+        case i8080_UD_CALL3:
+            std::fprintf(os, fmtbuf, opname, read_addr_adv(this));
+            break;
+
+            // 2 byte instructions
+        case i8080_MVI_B: case i8080_MVI_C:
+        case i8080_MVI_D: case i8080_MVI_E:
+        case i8080_MVI_H: case i8080_MVI_L:
+        case i8080_MVI_M: case i8080_MVI_A:
+        case i8080_OUT: case i8080_IN:
+        case i8080_ADI: case i8080_ACI:
+        case i8080_SUI: case i8080_SBI:
+        case i8080_ANI: case i8080_XRI:
+        case i8080_ORI: case i8080_CPI:
+            std::fprintf(os, fmtbuf, opname, read_word_adv(this));
+            break;
+
+            // 1 byte instructions
+        default:
+            std::fprintf(os, fmtbuf, opname);
+            break;
+        }
+    }
 }
