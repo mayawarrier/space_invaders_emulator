@@ -1,46 +1,50 @@
 
 
 
-#include "i8080.hpp"
-#include "i8080_opcodes.h"
-
-
-#include <stdio.h>
+#include <cstdio>
 #include <SDL.h>
+#include <SDL_main.h>
 
-int main(int argc, char** argv)
+
+#include "emu.hpp"
+#include "utils.hpp"
+
+
+
+
+
+
+
+int main(int argc, char* argv[])
 {
-    SDL_Window* window;
-
-    //The surface contained by the window
-    SDL_Surface* screenSurface = NULL;
-
-    //Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO) < 0)
-    {
-        printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
+    if (argc < 2) {
+        std::printf("Usage: spaceinvaders <rom-path>\n");
         return -1;
     }
 
-    //Create window
-    window = SDL_CreateWindow("SDL Tutorial", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480, SDL_WINDOW_SHOWN);
-    if (window == NULL)
-    {
-        printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
+    emulator emu(argv[1]);
+    if (!emu.ok()) {
         return -1;
     }
+
+    emu.run();
 
     //Get window surface
-    screenSurface = SDL_GetWindowSurface(window);
-
-    //Fill the surface white
-    SDL_FillRect(screenSurface, NULL, SDL_MapRGB(screenSurface->format, 0xFF, 0xFF, 0xFF));
+    //screenSurface = SDL_GetWindowSurface(window);
+    //
+    ////Fill the surface white
+    //SDL_FillRect(screenSurface, NULL, SDL_MapRGB(screenSurface->format, 0xFF, 0xFF, 0xFF));
 
     //Update the surface
-    SDL_UpdateWindowSurface(window);
+    //SDL_UpdateWindowSurface(window);
 
-    //Hack to get window to stay up
-    SDL_Event e; bool quit = false; while (quit == false) { while (SDL_PollEvent(&e)) { if (e.type == SDL_QUIT) quit = true; } }
+    // main loop
+
+    // NEED TO DISASSEMBLE THE ROM TO FIGURE OUT ALL THE TIMING STUFF!! (HOW OFTEN/WHEN INPUTS ARE SAMPLED ETC ETC)
+
+    
+    
+    
 
     return 0;
 }
