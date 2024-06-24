@@ -1,8 +1,10 @@
+//
 // Emulate a Taito Space Invaders arcade cabinet.
 // See https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html
-// for documentation on all the hardware emulated here.
+// for documentation on everything emulated here.
+//
 
-#include <iostream>
+#include <chrono>
 #include <thread>
 #include <cassert>
 
@@ -48,10 +50,6 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
     machine* m = MACHINE;
     switch (port)
     {
-    case 3: case 5:
-        std::printf("Sounds are unimplemented\n");
-        break;
-
     case 2:
         m->shiftreg_off = (word & 0x7);
         break;
@@ -61,7 +59,14 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
         m->shiftreg |= (i8080_dword_t(word) << 8);
         break;
 
-    case 6: break; // ignore
+    case 3: case 5:
+        //std::printf("Sounds are unimplemented\n");
+        break;
+
+        // Ignore watchdog port.
+        // This is intended to reset the machine if it 
+        // becomes unresponsive after a hardware issue.
+    case 6: break;
 
     default:
         std::fprintf(stderr,
@@ -103,7 +108,7 @@ int emulator::read_rom(const fs::path& path)
     else { return read_file(path, m.mem.get(), 8192); }
 }
 
-int emulator::init_graphics(unsigned scresX, unsigned scresY)
+int emulator::init_graphics(uint scresX, uint scresY)
 {
     if (scresX % SCREEN_NATIVERES_X != 0 ||
         scresY % SCREEN_NATIVERES_Y != 0 ||
@@ -155,7 +160,7 @@ emulator::emulator(const fs::path& rom_path, unsigned scresX, unsigned scresY) :
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
 
-    std::printf("Reset machine\n");
+    std::printf("Machine reset\n");
 
     m.mem = std::make_unique<i8080_word_t[]>(65536);
     if (read_rom(rom_path) != 0) { return; }
@@ -167,7 +172,7 @@ emulator::emulator(const fs::path& rom_path, unsigned scresX, unsigned scresY) :
     m_ok = true;
 }
 
-void emulator::input_handler(SDL_Scancode sc, bool pressed)
+void emulator::handle_input(SDL_Scancode sc, bool pressed)
 {
     switch (sc)
     {
@@ -195,10 +200,11 @@ void emulator::run()
     using clk = std::chrono::steady_clock;
 
     bool running = true;
+    uint64_t num_frames = 0;
+
     while (running)
     {
-
-        auto tbeg = clk::now();
+        auto t_framebeg = clk::now();
 
         SDL_Event e;
         while (SDL_PollEvent(&e))
@@ -210,11 +216,10 @@ void emulator::run()
                 break;
 
             case SDL_KEYDOWN:
-                input_handler(e.key.keysym.scancode, true);
+                handle_input(e.key.keysym.scancode, true);
                 break;
-
             case SDL_KEYUP:
-                input_handler(e.key.keysym.scancode, false);
+                handle_input(e.key.keysym.scancode, false);
                 break;
 
             default: break;
@@ -223,33 +228,39 @@ void emulator::run()
         
         uint64_t last_cycles = m.cpu.cycles;
 
-        while (m.cpu.step() == 0 && m.cpu.cycles - last_cycles < 14286); // 96 lines
+        // mid-screen interrupt 
+        // 14286 = (96/224) * (16667us/0.5us)
+        while (m.cpu.cycles - last_cycles < 14286) {
+            m.cpu.step();
+        }
         m.intr_opcode = i8080_RST_1;
         m.cpu.interrupt();
 
-        //last_cycles = m.cpu.cycles;
-
-        while (m.cpu.step() == 0 && m.cpu.cycles - last_cycles < 33333); // 224 lines
+        // end of screen (VLANK) interrupt
+        bool add_extra_cyc = num_frames % 3 == 0; // 0.33 cycle lost every frame
+        while (m.cpu.cycles - last_cycles < (33333 + add_extra_cyc)) {
+            m.cpu.step();
+        }
         m.intr_opcode = i8080_RST_2;
         m.cpu.interrupt();
 
-
+        // Render
         uint32_t* pixels; int pitch;
         SDL_LockTexture(m_screentex, NULL, (void**)&pixels, &pitch);
         assert(pitch == 896);
 
-        i8080_word_t* VRAM_start = &m.mem[0x2400];
-        
         uint VRAM_idx = 0;
+        i8080_word_t* VRAM_start = &m.mem[0x2400];
+
         for (uint x = 0; x < SCREEN_NATIVERES_X; ++x) {
             for (uint y = 0; y < SCREEN_NATIVERES_Y; y += 8) 
             {
                 i8080_word_t word = VRAM_start[VRAM_idx++];
 
+                // Unpack pixels (8 pixels per byte) and rotate counter-clockwise
                 for (int bit = 0; bit < 8; ++bit)
                 {
-                    uint idx = SCREEN_NATIVERES_X * (SCREEN_NATIVERES_Y - y - bit - 1) + x;
-                    pixels[idx] = 
+                    pixels[SCREEN_NATIVERES_X * (SCREEN_NATIVERES_Y - y - bit - 1) + x] =
                         ((word & (0x1 << bit)) == 0) ? 0xFF000000 : 0xFFFFFFFF;
                 }
             }
@@ -257,65 +268,23 @@ void emulator::run()
 
         SDL_UnlockTexture(m_screentex);
         SDL_RenderCopy(m_renderer, m_screentex, NULL, NULL);
-        
-
-        //while (frame_clk::now())
-        //{
-        //    // Interrupts are generated at 120Hz (twice per frame).
-        //    // At 2Mhz, the CPU will run for ~16667 cycles between interrupts.
-        //
-        //    // Run CPU in 700 cycle bursts.
-        //    // 700 cycles at 2MHz is 350us, which means at worst we're
-        //    // under 5% 
-        //    // Want interrupt timing as close to correct as possible.
-        //    // The 
-        //
-        //    
-        //}
-
-        //const uint16_t kVideoRamStart = 0x2400;
-        //
-        //int i = 0;
-        //const int kVideoRamWidth = 224;
-        //const int kVideoRamHeight = 256;
-        //
-        //for (int ix = 0; ix < kVideoRamWidth; ix++) {
-        //    for (int iy = 0; iy < kVideoRamHeight; iy += 8) {
-        //        uint8_t byte = m.mem[kVideoRamStart + i++];
-        //
-        //        for (int b = 0; b < 8; b++) {
-        //            if ((byte & 0x1) == 0x1)
-        //                SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
-        //            else
-        //                SDL_SetRenderDrawColor(m_renderer, 0, 0, 0, 255);
-        //
-        //            SDL_RenderDrawPoint(m_renderer, ix, (kVideoRamHeight - (iy + b)));
-        //            byte >>= 1;
-        //        }
-        //    }
-        //}
-
-
         SDL_RenderPresent(m_renderer);
+        num_frames++;
 
-        auto tend = clk::now();
-        
-        std::this_thread::sleep_for(std::chrono::microseconds(16667) - (tend - tbeg));
+        constexpr auto framedur_60fps = std::chrono::microseconds(16667);
+
+        // Sleep remaining time to Vsync at 60fps (or as close to it as possible)
+        auto framedur = clk::now() - t_framebeg;
+        if (framedur < framedur_60fps) {
+            std::this_thread::sleep_for(framedur_60fps - framedur);
+        }
     }
 }
 
 emulator::~emulator()
 {
+    SDL_DestroyTexture(m_screentex);
     SDL_DestroyRenderer(m_renderer);
     SDL_DestroyWindow(m_window);
     SDL_Quit();
 }
-
-//void disassemble()
-//{
-//    scopedFILE file = SAFE_FOPENA("disassembly.asm", "wb");
-//
-//    while (dat.cpu.pc < 0x2000) {
-//        dat.cpu.disassemble(file.get());
-//    }
-//}

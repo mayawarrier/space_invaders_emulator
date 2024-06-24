@@ -34,7 +34,6 @@ struct machine
     i8080_dword_t shiftreg;
     i8080_word_t shiftreg_off;
 
-    // rst 1 and rst 2 generated at lines 96 and 224
     i8080_word_t intr_opcode;
 };
 
@@ -55,9 +54,9 @@ struct emulator
 
 private:
     int read_rom(const fs::path& path);
-    int init_graphics(uint resX, uint resY);
+    int init_graphics(uint scresX, uint scresY);
 
-    void input_handler(SDL_Scancode sc, bool pressed);
+    void handle_input(SDL_Scancode sc, bool pressed);
 
 private:
     machine m;

@@ -5,8 +5,6 @@
 // 8080 Data sheet: https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf
 // opcode table: http://pastraiser.com/cpu/i8080/i8080_opcodes.html
 // 
-// This is mostly a straight port from the ANSI C version.
-// 
 
 #include "i8080.hpp"
 #include "i8080_opcodes.h"
