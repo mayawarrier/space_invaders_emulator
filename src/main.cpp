@@ -22,7 +22,7 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    emulator emu(argv[1]);
+    emulator emu(argv[1], 448, 512);
     if (!emu.ok()) {
         return -1;
     }

@@ -192,6 +192,20 @@ void emulator::handle_input(SDL_Scancode sc, bool pressed)
     }
 }
 
+// Pixel color taking into account gel overlay
+// https://tcrf.net/images/a/af/SpaceInvadersArcColorUseTV.png
+static uint pixel_color(uint x, uint y)
+{
+    if ((y <= 15 && x > 24 && x < 136) ||
+        (y > 15 && y < 71)) {
+        return 0xFF1EFE1E; // fluorescent green
+    }
+    else if (y >= 192 && y < 223) {
+        return 0xFFFE1E1E; // red
+    }
+    else return 0xFFFFFFFF; // white
+}
+
 void emulator::run()
 {
     // 100ns resolution on Windows
@@ -248,31 +262,43 @@ void emulator::run()
 
         last_cycles += frame_cycles;
 
-        // Render
-        uint32_t* pixels; int pitch;
-        SDL_LockTexture(m_screentex, NULL, (void**)&pixels, &pitch);
-        assert(pitch == 896);
+        // Render frame!
+        {
+            uint scresX = SCREEN_NATIVERES_X * m_scalefac;
 
-        uint VRAM_idx = 0;
-        i8080_word_t* VRAM_start = &m.mem[0x2400];
+            uint32_t* pixels; int pitch;
+            SDL_LockTexture(m_screentex, NULL, (void**)&pixels, &pitch);
+            assert(pitch == scresX * 4);
 
-        for (uint x = 0; x < SCREEN_NATIVERES_X; ++x) {
-            for (uint y = 0; y < SCREEN_NATIVERES_Y; y += 8) 
-            {
-                i8080_word_t word = VRAM_start[VRAM_idx++];
+            uint VRAM_idx = 0;
+            i8080_word_t* VRAM_start = &m.mem[0x2400];
 
-                // Unpack pixels (8 pixels per byte) and rotate counter-clockwise
-                for (int bit = 0; bit < 8; ++bit)
+            for (uint x = 0; x < SCREEN_NATIVERES_X; ++x) {
+                for (uint y = 0; y < SCREEN_NATIVERES_Y; y += 8)
                 {
-                    pixels[SCREEN_NATIVERES_X * (SCREEN_NATIVERES_Y - y - bit - 1) + x] =
-                        ((word & (0x1 << bit)) == 0) ? 0xFF000000 : 0xFFFFFFFF;
+                    i8080_word_t word = VRAM_start[VRAM_idx++];
+
+                    // Unpack pixels (8 b/w pixels per byte) and rotate counter-clockwise
+                    for (int bit = 0; bit < 8; ++bit)
+                    {
+                        uint color = ((word & (0x1 << bit)) == 0) ? 0xFF000000 : pixel_color(x, y);
+                        uint st_idx = m_scalefac * (scresX * (SCREEN_NATIVERES_Y - y - bit - 1) + x);
+
+                        // Draw a square instead of a pixel if resolution is higher than native
+                        for (uint xsqr = 0; xsqr < m_scalefac; ++xsqr) {
+                            for (uint ysqr = 0; ysqr < m_scalefac; ++ysqr) 
+                            {
+                                pixels[st_idx + scresX * ysqr + xsqr] = color;
+                            }
+                        }                            
+                    }
                 }
             }
-        }
 
-        SDL_UnlockTexture(m_screentex);
-        SDL_RenderCopy(m_renderer, m_screentex, NULL, NULL);
-        SDL_RenderPresent(m_renderer);
+            SDL_UnlockTexture(m_screentex);
+            SDL_RenderCopy(m_renderer, m_screentex, NULL, NULL);
+            SDL_RenderPresent(m_renderer);
+        }
         num_frames++;
 
         constexpr auto framedur_60fps = std::chrono::microseconds(16667);
