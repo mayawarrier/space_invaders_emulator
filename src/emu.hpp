@@ -12,13 +12,16 @@
 #define KEY_1P_START SDL_SCANCODE_1
 #define KEY_2P_START SDL_SCANCODE_2
 
-#define KEY_P1_LEFT SDL_SCANCODE_LEFT
-#define KEY_P1_RIGHT SDL_SCANCODE_RIGHT
-#define KEY_P1_FIRE SDL_SCANCODE_RCTRL
+#define KEY_P1_LEFT SDL_SCANCODE_A
+#define KEY_P1_RIGHT SDL_SCANCODE_D
+#define KEY_P1_FIRE SDL_SCANCODE_LCTRL
 
-#define KEY_P2_LEFT SDL_SCANCODE_A
-#define KEY_P2_RIGHT SDL_SCANCODE_D
-#define KEY_P2_FIRE SDL_SCANCODE_LCTRL
+#define KEY_P2_LEFT SDL_SCANCODE_LEFT
+#define KEY_P2_RIGHT SDL_SCANCODE_RIGHT
+#define KEY_P2_FIRE SDL_SCANCODE_RCTRL
+
+#define SCREEN_NATIVERES_X 224
+#define SCREEN_NATIVERES_Y 256
 
 struct machine
 {
@@ -37,7 +40,9 @@ struct machine
 
 struct emulator
 {
-    emulator(const fs::path& rom_path);
+    emulator(const fs::path& rom_path, 
+        uint screen_resX = SCREEN_NATIVERES_X,
+        uint screen_resY = SCREEN_NATIVERES_Y);
 
     // Open a window and start running.
     // Returns when window is closed.
@@ -50,7 +55,7 @@ struct emulator
 
 private:
     int read_rom(const fs::path& path);
-    int initSDL();
+    int init_graphics(uint resX, uint resY);
 
     void input_handler(SDL_Scancode sc, bool pressed);
 
@@ -58,7 +63,8 @@ private:
     machine m;
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
-
+    SDL_Texture* m_screentex;
+    uint m_scalefac;
     bool m_ok;
 };
 

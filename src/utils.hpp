@@ -8,6 +8,8 @@
 
 namespace fs = std::filesystem;
 
+using uint = unsigned int;
+
 #define CONCAT(x, y) x##y
 
 // Print error message and return error code.
