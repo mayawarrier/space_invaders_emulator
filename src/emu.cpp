@@ -194,14 +194,15 @@ void emulator::handle_input(SDL_Scancode sc, bool pressed)
 
 void emulator::run()
 {
-    SDL_ShowWindow(m_window);
-
     // 100ns resolution on Windows
     using clk = std::chrono::steady_clock;
 
-    bool running = true;
-    uint64_t num_frames = 0;
+    SDL_ShowWindow(m_window);
 
+    uint64_t num_frames = 0;
+    uint64_t last_cycles = 0;
+
+    bool running = true;
     while (running)
     {
         auto t_framebeg = clk::now();
@@ -225,10 +226,11 @@ void emulator::run()
             default: break;
             }
         }
-        
-        uint64_t last_cycles = m.cpu.cycles;
 
-        // mid-screen interrupt 
+        // 33333.33 clk cycles at CPUs 2Mhz clock speed (16667us/0.5us)
+        uint64_t frame_cycles = 33333 + (num_frames % 3 == 0);
+
+        // run CPU till mid-screen interrupt 
         // 14286 = (96/224) * (16667us/0.5us)
         while (m.cpu.cycles - last_cycles < 14286) {
             m.cpu.step();
@@ -236,13 +238,15 @@ void emulator::run()
         m.intr_opcode = i8080_RST_1;
         m.cpu.interrupt();
 
-        // end of screen (VLANK) interrupt
-        bool add_extra_cyc = num_frames % 3 == 0; // 0.33 cycle lost every frame
-        while (m.cpu.cycles - last_cycles < (33333 + add_extra_cyc)) {
+        // run CPU till end of screen (VLANK) interrupt
+        // Running for exactly frame_cycles is not possible, but try to come close
+        while (m.cpu.cycles - last_cycles < frame_cycles) {
             m.cpu.step();
         }
         m.intr_opcode = i8080_RST_2;
         m.cpu.interrupt();
+
+        last_cycles += frame_cycles;
 
         // Render
         uint32_t* pixels; int pitch;
