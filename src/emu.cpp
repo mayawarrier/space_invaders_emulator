@@ -108,16 +108,8 @@ int emulator::read_rom(const fs::path& path)
     else { return read_file(path, m.mem.get(), 8192); }
 }
 
-int emulator::init_graphics(uint scresX, uint scresY)
+int emulator::init_SDL(uint scresX, uint scresY)
 {
-    if (scresX % SCREEN_NATIVERES_X != 0 ||
-        scresY % SCREEN_NATIVERES_Y != 0 ||
-        (scresX / SCREEN_NATIVERES_X) != (scresY / SCREEN_NATIVERES_Y)) {
-        return mERROR("Screen res is not a multiple of native res (%ux%u)",
-            SCREEN_NATIVERES_X, SCREEN_NATIVERES_Y);
-    }
-    m_scalefac = scresX / SCREEN_NATIVERES_X;
-
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         return mERROR("SDL_Init(): %s\n", SDL_GetError());
     }
@@ -143,8 +135,8 @@ int emulator::init_graphics(uint scresX, uint scresY)
     return 0;
 }
 
-emulator::emulator(const fs::path& rom_path, unsigned scresX, unsigned scresY) :
-    m_ok(false)
+emulator::emulator(const fs::path& rom_path, uint scalefac) :
+    m_scalefac(scalefac), m_ok(false)
 {
     m.cpu.mem_read = cpu_mem_read;
     m.cpu.mem_write = cpu_mem_write;
@@ -160,14 +152,18 @@ emulator::emulator(const fs::path& rom_path, unsigned scresX, unsigned scresY) :
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
 
-    std::printf("Machine reset\n");
+    std::printf("Reset machine\n");
 
     m.mem = std::make_unique<i8080_word_t[]>(65536);
     if (read_rom(rom_path) != 0) { return; }
     std::printf("Loaded ROM\n");
 
-    if (init_graphics(scresX, scresY) != 0) { return; }
-    std::printf("Initialized graphics\n");
+    if (init_SDL(
+        SCREEN_NATIVERES_X * scalefac, 
+        SCREEN_NATIVERES_Y * scalefac) != 0) { 
+        return; 
+    }
+    std::printf("Initialized SDL\n");
 
     m_ok = true;
 }

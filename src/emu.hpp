@@ -39,9 +39,9 @@ struct machine
 
 struct emulator
 {
-    emulator(const fs::path& rom_path, 
-        uint screen_resX = SCREEN_NATIVERES_X,
-        uint screen_resY = SCREEN_NATIVERES_Y);
+    // res_scale = scaling factor for video resolution.
+    // res_scale=1 outputs video at native resolution (this is small!)
+    emulator(const fs::path& rom_path, uint res_scale = 2);
 
     // Open a window and start running.
     // Returns when window is closed.
@@ -54,7 +54,7 @@ struct emulator
 
 private:
     int read_rom(const fs::path& path);
-    int init_graphics(uint scresX, uint scresY);
+    int init_SDL(uint scresX, uint scresY);
 
     void handle_input(SDL_Scancode sc, bool pressed);
 
