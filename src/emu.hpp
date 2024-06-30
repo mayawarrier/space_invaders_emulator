@@ -2,6 +2,7 @@
 #ifndef EMU_HPP
 #define EMU_HPP
 
+#include <array>
 #include <memory>
 #include <SDL.h>
 
@@ -37,11 +38,15 @@ struct machine
     i8080_word_t intr_opcode;
 };
 
+// sdl_pixelfmt -> color palette
+using fmt_palette = std::pair<uint32_t, std::array<uint32_t, 4>>;
+
 struct emulator
 {
-    // res_scale = scaling factor for video resolution.
-    // res_scale=1 outputs video at native resolution (this is small!)
-    emulator(const fs::path& rom_path, uint res_scale = 2);
+    // \param rom_dir directory containing invaders ROM and audio files
+    // \param res_scale resolution scaling factor.
+    // If equal to 2, renders at 2x native resolution, etc.
+    emulator(const fs::path& rom_dir, uint res_scale = 2);
 
     // Open a window and start running.
     // Returns when window is closed.
@@ -58,12 +63,19 @@ private:
 
     void handle_input(SDL_Scancode sc, bool pressed);
 
+    void gen_frame(uint64_t nframes_rendered, uint64_t& last_cpu_cycles);
+    void render_frame() const;
+
 private:
     machine m;
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
+
     SDL_Texture* m_screentex;
+    const fmt_palette* m_fmtpalette;
     uint m_scalefac;
+    uint m_scresX;
+
     bool m_ok;
 };
 

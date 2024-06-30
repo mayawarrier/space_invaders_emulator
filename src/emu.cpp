@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <thread>
+#include <string_view>
 #include <cassert>
 
 #include "i8080/i8080_opcodes.h"
@@ -93,19 +94,39 @@ static int read_file(const fs::path& path, i8080_word_t* mem, unsigned size)
     return 0;
 }
 
-int emulator::read_rom(const fs::path& path)
+int emulator::read_rom(const fs::path& dir)
 {
-    if (fs::is_directory(path)) 
-    {
-        std::printf("Loading ROM from invaders.efgh...\n");
-        int e;
-        e = read_file(path / "invaders.h", &m.mem[0],    2048); if (e) { return e; }
-        e = read_file(path / "invaders.g", &m.mem[2048], 2048); if (e) { return e; }
-        e = read_file(path / "invaders.f", &m.mem[4096], 2048); if (e) { return e; }
-        e = read_file(path / "invaders.e", &m.mem[6144], 2048); if (e) { return e; }
+    if (fs::exists(dir / "invaders.rom")) {
+        int e = read_file(dir / "invaders.rom", m.mem.get(), 8192);
+        if (e) { return e; }
+        std::printf("Loaded invaders.rom\n");
         return 0;
     }
-    else { return read_file(path, m.mem.get(), 8192); }
+    else {
+        int e;
+        e = read_file(dir / "invaders.h", &m.mem[0], 2048); if (e) { return e; }
+        e = read_file(dir / "invaders.g", &m.mem[2048], 2048); if (e) { return e; }
+        e = read_file(dir / "invaders.f", &m.mem[4096], 2048); if (e) { return e; }
+        e = read_file(dir / "invaders.e", &m.mem[6144], 2048); if (e) { return e; }
+        std::printf("Loaded invaders.efgh\n");
+        return 0;
+    }
+}
+
+static const std::array<fmt_palette, 3> PIXFMT_2PALETTE = {
+                                         // black,      green,      red,        white    
+    fmt_palette(SDL_PIXELFORMAT_RGB565,   { 0x00000000, 0x1FE3,     0xF8E3,     0xFFFF,    }),
+    fmt_palette(SDL_PIXELFORMAT_XRGB8888, { 0x00000000, 0x001EFE1E, 0x00FE1E1E, 0x00FFFFFF }),
+    fmt_palette(SDL_PIXELFORMAT_ARGB8888, { 0xFF000000, 0xFF1EFE1E, 0xFFFE1E1E, 0xFFFFFFFF })
+};
+
+static const char* pixfmt_name(uint32_t fmt)
+{
+    std::string_view str(SDL_GetPixelFormatName(fmt));
+    if (str.starts_with("SDL_PIXELFORMAT_")) {
+        str.remove_prefix(sizeof("SDL_PIXELFORMAT_") - 1);
+    }
+    return str.data();
 }
 
 int emulator::init_SDL(uint scresX, uint scresY)
@@ -124,19 +145,41 @@ int emulator::init_SDL(uint scresX, uint scresY)
         return mERROR("SDL_CreateRenderer(): %s\n", SDL_GetError());
     }
 
-    // graphics drivers prefer ARGB8888, other formats may or may not work
-    // https://stackoverflow.com/questions/56143991/
-    m_screentex = SDL_CreateTexture(m_renderer,
-        SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, scresX, scresY);
+    // use first pixel format available 
+    // see https://stackoverflow.com/questions/56143991/
+    std::string triedfmts;
+    for (auto& fmt: PIXFMT_2PALETTE)
+    {
+        m_screentex = SDL_CreateTexture(m_renderer, 
+            fmt.first, SDL_TEXTUREACCESS_STREAMING, scresX, scresY);
+        if (!m_screentex) { continue; }
+
+        uint32_t gotfmt;
+        if (SDL_QueryTexture(m_screentex, &gotfmt, NULL, NULL, NULL) != 0) {
+            return mERROR("SDL_QueryTexture(): %s", SDL_GetError());
+        }
+        if (gotfmt != fmt.first) {
+            SDL_DestroyTexture(m_screentex);
+            m_screentex = NULL;
+            if (!triedfmts.empty()) { triedfmts += ", "; }
+            triedfmts += pixfmt_name(fmt.first);
+        } 
+        else {
+            std::printf("Using pixel format %s\n", pixfmt_name(fmt.first));
+            m_fmtpalette = &fmt;
+            break;
+        }
+    }
     if (!m_screentex) {
-        return mERROR("SDL_CreateTexture(): %s", SDL_GetError());
+        return mERROR("Could not create texture, " 
+            "tried formats: %s", triedfmts.c_str());
     }
 
     return 0;
 }
 
-emulator::emulator(const fs::path& rom_path, uint scalefac) :
-    m_scalefac(scalefac), m_ok(false)
+emulator::emulator(const fs::path& romdir, uint scalefac) :
+    m_scalefac(scalefac), m_scresX(SCREEN_NATIVERES_X * scalefac), m_ok(false)
 {
     m.cpu.mem_read = cpu_mem_read;
     m.cpu.mem_write = cpu_mem_write;
@@ -152,12 +195,11 @@ emulator::emulator(const fs::path& rom_path, uint scalefac) :
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
 
-    std::printf("Reset machine\n");
+    std::printf("Initialized machine\n");
 
     m.mem = std::make_unique<i8080_word_t[]>(65536);
-    if (read_rom(rom_path) != 0) { return; }
-    std::printf("Loaded ROM\n");
-
+    if (read_rom(romdir) != 0) { return; }
+    
     if (init_SDL(
         SCREEN_NATIVERES_X * scalefac, 
         SCREEN_NATIVERES_Y * scalefac) != 0) { 
@@ -188,18 +230,101 @@ void emulator::handle_input(SDL_Scancode sc, bool pressed)
     }
 }
 
-// Pixel color taking into account gel overlay
-// https://tcrf.net/images/a/af/SpaceInvadersArcColorUseTV.png
-static uint pixel_color(uint x, uint y)
+// Run CPU for one frame.
+void emulator::gen_frame(uint64_t nframes_rendered, uint64_t& last_cpu_cycles)
 {
-    if ((y <= 15 && x > 24 && x < 136) ||
-        (y > 15 && y < 71)) {
-        return 0xFF1EFE1E; // fluorescent green
+    // 33333.33 clk cycles at CPU's 2Mhz clock speed (16667us/0.5us)
+    uint64_t frame_cycles = 33333 + (nframes_rendered % 3 == 0);
+
+    // run till mid-screen interrupt 
+    // 14286 = (96/224) * (16667us/0.5us)
+    while (m.cpu.cycles - last_cpu_cycles < 14286) {
+        m.cpu.step();
+    }
+    m.intr_opcode = i8080_RST_1;
+    m.cpu.interrupt();
+
+    // run till end of screen (VLANK) interrupt
+    while (m.cpu.cycles - last_cpu_cycles < frame_cycles) {
+        m.cpu.step();
+    }
+    m.intr_opcode = i8080_RST_2;
+    m.cpu.interrupt();
+
+    // Running for exactly frame_cycles is not possible,
+    // adjust extra cycles in next frame
+    last_cpu_cycles += frame_cycles;
+}
+
+enum palcol : uint8_t
+{
+    PALCOLOR_BLACK,
+    PALCOLOR_GREEN,
+    PALCOLOR_RED,
+    PALCOLOR_WHITE,
+};
+
+// Pixel color after gel overlay
+// https://tcrf.net/images/a/af/SpaceInvadersArcColorUseTV.png
+static palcol pixel_color(uint x, uint y, bool pixel)
+{  
+    if (!pixel) { return PALCOLOR_BLACK; }
+
+    if ((y <= 15 && x > 24 && x < 136) || (y > 15 && y < 71)) {
+        return PALCOLOR_GREEN;
     }
     else if (y >= 192 && y < 223) {
-        return 0xFFFE1E1E; // red
+        return PALCOLOR_RED;
     }
-    else return 0xFFFFFFFF; // white
+    else { return PALCOLOR_WHITE; }
+}
+
+void emulator::render_frame() const
+{
+    void* pixels; int pitch;
+    SDL_LockTexture(m_screentex, NULL, &pixels, &pitch);
+
+    uint VRAM_idx = 0;
+    i8080_word_t* VRAM_start = &m.mem[0x2400];
+
+    // Unpack (8 on/off pixels per byte) and rotate counter-clockwise
+    for (uint x = 0; x < SCREEN_NATIVERES_X; ++x) {
+        for (uint y = 0; y < SCREEN_NATIVERES_Y; y += 8)
+        {
+            i8080_word_t word = VRAM_start[VRAM_idx++];
+
+            for (int bit = 0; bit < 8; ++bit)
+            {
+                palcol colidx = pixel_color(x, y, ((word & (0x1 << bit)) != 0));
+                uint32_t color = m_fmtpalette->second[colidx];
+
+                uint st_idx = m_scalefac * (m_scresX * (SCREEN_NATIVERES_Y - y - bit - 1) + x);
+
+                // Draw a square instead of a pixel if resolution is higher than native
+                for (uint xsqr = 0; xsqr < m_scalefac; ++xsqr) {
+                    for (uint ysqr = 0; ysqr < m_scalefac; ++ysqr)
+                    {
+                        uint idx = st_idx + m_scresX * ysqr + xsqr;
+
+                        switch (m_fmtpalette->first)
+                        {
+                        case SDL_PIXELFORMAT_RGB565:
+                            static_cast<uint16_t*>(pixels)[idx] = uint16_t(color);
+                            break;
+                        case SDL_PIXELFORMAT_XRGB8888:
+                        case SDL_PIXELFORMAT_ARGB8888:
+                            static_cast<uint32_t*>(pixels)[idx] = color;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    SDL_UnlockTexture(m_screentex);
+    SDL_RenderCopy(m_renderer, m_screentex, NULL, NULL);
+    SDL_RenderPresent(m_renderer);
 }
 
 void emulator::run()
@@ -210,7 +335,7 @@ void emulator::run()
     SDL_ShowWindow(m_window);
 
     uint64_t num_frames = 0;
-    uint64_t last_cycles = 0;
+    uint64_t last_cpu_cycles = 0;
 
     bool running = true;
     while (running)
@@ -237,64 +362,9 @@ void emulator::run()
             }
         }
 
-        // 33333.33 clk cycles at CPUs 2Mhz clock speed (16667us/0.5us)
-        uint64_t frame_cycles = 33333 + (num_frames % 3 == 0);
-
-        // run CPU till mid-screen interrupt 
-        // 14286 = (96/224) * (16667us/0.5us)
-        while (m.cpu.cycles - last_cycles < 14286) {
-            m.cpu.step();
-        }
-        m.intr_opcode = i8080_RST_1;
-        m.cpu.interrupt();
-
-        // run CPU till end of screen (VLANK) interrupt
-        // Running for exactly frame_cycles is not possible, but try to come close
-        while (m.cpu.cycles - last_cycles < frame_cycles) {
-            m.cpu.step();
-        }
-        m.intr_opcode = i8080_RST_2;
-        m.cpu.interrupt();
-
-        last_cycles += frame_cycles;
-
-        // Render frame!
-        {
-            uint scresX = SCREEN_NATIVERES_X * m_scalefac;
-
-            uint32_t* pixels; int pitch;
-            SDL_LockTexture(m_screentex, NULL, (void**)&pixels, &pitch);
-            assert(pitch == scresX * 4);
-
-            uint VRAM_idx = 0;
-            i8080_word_t* VRAM_start = &m.mem[0x2400];
-
-            for (uint x = 0; x < SCREEN_NATIVERES_X; ++x) {
-                for (uint y = 0; y < SCREEN_NATIVERES_Y; y += 8)
-                {
-                    i8080_word_t word = VRAM_start[VRAM_idx++];
-
-                    // Unpack pixels (8 b/w pixels per byte) and rotate counter-clockwise
-                    for (int bit = 0; bit < 8; ++bit)
-                    {
-                        uint color = ((word & (0x1 << bit)) == 0) ? 0xFF000000 : pixel_color(x, y);
-                        uint st_idx = m_scalefac * (scresX * (SCREEN_NATIVERES_Y - y - bit - 1) + x);
-
-                        // Draw a square instead of a pixel if resolution is higher than native
-                        for (uint xsqr = 0; xsqr < m_scalefac; ++xsqr) {
-                            for (uint ysqr = 0; ysqr < m_scalefac; ++ysqr) 
-                            {
-                                pixels[st_idx + scresX * ysqr + xsqr] = color;
-                            }
-                        }                            
-                    }
-                }
-            }
-
-            SDL_UnlockTexture(m_screentex);
-            SDL_RenderCopy(m_renderer, m_screentex, NULL, NULL);
-            SDL_RenderPresent(m_renderer);
-        }
+        gen_frame(num_frames, last_cpu_cycles);
+        render_frame();
+        
         num_frames++;
 
         constexpr auto framedur_60fps = std::chrono::microseconds(16667);
