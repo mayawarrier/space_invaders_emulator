@@ -63,7 +63,7 @@ private:
 
     void handle_input(SDL_Scancode sc, bool pressed);
 
-    void gen_frame(uint64_t nframes_rendered, uint64_t& last_cpu_cycles);
+    void gen_frame(uint64_t& nframes, uint64_t& last_cpucycles);
     void render_frame() const;
 
 private:

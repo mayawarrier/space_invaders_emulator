@@ -64,9 +64,9 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
         //std::printf("Sounds are unimplemented\n");
         break;
 
-        // Ignore watchdog port.
-        // This is intended to reset the machine if it 
-        // becomes unresponsive after a hardware issue.
+        // Ignore watchdog.
+        // This is intended to reset the machine in the event
+        // of a hardware issue.
     case 6: break;
 
     default:
@@ -112,6 +112,14 @@ int emulator::read_rom(const fs::path& dir)
         return 0;
     }
 }
+
+enum palcol : uint8_t
+{
+    PALCOLOR_BLACK,
+    PALCOLOR_GREEN,
+    PALCOLOR_RED,
+    PALCOLOR_WHITE,
+};
 
 static const std::array<fmt_palette, 3> PIXFMT_2PALETTE = {
                                          // black,      green,      red,        white    
@@ -231,38 +239,30 @@ void emulator::handle_input(SDL_Scancode sc, bool pressed)
 }
 
 // Run CPU for one frame.
-void emulator::gen_frame(uint64_t nframes_rendered, uint64_t& last_cpu_cycles)
+void emulator::gen_frame(uint64_t& nframes, uint64_t& last_cpucycles)
 {
     // 33333.33 clk cycles at CPU's 2Mhz clock speed (16667us/0.5us)
-    uint64_t frame_cycles = 33333 + (nframes_rendered % 3 == 0);
+    uint64_t frame_cycles = 33333 + (nframes % 3 == 0);
 
     // run till mid-screen interrupt 
     // 14286 = (96/224) * (16667us/0.5us)
-    while (m.cpu.cycles - last_cpu_cycles < 14286) {
+    while (m.cpu.cycles - last_cpucycles < 14286) {
         m.cpu.step();
     }
     m.intr_opcode = i8080_RST_1;
     m.cpu.interrupt();
 
     // run till end of screen (VLANK) interrupt
-    while (m.cpu.cycles - last_cpu_cycles < frame_cycles) {
+    while (m.cpu.cycles - last_cpucycles < frame_cycles) {
         m.cpu.step();
     }
     m.intr_opcode = i8080_RST_2;
     m.cpu.interrupt();
 
-    // Running for exactly frame_cycles is not possible,
     // adjust extra cycles in next frame
-    last_cpu_cycles += frame_cycles;
+    last_cpucycles += frame_cycles;
+    nframes++;
 }
-
-enum palcol : uint8_t
-{
-    PALCOLOR_BLACK,
-    PALCOLOR_GREEN,
-    PALCOLOR_RED,
-    PALCOLOR_WHITE,
-};
 
 // Pixel color after gel overlay
 // https://tcrf.net/images/a/af/SpaceInvadersArcColorUseTV.png
@@ -327,21 +327,23 @@ void emulator::render_frame() const
     SDL_RenderPresent(m_renderer);
 }
 
+static float perfcount2sec(uint64_t val)
+{
+    return val / float(SDL_GetPerformanceFrequency());
+}
+
 void emulator::run()
 {
-    // 100ns resolution on Windows
-    using clk = std::chrono::steady_clock;
-
     SDL_ShowWindow(m_window);
 
-    uint64_t num_frames = 0;
-    uint64_t last_cpu_cycles = 0;
+    uint64_t nframes = 0;
+    uint64_t last_cpucycles = 0;
+
+    uint64_t t_start = SDL_GetPerformanceCounter();
 
     bool running = true;
     while (running)
     {
-        auto t_framebeg = clk::now();
-
         SDL_Event e;
         while (SDL_PollEvent(&e))
         {
@@ -362,18 +364,20 @@ void emulator::run()
             }
         }
 
-        gen_frame(num_frames, last_cpu_cycles);
+        gen_frame(nframes, last_cpucycles);
         render_frame();
         
-        num_frames++;
-
-        constexpr auto framedur_60fps = std::chrono::microseconds(16667);
-
-        // Sleep remaining time to Vsync at 60fps (or as close to it as possible)
-        auto framedur = clk::now() - t_framebeg;
-        if (framedur < framedur_60fps) {
-            std::this_thread::sleep_for(framedur_60fps - framedur);
+        // Vsync at 60fps (or as close to it as possible)
+        // SDL produces better results than chrono
+        float rendtimeMS = 1000.0f * perfcount2sec(SDL_GetPerformanceCounter() - t_start);
+        if (rendtimeMS < 16.666f) {
+            SDL_Delay(std::floor(16.666f - rendtimeMS));
         }
+        auto t_laststart = t_start;
+        t_start = SDL_GetPerformanceCounter();
+
+        std::printf("\rFPS: %ld", 
+            std::lroundf(1.f / perfcount2sec(t_start - t_laststart)));        
     }
 }
 
