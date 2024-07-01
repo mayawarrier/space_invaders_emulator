@@ -35,6 +35,21 @@ int mERROR(const char* fmt, Args... args)
     return ecERROR(-1, fmt, args...);
 }
 
+template <typename ...Args>
+void pWARNING(const char* fmt, Args... args)
+{
+#ifdef __clang__
+    _Pragma("clang diagnostic push")
+        _Pragma("clang diagnostic ignored \"-Wformat-security\"")
+#endif
+    std::fputs("\033[1;33mWarning:\033[0m ", stderr);
+    std::fprintf(stderr, fmt, args...);
+    std::fputs("\n", stderr);
+#ifdef __clang__
+    _Pragma("clang diagnostic pop")
+#endif
+}
+
 using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
 
 #define SAFE_FOPENA(fname, mode) scopedFILE(std::fopen(fname, mode), std::fclose)
@@ -54,11 +69,17 @@ const char* CONCAT(path, _str) = CONCAT(path, _stdstr).c_str();
 const char* CONCAT(path, _str) = path.c_str();
 #endif
 
+// this has good codegen
 template <typename T>
 inline void set_bit(T* ptr, int bit, bool val)
 {
-    // this has good codegen
     *ptr = (*ptr & ~(0x1 << bit)) | (val << bit);
+}
+
+template <typename T>
+inline bool get_bit(T word, int bit)
+{
+    return (word & (0x1 << bit)) != 0;
 }
 
 #endif

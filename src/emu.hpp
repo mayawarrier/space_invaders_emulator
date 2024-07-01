@@ -5,6 +5,7 @@
 #include <array>
 #include <memory>
 #include <SDL.h>
+#include <SDL_mixer.h>
 
 #include "i8080/i8080.hpp"
 #include "utils.hpp"
@@ -13,16 +14,18 @@
 #define KEY_1P_START SDL_SCANCODE_1
 #define KEY_2P_START SDL_SCANCODE_2
 
-#define KEY_P1_LEFT SDL_SCANCODE_A
-#define KEY_P1_RIGHT SDL_SCANCODE_D
-#define KEY_P1_FIRE SDL_SCANCODE_LCTRL
+#define KEY_P1_LEFT SDL_SCANCODE_LEFT
+#define KEY_P1_RIGHT SDL_SCANCODE_RIGHT
+#define KEY_P1_FIRE SDL_SCANCODE_SPACE
 
-#define KEY_P2_LEFT SDL_SCANCODE_LEFT
-#define KEY_P2_RIGHT SDL_SCANCODE_RIGHT
-#define KEY_P2_FIRE SDL_SCANCODE_RCTRL
+#define KEY_P2_LEFT SDL_SCANCODE_A
+#define KEY_P2_RIGHT SDL_SCANCODE_D
+#define KEY_P2_FIRE SDL_SCANCODE_LCTRL
 
 #define SCREEN_NATIVERES_X 224
 #define SCREEN_NATIVERES_Y 256
+
+#define NUM_SOUNDS 10
 
 struct machine
 {
@@ -32,10 +35,16 @@ struct machine
     i8080_word_t in_port1;
     i8080_word_t in_port2;
 
+    // Shift register chip
     i8080_dword_t shiftreg;
     i8080_word_t shiftreg_off;
 
+    // Video chip interrupts
     i8080_word_t intr_opcode;
+
+    // Sound chip
+    Mix_Chunk* sounds[10];
+    bool snd_playing[10];
 };
 
 // sdl_pixelfmt -> color palette
@@ -58,8 +67,9 @@ struct emulator
     ~emulator();
 
 private:
-    int read_rom(const fs::path& path);
-    int init_SDL(uint scresX, uint scresY);
+    int read_rom(const fs::path& dir);
+    int init_graphics(uint scresX, uint scresY);
+    int init_audio(const fs::path& audiodir);
 
     void handle_input(SDL_Scancode sc, bool pressed);
 

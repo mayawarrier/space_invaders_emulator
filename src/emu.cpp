@@ -1,5 +1,5 @@
 //
-// Emulate a Taito Space Invaders arcade cabinet.
+// Emulate a Taito Space Invaders arcade machine.
 // See https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html
 // for documentation on everything emulated here.
 //
@@ -11,7 +11,6 @@
 
 #include "i8080/i8080_opcodes.h"
 #include "emu.hpp"
-
 
 #define MACHINE static_cast<machine*>(cpu->udata)
 
@@ -32,7 +31,7 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
     machine* m = MACHINE;
     switch (port)
     {
-    case 0: return 0b00001110; // unused by ROM
+    case 0: return 0x0e; // unused by ROM
     case 1: return m->in_port1;
     case 2: return m->in_port2;
 
@@ -40,9 +39,32 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
         return i8080_word_t(m->shiftreg >> (8 - m->shiftreg_off));
 
     default: 
-        std::fprintf(stderr, 
-            "Warning: IO read from unmapped port %d\n", int(port));
+        pWARNING("IO read from unmapped port %d\n", int(port));
         return 0;
+    }
+}
+
+// Some sounds must be debounced to avoid echo
+static bool snd_must_debounce(int idx)
+{
+    return idx != 0 && idx != 9;
+}
+
+static void handle_sound(machine* m, int idx, bool on)
+{
+    if (snd_must_debounce(idx))
+    {
+        if (on) {
+            if (!m->snd_playing[idx])
+            {
+                Mix_PlayChannel(idx, m->sounds[idx], 0);
+                m->snd_playing[idx] = true;
+            }
+        } 
+        else { m->snd_playing[idx] = false; }
+    }
+    else if (on) { 
+        Mix_PlayChannel(idx, m->sounds[idx], 0); 
     }
 }
 
@@ -60,18 +82,25 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
         m->shiftreg |= (i8080_dword_t(word) << 8);
         break;
 
-    case 3: case 5:
-        //std::printf("Sounds are unimplemented\n");
+    case 3: 
+        for (int i = 0; i < 4; ++i) {
+            handle_sound(m, i, get_bit(word, i));
+        }
+        handle_sound(m, 9, get_bit(word, 4));
         break;
 
-        // Ignore watchdog.
-        // This is intended to reset the machine in the event
-        // of a hardware issue.
+    case 5:
+        for (int i = 0; i < 5; ++i) {
+            handle_sound(m, i + 4, get_bit(word, i));
+        }
+        break;
+
+        // Ignore watchdog port. This is intended to reset 
+        // the machine in the event of a hardware issue.
     case 6: break;
 
     default:
-        std::fprintf(stderr,
-            "Warning: IO write to unmapped port %d\n", int(port));
+        pWARNING("IO write to unmapped port %d\n", int(port));
         break;
     }
 }
@@ -108,17 +137,17 @@ int emulator::read_rom(const fs::path& dir)
         e = read_file(dir / "invaders.g", &m.mem[2048], 2048); if (e) { return e; }
         e = read_file(dir / "invaders.f", &m.mem[4096], 2048); if (e) { return e; }
         e = read_file(dir / "invaders.e", &m.mem[6144], 2048); if (e) { return e; }
-        std::printf("Loaded invaders.efgh\n");
+        std::printf("Loaded ROM from invaders.efgh\n");
         return 0;
     }
 }
 
-enum palcol : uint8_t
+enum palidx : uint8_t
 {
-    PALCOLOR_BLACK,
-    PALCOLOR_GREEN,
-    PALCOLOR_RED,
-    PALCOLOR_WHITE,
+    PALIDX_BLACK,
+    PALIDX_GREEN,
+    PALIDX_RED,
+    PALIDX_WHITE,
 };
 
 static const std::array<fmt_palette, 3> PIXFMT_2PALETTE = {
@@ -137,7 +166,7 @@ static const char* pixfmt_name(uint32_t fmt)
     return str.data();
 }
 
-int emulator::init_SDL(uint scresX, uint scresY)
+int emulator::init_graphics(uint scresX, uint scresY)
 {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         return mERROR("SDL_Init(): %s\n", SDL_GetError());
@@ -156,9 +185,9 @@ int emulator::init_SDL(uint scresX, uint scresY)
     // use first pixel format available 
     // see https://stackoverflow.com/questions/56143991/
     std::string triedfmts;
-    for (auto& fmt: PIXFMT_2PALETTE)
+    for (auto& fmt : PIXFMT_2PALETTE)
     {
-        m_screentex = SDL_CreateTexture(m_renderer, 
+        m_screentex = SDL_CreateTexture(m_renderer,
             fmt.first, SDL_TEXTUREACCESS_STREAMING, scresX, scresY);
         if (!m_screentex) { continue; }
 
@@ -171,7 +200,7 @@ int emulator::init_SDL(uint scresX, uint scresY)
             m_screentex = NULL;
             if (!triedfmts.empty()) { triedfmts += ", "; }
             triedfmts += pixfmt_name(fmt.first);
-        } 
+        }
         else {
             std::printf("Using pixel format %s\n", pixfmt_name(fmt.first));
             m_fmtpalette = &fmt;
@@ -179,10 +208,47 @@ int emulator::init_SDL(uint scresX, uint scresY)
         }
     }
     if (!m_screentex) {
-        return mERROR("Could not create texture, " 
+        return mERROR("Could not create texture, "
             "tried formats: %s", triedfmts.c_str());
     }
 
+    std::printf("Initialized graphics\n");
+    return 0;
+}
+
+int emulator::init_audio(const fs::path& audio_dir) 
+{
+    if (Mix_OpenAudio(11025, AUDIO_U8, 1, 2048) != 0) {
+        return mERROR("Mix_OpenAudio(): %s", Mix_GetError());
+    }
+    if (Mix_AllocateChannels(NUM_SOUNDS) != NUM_SOUNDS) {
+        return mERROR("Mix_AllocateChannels(): %s", Mix_GetError());
+    }
+
+    const std::array<const char*, NUM_SOUNDS> audio_fnames = {
+        "0.wav", "1.wav", "2.wav", "3.wav", "4.wav",
+        "5.wav", "6.wav", "7.wav", "8.wav", "9.wav"
+    };
+    int num_loaded = 0;
+    for (int i = 0; i < NUM_SOUNDS; ++i)
+    {
+        fs::path path = audio_dir / audio_fnames[i];
+        DECL_UTF8PATH_STR(path)
+    
+        m.sounds[i] = Mix_LoadWAV(path_str);
+        m.snd_playing[i] = false;
+
+        if (!m.sounds[i]) {
+            pWARNING("Could not open %s: %s", path_str, Mix_GetError());
+        }
+        num_loaded += (m.sounds[i] != NULL);
+    }
+
+    if (num_loaded == NUM_SOUNDS) {
+        std::printf("Initialized audio\n");
+    } else {
+        pWARNING("Some audio files could not be loaded\n");
+    }
     return 0;
 }
 
@@ -198,7 +264,7 @@ emulator::emulator(const fs::path& romdir, uint scalefac) :
     m.cpu.reset();
 
     m.in_port1 = 0b00001000;
-    m.in_port2 = 0;
+    m.in_port2 = 0b00001000;
     m.shiftreg = 0;
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
@@ -206,15 +272,18 @@ emulator::emulator(const fs::path& romdir, uint scalefac) :
     std::printf("Initialized machine\n");
 
     m.mem = std::make_unique<i8080_word_t[]>(65536);
-    if (read_rom(romdir) != 0) { return; }
-    
-    if (init_SDL(
-        SCREEN_NATIVERES_X * scalefac, 
-        SCREEN_NATIVERES_Y * scalefac) != 0) { 
+    if (read_rom(romdir) != 0) { 
         return; 
     }
-    std::printf("Initialized SDL\n");
 
+    uint scresX = SCREEN_NATIVERES_X * scalefac;
+    uint scresY = SCREEN_NATIVERES_Y * scalefac;
+    if (init_graphics(scresX, scresY) != 0) {
+        return; 
+    }
+    if (init_audio(romdir) != 0) { 
+        return; 
+    }
     m_ok = true;
 }
 
@@ -266,17 +335,17 @@ void emulator::gen_frame(uint64_t& nframes, uint64_t& last_cpucycles)
 
 // Pixel color after gel overlay
 // https://tcrf.net/images/a/af/SpaceInvadersArcColorUseTV.png
-static palcol pixel_color(uint x, uint y, bool pixel)
+static palidx pixel_color(uint x, uint y, bool pixel)
 {  
-    if (!pixel) { return PALCOLOR_BLACK; }
+    if (!pixel) { return PALIDX_BLACK; }
 
     if ((y <= 15 && x > 24 && x < 136) || (y > 15 && y < 71)) {
-        return PALCOLOR_GREEN;
+        return PALIDX_GREEN;
     }
     else if (y >= 192 && y < 223) {
-        return PALCOLOR_RED;
+        return PALIDX_RED;
     }
-    else { return PALCOLOR_WHITE; }
+    else { return PALIDX_WHITE; }
 }
 
 void emulator::render_frame() const
@@ -295,7 +364,7 @@ void emulator::render_frame() const
 
             for (int bit = 0; bit < 8; ++bit)
             {
-                palcol colidx = pixel_color(x, y, ((word & (0x1 << bit)) != 0));
+                palidx colidx = pixel_color(x, y, get_bit(word, bit));
                 uint32_t color = m_fmtpalette->second[colidx];
 
                 uint st_idx = m_scalefac * (m_scresX * (SCREEN_NATIVERES_Y - y - bit - 1) + x);
@@ -368,7 +437,7 @@ void emulator::run()
         render_frame();
         
         // Vsync at 60fps (or as close to it as possible)
-        // SDL produces better results than chrono
+        // redo this with chrono? the audio sounds off and this might be the culprit
         float rendtimeMS = 1000.0f * perfcount2sec(SDL_GetPerformanceCounter() - t_start);
         if (rendtimeMS < 16.666f) {
             SDL_Delay(std::floor(16.666f - rendtimeMS));
@@ -383,6 +452,10 @@ void emulator::run()
 
 emulator::~emulator()
 {
+    for (int i = 0; i < NUM_SOUNDS; ++i) {
+        Mix_FreeChunk(m.sounds[i]);
+    }
+    Mix_CloseAudio();
     SDL_DestroyTexture(m_screentex);
     SDL_DestroyRenderer(m_renderer);
     SDL_DestroyWindow(m_window);

@@ -2,3 +2,6 @@
 out/
 build/
 libs/SDL2
+libs/SDL2_mixer
+# roms + audio
+data/
