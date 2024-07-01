@@ -55,17 +55,20 @@ static void handle_sound(machine* m, int idx, bool on)
     if (snd_must_debounce(idx))
     {
         if (on) {
-            if (!m->snd_playing[idx])
-            {
+            if (!m->snd_playing[idx] && !Mix_Playing(idx)) {
                 Mix_PlayChannel(idx, m->sounds[idx], 0);
                 m->snd_playing[idx] = true;
             }
-        } 
+        }
         else { m->snd_playing[idx] = false; }
     }
-    else if (on) { 
-        Mix_PlayChannel(idx, m->sounds[idx], 0); 
-    }
+    else {
+        if (on) {
+            Mix_PlayChannel(idx, m->sounds[idx], 0);
+        } else { 
+            Mix_HaltChannel(idx);
+        }
+    } 
 }
 
 static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
@@ -168,7 +171,7 @@ static const char* pixfmt_name(uint32_t fmt)
 
 int emulator::init_graphics(uint scresX, uint scresY)
 {
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         return mERROR("SDL_Init(): %s\n", SDL_GetError());
     }
 
@@ -243,6 +246,11 @@ int emulator::init_audio(const fs::path& audio_dir)
         }
         num_loaded += (m.sounds[i] != NULL);
     }
+
+    // adjust volume
+    Mix_Volume(0, MIX_MAX_VOLUME / 2);
+    Mix_Volume(8, MIX_MAX_VOLUME / 2);
+    Mix_Volume(3, int(MIX_MAX_VOLUME * 0.75)); 
 
     if (num_loaded == NUM_SOUNDS) {
         std::printf("Initialized audio\n");
@@ -396,11 +404,6 @@ void emulator::render_frame() const
     SDL_RenderPresent(m_renderer);
 }
 
-static float perfcount2sec(uint64_t val)
-{
-    return val / float(SDL_GetPerformanceFrequency());
-}
-
 void emulator::run()
 {
     SDL_ShowWindow(m_window);
@@ -408,7 +411,10 @@ void emulator::run()
     uint64_t nframes = 0;
     uint64_t last_cpucycles = 0;
 
-    uint64_t t_start = SDL_GetPerformanceCounter();
+    // 100ns resolution on Windows
+    using clk = std::chrono::steady_clock;
+
+    clk::time_point t_start = clk::now();
 
     bool running = true;
     while (running)
@@ -435,18 +441,19 @@ void emulator::run()
 
         gen_frame(nframes, last_cpucycles);
         render_frame();
-        
-        // Vsync at 60fps (or as close to it as possible)
-        // redo this with chrono? the audio sounds off and this might be the culprit
-        float rendtimeMS = 1000.0f * perfcount2sec(SDL_GetPerformanceCounter() - t_start);
-        if (rendtimeMS < 16.666f) {
-            SDL_Delay(std::floor(16.666f - rendtimeMS));
-        }
-        auto t_laststart = t_start;
-        t_start = SDL_GetPerformanceCounter();
 
-        std::printf("\rFPS: %ld", 
-            std::lroundf(1.f / perfcount2sec(t_start - t_laststart)));        
+        // Vsync at 60fps (or as close to it as possible)
+        constexpr auto framedur_60fps = std::chrono::microseconds(16667);
+        auto framedur = clk::now() - t_start;
+        if (framedur < framedur_60fps) {
+            std::this_thread::sleep_for(framedur_60fps - framedur);
+        }
+        
+        auto t_laststart = t_start;
+        t_start = clk::now();
+
+        float fps = 1.f / std::chrono::duration<float>(t_start - t_laststart).count();
+        std::printf("\rFPS: %ld", std::lroundf(fps));
     }
 }
 
