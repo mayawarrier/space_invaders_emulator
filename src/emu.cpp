@@ -39,36 +39,32 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
         return i8080_word_t(m->shiftreg >> (8 - m->shiftreg_off));
 
     default: 
-        pWARNING("IO read from unmapped port %d\n", int(port));
+        pWARNING("IO read from unmapped port %d", int(port));
         return 0;
     }
 }
 
-// Some sounds must be debounced to avoid echo
-static bool snd_must_debounce(int idx)
+// looping sounds repeat until the pin goes off, 
+// non-looping sounds are played in rapid succession
+static bool snd_is_looping(int idx)
 {
-    return idx != 0 && idx != 9;
+    return idx == 0 || idx == 9;
 }
 
-static void handle_sound(machine* m, int idx, bool on)
+static void handle_sound(machine* m, int idx, bool pin_on)
 {
-    if (snd_must_debounce(idx))
-    {
-        if (on) {
-            if (!m->snd_playing[idx] && !Mix_Playing(idx)) {
-                Mix_PlayChannel(idx, m->sounds[idx], 0);
-                m->snd_playing[idx] = true;
-            }
+    // debounce to avoid echo
+    if (pin_on) {
+        if (!m->snd_playing[idx]) {
+            Mix_PlayChannel(idx, m->sounds[idx], snd_is_looping(idx) ? -1 : 0);
+            m->snd_playing[idx] = true;
         }
-        else { m->snd_playing[idx] = false; }
-    }
-    else {
-        if (on) {
-            Mix_PlayChannel(idx, m->sounds[idx], 0);
-        } else { 
+    } else {
+        if (snd_is_looping(idx)) {
             Mix_HaltChannel(idx);
         }
-    } 
+        m->snd_playing[idx] = false; 
+    }
 }
 
 static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
@@ -98,12 +94,12 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
         }
         break;
 
-        // Ignore watchdog port. This is intended to reset 
-        // the machine in the event of a hardware issue.
+        // Ignore watchdog port (intended to reset
+        // the machine if a hardware issue occurs).
     case 6: break;
 
     default:
-        pWARNING("IO write to unmapped port %d\n", int(port));
+        pWARNING("IO write to unmapped port %d", int(port));
         break;
     }
 }
@@ -172,17 +168,17 @@ static const char* pixfmt_name(uint32_t fmt)
 int emulator::init_graphics(uint scresX, uint scresY)
 {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        return mERROR("SDL_Init(): %s\n", SDL_GetError());
+        return mERROR("SDL_Init(): %s", SDL_GetError());
     }
 
     m_window = SDL_CreateWindow("Space Invaders",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, scresX, scresY, SDL_WINDOW_HIDDEN);
     if (!m_window) {
-        return mERROR("SDL_CreateWindow(): %s\n", SDL_GetError());
+        return mERROR("SDL_CreateWindow(): %s", SDL_GetError());
     }
     m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED);
     if (!m_renderer) {
-        return mERROR("SDL_CreateRenderer(): %s\n", SDL_GetError());
+        return mERROR("SDL_CreateRenderer(): %s", SDL_GetError());
     }
 
     // use first pixel format available 
@@ -221,14 +217,15 @@ int emulator::init_graphics(uint scresX, uint scresY)
 
 int emulator::init_audio(const fs::path& audio_dir) 
 {
-    if (Mix_OpenAudio(11025, AUDIO_U8, 1, 2048) != 0) {
+    // chunksize is small to reduce latency
+    if (Mix_OpenAudio(11025, AUDIO_U8, 1, 512) != 0) {
         return mERROR("Mix_OpenAudio(): %s", Mix_GetError());
     }
     if (Mix_AllocateChannels(NUM_SOUNDS) != NUM_SOUNDS) {
         return mERROR("Mix_AllocateChannels(): %s", Mix_GetError());
     }
 
-    const std::array<const char*, NUM_SOUNDS> audio_fnames = {
+    const char* audio_fnames[] = {
         "0.wav", "1.wav", "2.wav", "3.wav", "4.wav",
         "5.wav", "6.wav", "7.wav", "8.wav", "9.wav"
     };
@@ -248,14 +245,15 @@ int emulator::init_audio(const fs::path& audio_dir)
     }
 
     // adjust volume
-    Mix_Volume(0, MIX_MAX_VOLUME / 2);
-    Mix_Volume(8, MIX_MAX_VOLUME / 2);
-    Mix_Volume(3, int(MIX_MAX_VOLUME * 0.75)); 
+    Mix_Volume(0, MIX_MAX_VOLUME / 2); // UFO fly
+    Mix_Volume(8, MIX_MAX_VOLUME / 2); // UFO die
+    Mix_Volume(3, MIX_MAX_VOLUME / 2); // Alien die
+    Mix_Volume(1, MIX_MAX_VOLUME / 2); // Shoot
 
     if (num_loaded == NUM_SOUNDS) {
         std::printf("Initialized audio\n");
     } else {
-        pWARNING("Some audio files could not be loaded\n");
+        pWARNING("Some audio files could not be loaded");
     }
     return 0;
 }
