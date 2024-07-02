@@ -441,7 +441,6 @@ void emulator::run()
 
         gen_frame(cpucycles, nframes);
         render_frame();
-        nframes++;
 
         // Vsync
         auto framedur = clk::now() - t_start;
@@ -467,10 +466,11 @@ void emulator::run()
 
             std::printf("\rFPS: %ld", fps_avg);
         } 
-        else {
-            float fps = 1.f / tim::duration<float>(t_start - t_laststart).count();
-            fps_sum += fps;
-        }
+        
+        float fps = 1.f / tim::duration<float>(t_start - t_laststart).count();
+        fps_sum += fps;
+
+        nframes++;
     }
 }
 
