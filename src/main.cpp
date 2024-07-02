@@ -2,12 +2,9 @@
 
 
 #include <cstdio>
-#include <SDL.h>
 #include <SDL_main.h>
 
-
 #include "emu.hpp"
-#include "utils.hpp"
 
 
 int main(int argc, char* argv[])

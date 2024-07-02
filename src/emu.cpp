@@ -4,7 +4,6 @@
 // for documentation on everything emulated here.
 //
 
-#include <chrono>
 #include <thread>
 #include <string_view>
 #include <cassert>
@@ -314,12 +313,12 @@ void emulator::handle_input(SDL_Scancode sc, bool pressed)
 }
 
 // Run CPU for one frame.
-void emulator::gen_frame(uint64_t& nframes, uint64_t& last_cpucycles)
+void emulator::gen_frame(uint64_t& last_cpucycles, uint64_t nframes_rend)
 {
     // 33333.33 clk cycles at CPU's 2Mhz clock speed (16667us/0.5us)
-    uint64_t frame_cycles = 33333 + (nframes % 3 == 0);
+    uint64_t frame_cycles = 33333 + (nframes_rend % 3 == 0);
 
-    // run till mid-screen interrupt 
+    // run till mid-screen
     // 14286 = (96/224) * (16667us/0.5us)
     while (m.cpu.cycles - last_cpucycles < 14286) {
         m.cpu.step();
@@ -327,16 +326,15 @@ void emulator::gen_frame(uint64_t& nframes, uint64_t& last_cpucycles)
     m.intr_opcode = i8080_RST_1;
     m.cpu.interrupt();
 
-    // run till end of screen (VLANK) interrupt
+    // run till end of screen (VBLANK)
     while (m.cpu.cycles - last_cpucycles < frame_cycles) {
         m.cpu.step();
     }
     m.intr_opcode = i8080_RST_2;
     m.cpu.interrupt();
 
-    // adjust extra cycles in next frame
+    // extra cycles adjusted in next frame
     last_cpucycles += frame_cycles;
-    nframes++;
 }
 
 // Pixel color after gel overlay
@@ -402,15 +400,19 @@ void emulator::render_frame() const
     SDL_RenderPresent(m_renderer);
 }
 
+// 100ns resolution on Windows
+using clk = tim::steady_clock;
+
 void emulator::run()
 {
     SDL_ShowWindow(m_window);
 
+    float fps_sum = 0;
     uint64_t nframes = 0;
-    uint64_t last_cpucycles = 0;
+    uint64_t cpucycles = 0;
 
-    // 100ns resolution on Windows
-    using clk = std::chrono::steady_clock;
+    // may change if not hitting 60fps
+    auto framedur_target = tim::microseconds(16667);
 
     clk::time_point t_start = clk::now();
 
@@ -437,21 +439,38 @@ void emulator::run()
             }
         }
 
-        gen_frame(nframes, last_cpucycles);
+        gen_frame(cpucycles, nframes);
         render_frame();
+        nframes++;
 
-        // Vsync at 60fps (or as close to it as possible)
-        constexpr auto framedur_60fps = std::chrono::microseconds(16667);
+        // Vsync
         auto framedur = clk::now() - t_start;
-        if (framedur < framedur_60fps) {
-            std::this_thread::sleep_for(framedur_60fps - framedur);
+        if (framedur < framedur_target) {
+            std::this_thread::sleep_for(framedur_target - framedur);
         }
         
         auto t_laststart = t_start;
         t_start = clk::now();
 
-        float fps = 1.f / std::chrono::duration<float>(t_start - t_laststart).count();
-        std::printf("\rFPS: %ld", std::lroundf(fps));
+        // Adjust Vsync time to meet 60fps as closely as possible
+        if (nframes % 10 == 0) 
+        {
+            long fps_avg = std::lroundf(fps_sum / 10);
+            if (fps_avg < 54) {
+                framedur_target -= tim::microseconds(1000);
+            } else if (fps_avg < 60) {
+                framedur_target -= tim::microseconds(100);
+            } else if (fps_avg > 60) {
+                framedur_target += tim::microseconds(100);
+            }
+            fps_sum = 0;
+
+            std::printf("\rFPS: %ld", fps_avg);
+        } 
+        else {
+            float fps = 1.f / tim::duration<float>(t_start - t_laststart).count();
+            fps_sum += fps;
+        }
     }
 }
 

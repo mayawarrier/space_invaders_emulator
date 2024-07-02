@@ -28,7 +28,7 @@ target_link_libraries(spaceinvaders PRIVATE SDL2_mixer::SDL2_mixer)
 
 if (WIN32)
     # remove console window
-    target_link_options(spaceinvaders PRIVATE "/SUBSYSTEM:WINDOWS")
+    #target_link_options(spaceinvaders PRIVATE "/SUBSYSTEM:WINDOWS")
     # allow fopen, etc.
     target_compile_definitions(spaceinvaders PRIVATE _CRT_SECURE_NO_WARNINGS)
 

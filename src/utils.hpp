@@ -4,13 +4,17 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <chrono>
 #include <memory>
 
 namespace fs = std::filesystem;
+// can't name this time unfortunately
+namespace tim = std::chrono;
 
 using uint = unsigned int;
 
 #define CONCAT(x, y) x##y
+
 
 // Print error message and return error code.
 template <typename ...Args>

@@ -10,6 +10,7 @@
 #include "i8080/i8080.hpp"
 #include "utils.hpp"
 
+
 #define KEY_CREDIT SDL_SCANCODE_RETURN
 #define KEY_1P_START SDL_SCANCODE_1
 #define KEY_2P_START SDL_SCANCODE_2
@@ -27,6 +28,7 @@
 
 #define NUM_SOUNDS 10
 
+
 struct machine
 {
     i8080 cpu;
@@ -43,8 +45,8 @@ struct machine
     i8080_word_t intr_opcode;
 
     // Sound chip
-    Mix_Chunk* sounds[10];
-    bool snd_playing[10];
+    Mix_Chunk* sounds[NUM_SOUNDS];
+    bool snd_playing[NUM_SOUNDS];
 };
 
 // sdl_pixelfmt -> color palette
@@ -73,7 +75,7 @@ private:
 
     void handle_input(SDL_Scancode sc, bool pressed);
 
-    void gen_frame(uint64_t& nframes, uint64_t& last_cpucycles);
+    void gen_frame(uint64_t& cpucycles, uint64_t nframes_rend);
     void render_frame() const;
 
 private:
