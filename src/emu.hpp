@@ -49,8 +49,16 @@ struct machine
     bool snd_playing[NUM_SOUNDS];
 };
 
-// sdl_pixelfmt -> color palette
-using fmt_palette = std::pair<uint32_t, std::array<uint32_t, 4>>;
+struct pix_fmt
+{
+    uint32_t fmt;
+    uint bpp;
+    std::array<uint32_t, 4> colors;
+
+    pix_fmt(uint32_t fmt, std::array<uint32_t, 4> pal) :
+        fmt(fmt), bpp(SDL_BITSPERPIXEL(fmt)), colors(pal)
+    {}
+};
 
 struct emulator
 {
@@ -82,12 +90,10 @@ private:
     machine m;
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
-
     SDL_Texture* m_screentex;
-    const fmt_palette* m_fmtpalette;
+    const pix_fmt* m_pixfmt;
     uint m_scalefac;
     uint m_scresX;
-
     bool m_ok;
 };
 

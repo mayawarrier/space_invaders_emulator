@@ -6,7 +6,7 @@
 
 #include <thread>
 #include <string_view>
-#include <cassert>
+#include <iostream>
 
 #include "i8080/i8080_opcodes.h"
 #include "emu.hpp"
@@ -34,7 +34,7 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
     case 1: return m->in_port1;
     case 2: return m->in_port2;
 
-    case 3: // read word, offset from MSB
+    case 3: // offset from MSB
         return i8080_word_t(m->shiftreg >> (8 - m->shiftreg_off));
 
     default: 
@@ -43,16 +43,18 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
     }
 }
 
-// looping sounds repeat until the pin goes off, 
-// non-looping sounds are played in rapid succession
 static bool snd_is_looping(int idx)
 {
     return idx == 0 || idx == 9;
 }
 
+// looping: repeat sound while pin is on.
+// non-looping: restart sound every positive edge (off->on)
 static void handle_sound(machine* m, int idx, bool pin_on)
 {
-    // debounce to avoid echo
+    if (!m->sounds[idx]) {
+        return;
+    }
     if (pin_on) {
         if (!m->snd_playing[idx]) {
             Mix_PlayChannel(idx, m->sounds[idx], snd_is_looping(idx) ? -1 : 0);
@@ -75,7 +77,7 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
         m->shiftreg_off = (word & 0x7);
         break;
 
-    case 4: // do shift (from MSB)
+    case 4: // shift from MSB
         m->shiftreg >>= 8;
         m->shiftreg |= (i8080_dword_t(word) << 8);
         break;
@@ -93,8 +95,8 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
         }
         break;
 
-        // Ignore watchdog port (intended to reset
-        // the machine if a hardware issue occurs).
+        // Ignore watchdog port
+        // (intended to reset machine if a hardware issue occurs)
     case 6: break;
 
     default:
@@ -140,19 +142,20 @@ int emulator::read_rom(const fs::path& dir)
     }
 }
 
-enum palidx : uint8_t
+// like a palette color
+enum col_idx : uint8_t
 {
-    PALIDX_BLACK,
-    PALIDX_GREEN,
-    PALIDX_RED,
-    PALIDX_WHITE,
+    COLIDX_BLACK,
+    COLIDX_GREEN,
+    COLIDX_RED,
+    COLIDX_WHITE,
 };
 
-static const std::array<fmt_palette, 3> PIXFMT_2PALETTE = {
-                                         // black,      green,      red,        white    
-    fmt_palette(SDL_PIXELFORMAT_RGB565,   { 0x00000000, 0x1FE3,     0xF8E3,     0xFFFF,    }),
-    fmt_palette(SDL_PIXELFORMAT_XRGB8888, { 0x00000000, 0x001EFE1E, 0x00FE1E1E, 0x00FFFFFF }),
-    fmt_palette(SDL_PIXELFORMAT_ARGB8888, { 0xFF000000, 0xFF1EFE1E, 0xFFFE1E1E, 0xFFFFFFFF })
+static const std::array<pix_fmt, 3> PIXFMTS = {
+                                     // black,      green,      red,        white
+    pix_fmt(SDL_PIXELFORMAT_BGR565,   { 0x0000,     0x1FE3,     0x18FF,     0xFFFF,    }),
+    pix_fmt(SDL_PIXELFORMAT_ARGB8888, { 0xFF000000, 0xFF1EFE1E, 0xFFFE1E1E, 0xFFFFFFFF }),
+    pix_fmt(SDL_PIXELFORMAT_ABGR8888, { 0xFF000000, 0xFF1EFE1E, 0xFF1E1EFE, 0xFFFFFFFF }),
 };
 
 static const char* pixfmt_name(uint32_t fmt)
@@ -180,34 +183,41 @@ int emulator::init_graphics(uint scresX, uint scresY)
         return mERROR("SDL_CreateRenderer(): %s", SDL_GetError());
     }
 
-    // use first pixel format available 
-    // see https://stackoverflow.com/questions/56143991/
-    std::string triedfmts;
-    for (auto& fmt : PIXFMT_2PALETTE)
-    {
-        m_screentex = SDL_CreateTexture(m_renderer,
-            fmt.first, SDL_TEXTUREACCESS_STREAMING, scresX, scresY);
-        if (!m_screentex) { continue; }
+    SDL_RendererInfo rendinfo;
+    if (SDL_GetRendererInfo(m_renderer, &rendinfo) != 0) {
+        return mERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
+    }
 
-        uint32_t gotfmt;
-        if (SDL_QueryTexture(m_screentex, &gotfmt, NULL, NULL, NULL) != 0) {
-            return mERROR("SDL_QueryTexture(): %s", SDL_GetError());
-        }
-        if (gotfmt != fmt.first) {
-            SDL_DestroyTexture(m_screentex);
-            m_screentex = NULL;
-            if (!triedfmts.empty()) { triedfmts += ", "; }
-            triedfmts += pixfmt_name(fmt.first);
-        }
-        else {
-            std::printf("Using pixel format %s\n", pixfmt_name(fmt.first));
-            m_fmtpalette = &fmt;
-            break;
+    std::printf("Using renderer %s\n", rendinfo.name);
+
+    // use first texture format available 
+    // see https://stackoverflow.com/questions/56143991/
+    m_pixfmt = nullptr;
+    for (auto& pixfmt : PIXFMTS) {
+        for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
+        {
+            if (rendinfo.texture_formats[i] == pixfmt.fmt) {
+                std::printf("Using pixel format %s\n", pixfmt_name(pixfmt.fmt));
+                m_pixfmt = &pixfmt;
+                break;
+            }
         }
     }
-    if (!m_screentex) {
+    if (!m_pixfmt) {
+        std::string triedfmts;
+        for (auto& pixfmt : PIXFMTS)
+        {
+            if (!triedfmts.empty()) { triedfmts += ", "; }
+            triedfmts += pixfmt_name(pixfmt.fmt);
+        }
         return mERROR("Could not create texture, "
             "tried formats: %s", triedfmts.c_str());
+    }
+    
+    m_screentex = SDL_CreateTexture(m_renderer, 
+        m_pixfmt->fmt, SDL_TEXTUREACCESS_STREAMING, scresX, scresY);
+    if (!m_screentex) {
+        return mERROR("SDL_CreateTexture(): %s", SDL_GetError());
     }
 
     std::printf("Initialized graphics\n");
@@ -268,8 +278,8 @@ emulator::emulator(const fs::path& romdir, uint scalefac) :
     m.cpu.udata = &m;
     m.cpu.reset();
 
-    m.in_port1 = 0b00001000;
-    m.in_port2 = 0b00001000;
+    m.in_port1 = 0x8;
+    m.in_port2 = 0;
     m.shiftreg = 0;
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
@@ -326,7 +336,7 @@ void emulator::gen_frame(uint64_t& last_cpucycles, uint64_t nframes_rend)
     m.intr_opcode = i8080_RST_1;
     m.cpu.interrupt();
 
-    // run till end of screen (VBLANK)
+    // run till end of screen (start of VBLANK)
     while (m.cpu.cycles - last_cpucycles < frame_cycles) {
         m.cpu.step();
     }
@@ -339,17 +349,15 @@ void emulator::gen_frame(uint64_t& last_cpucycles, uint64_t nframes_rend)
 
 // Pixel color after gel overlay
 // https://tcrf.net/images/a/af/SpaceInvadersArcColorUseTV.png
-static palidx pixel_color(uint x, uint y, bool pixel)
+static col_idx pixel_color(uint x, uint y)
 {  
-    if (!pixel) { return PALIDX_BLACK; }
-
     if ((y <= 15 && x > 24 && x < 136) || (y > 15 && y < 71)) {
-        return PALIDX_GREEN;
+        return COLIDX_GREEN;
     }
     else if (y >= 192 && y < 223) {
-        return PALIDX_RED;
+        return COLIDX_RED;
     }
-    else { return PALIDX_WHITE; }
+    else { return COLIDX_WHITE; }
 }
 
 void emulator::render_frame() const
@@ -368,8 +376,8 @@ void emulator::render_frame() const
 
             for (int bit = 0; bit < 8; ++bit)
             {
-                palidx colidx = pixel_color(x, y, get_bit(word, bit));
-                uint32_t color = m_fmtpalette->second[colidx];
+                col_idx colidx = get_bit(word, bit) ? pixel_color(x, y) : COLIDX_BLACK;
+                uint32_t color = m_pixfmt->colors[colidx];
 
                 uint st_idx = m_scalefac * (m_scresX * (SCREEN_NATIVERES_Y - y - bit - 1) + x);
 
@@ -379,14 +387,11 @@ void emulator::render_frame() const
                     {
                         uint idx = st_idx + m_scresX * ysqr + xsqr;
 
-                        switch (m_fmtpalette->first)
+                        switch (m_pixfmt->bpp)
                         {
-                        case SDL_PIXELFORMAT_RGB565:
-                            static_cast<uint16_t*>(pixels)[idx] = uint16_t(color);
+                        case 16: static_cast<uint16_t*>(pixels)[idx] = uint16_t(color);
                             break;
-                        case SDL_PIXELFORMAT_XRGB8888:
-                        case SDL_PIXELFORMAT_ARGB8888:
-                            static_cast<uint32_t*>(pixels)[idx] = color;
+                        case 32: static_cast<uint32_t*>(pixels)[idx] = color;
                             break;
                         }
                     }
@@ -411,7 +416,6 @@ void emulator::run()
     uint64_t nframes = 0;
     uint64_t cpucycles = 0;
 
-    // may change if not hitting 60fps
     auto framedur_target = tim::microseconds(16667);
 
     clk::time_point t_start = clk::now();
@@ -442,7 +446,7 @@ void emulator::run()
         gen_frame(cpucycles, nframes);
         render_frame();
 
-        // Vsync
+        // Wait until vsync
         auto framedur = clk::now() - t_start;
         if (framedur < framedur_target) {
             std::this_thread::sleep_for(framedur_target - framedur);
@@ -451,14 +455,16 @@ void emulator::run()
         auto t_laststart = t_start;
         t_start = clk::now();
 
-        // Adjust Vsync time to meet 60fps as closely as possible
+        // Adjust sleep time to meet CRT's 60Hz refresh rate
         if (nframes % 10 == 0) 
         {
             long fps_avg = std::lroundf(fps_sum / 10);
-            if (fps_avg < 54) {
+            if (fps_avg < 57) {
                 framedur_target -= tim::microseconds(1000);
             } else if (fps_avg < 60) {
                 framedur_target -= tim::microseconds(100);
+            } else if (fps_avg > 63) {
+                framedur_target += tim::microseconds(1000);
             } else if (fps_avg > 60) {
                 framedur_target += tim::microseconds(100);
             }
