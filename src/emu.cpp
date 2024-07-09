@@ -6,28 +6,29 @@
 
 #include <thread>
 #include <string_view>
-#include <iostream>
 
 #include "i8080/i8080_opcodes.h"
 #include "emu.hpp"
 
-#define MACHINE static_cast<machine*>(cpu->udata)
+static inline machine* MACHINE(i8080* cpu) { 
+    return static_cast<machine*>(cpu->udata);
+}
 
 static i8080_word_t cpu_mem_read(i8080* cpu, i8080_addr_t addr) {
-    return MACHINE->mem[addr];
+    return MACHINE(cpu)->mem[addr];
 }
 
 static void cpu_mem_write(i8080* cpu, i8080_addr_t addr, i8080_word_t word) {
-    MACHINE->mem[addr] = word;
+    MACHINE(cpu)->mem[addr] = word;
 }
 
 static i8080_word_t cpu_intr_read(i8080* cpu) {
-    return MACHINE->intr_opcode;
+    return MACHINE(cpu)->intr_opcode;
 }
 
 static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
 {
-    machine* m = MACHINE;
+    machine* m = MACHINE(cpu);
     switch (port)
     {
     case 0: return 0x0e; // unused by ROM
@@ -43,13 +44,14 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
     }
 }
 
+
+// looping: repeat sound while pin is on.
+// non-looping: restart sound every positive edge (off->on)
 static bool snd_is_looping(int idx)
 {
     return idx == 0 || idx == 9;
 }
 
-// looping: repeat sound while pin is on.
-// non-looping: restart sound every positive edge (off->on)
 static void handle_sound(machine* m, int idx, bool pin_on)
 {
     if (!m->sounds[idx]) {
@@ -57,10 +59,12 @@ static void handle_sound(machine* m, int idx, bool pin_on)
     }
     if (pin_on) {
         if (!m->snd_playing[idx]) {
-            Mix_PlayChannel(idx, m->sounds[idx], snd_is_looping(idx) ? -1 : 0);
+            int loops = snd_is_looping(idx) ? -1 : 0;
+            Mix_PlayChannel(idx, m->sounds[idx], loops);
             m->snd_playing[idx] = true;
         }
-    } else {
+    } 
+    else {
         if (snd_is_looping(idx)) {
             Mix_HaltChannel(idx);
         }
@@ -70,7 +74,7 @@ static void handle_sound(machine* m, int idx, bool pin_on)
 
 static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
 {
-    machine* m = MACHINE;
+    machine* m = MACHINE(cpu);
     switch (port)
     {
     case 2:
@@ -107,7 +111,7 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
 
 static int read_file(const fs::path& path, i8080_word_t* mem, unsigned size)
 {
-    DECL_UTF8PATH_STR(path);
+    DECL_PATH_TO_BSTR(path)
 
     scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
     if (!file) {
@@ -123,7 +127,7 @@ static int read_file(const fs::path& path, i8080_word_t* mem, unsigned size)
     return 0;
 }
 
-int emulator::read_rom(const fs::path& dir)
+int emulator::load_rom(const fs::path& dir)
 {
     if (fs::exists(dir / "invaders.rom")) {
         int e = read_file(dir / "invaders.rom", m.mem.get(), 8192);
@@ -178,6 +182,7 @@ int emulator::init_graphics(uint scresX, uint scresY)
     if (!m_window) {
         return mERROR("SDL_CreateWindow(): %s", SDL_GetError());
     }
+
     m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED);
     if (!m_renderer) {
         return mERROR("SDL_CreateRenderer(): %s", SDL_GetError());
@@ -197,7 +202,7 @@ int emulator::init_graphics(uint scresX, uint scresY)
         for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
         {
             if (rendinfo.texture_formats[i] == pixfmt.fmt) {
-                std::printf("Using pixel format %s\n", pixfmt_name(pixfmt.fmt));
+                std::printf("Using texture format %s\n", pixfmt_name(pixfmt.fmt));
                 m_pixfmt = &pixfmt;
                 break;
             }
@@ -205,13 +210,12 @@ int emulator::init_graphics(uint scresX, uint scresY)
     }
     if (!m_pixfmt) {
         std::string triedfmts;
-        for (auto& pixfmt : PIXFMTS)
-        {
+        for (auto& pixfmt : PIXFMTS) {
             if (!triedfmts.empty()) { triedfmts += ", "; }
             triedfmts += pixfmt_name(pixfmt.fmt);
         }
-        return mERROR("Could not create texture, "
-            "tried formats: %s", triedfmts.c_str());
+        return mERROR("No known texture format supported with this renderer. "
+            "Tried formats: %s", triedfmts.c_str());
     }
     
     m_screentex = SDL_CreateTexture(m_renderer, 
@@ -234,7 +238,7 @@ int emulator::init_audio(const fs::path& audio_dir)
         return mERROR("Mix_AllocateChannels(): %s", Mix_GetError());
     }
 
-    const char* audio_fnames[] = {
+    const char* audio_fnames[NUM_SOUNDS] = {
         "0.wav", "1.wav", "2.wav", "3.wav", "4.wav",
         "5.wav", "6.wav", "7.wav", "8.wav", "9.wav"
     };
@@ -242,7 +246,7 @@ int emulator::init_audio(const fs::path& audio_dir)
     for (int i = 0; i < NUM_SOUNDS; ++i)
     {
         fs::path path = audio_dir / audio_fnames[i];
-        DECL_UTF8PATH_STR(path)
+        DECL_PATH_TO_BSTR(path)
     
         m.sounds[i] = Mix_LoadWAV(path_str);
         m.snd_playing[i] = false;
@@ -267,9 +271,24 @@ int emulator::init_audio(const fs::path& audio_dir)
     return 0;
 }
 
-emulator::emulator(const fs::path& romdir, uint scalefac) :
-    m_scalefac(scalefac), m_scresX(SCREEN_NATIVERES_X * scalefac), m_ok(false)
+emulator::emulator(uint scalefac) :
+    m_window(nullptr), m_renderer(nullptr), m_screentex(nullptr),
+    m_scalefac(scalefac), m_scresX(SCREEN_NATIVERES_X * scalefac),
+    m_ok(false)
 {
+    for (int i = 0; i < NUM_SOUNDS; ++i) {
+        m.sounds[i] = nullptr;
+    }
+}
+
+emulator::emulator(const fs::path& romdir, uint scalefac) :
+    emulator(scalefac)
+{
+    m.mem = std::make_unique<i8080_word_t[]>(65536);
+    if (load_rom(romdir) != 0) { 
+        return; 
+    }
+
     m.cpu.mem_read = cpu_mem_read;
     m.cpu.mem_write = cpu_mem_write;
     m.cpu.io_read = cpu_io_read;
@@ -284,12 +303,7 @@ emulator::emulator(const fs::path& romdir, uint scalefac) :
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
 
-    std::printf("Initialized machine\n");
-
-    m.mem = std::make_unique<i8080_word_t[]>(65536);
-    if (read_rom(romdir) != 0) { 
-        return; 
-    }
+    std::printf("Initialized emulator core\n");
 
     uint scresX = SCREEN_NATIVERES_X * scalefac;
     uint scresY = SCREEN_NATIVERES_Y * scalefac;
@@ -300,6 +314,18 @@ emulator::emulator(const fs::path& romdir, uint scalefac) :
         return; 
     }
     m_ok = true;
+}
+
+emulator::~emulator()
+{
+    for (int i = 0; i < NUM_SOUNDS; ++i) {
+        Mix_FreeChunk(m.sounds[i]);
+    }
+    Mix_CloseAudio();
+    SDL_DestroyTexture(m_screentex);
+    SDL_DestroyRenderer(m_renderer);
+    SDL_DestroyWindow(m_window);
+    SDL_Quit();
 }
 
 void emulator::handle_input(SDL_Scancode sc, bool pressed)
@@ -389,10 +415,8 @@ void emulator::render_frame() const
 
                         switch (m_pixfmt->bpp)
                         {
-                        case 16: static_cast<uint16_t*>(pixels)[idx] = uint16_t(color);
-                            break;
-                        case 32: static_cast<uint32_t*>(pixels)[idx] = color;
-                            break;
+                        case 16: static_cast<uint16_t*>(pixels)[idx] = uint16_t(color); break;
+                        case 32: static_cast<uint32_t*>(pixels)[idx] = color;           break;
                         }
                     }
                 }
@@ -455,7 +479,7 @@ void emulator::run()
         auto t_laststart = t_start;
         t_start = clk::now();
 
-        // Adjust sleep time to meet CRT's 60Hz refresh rate
+        // Adjust sleep time to match CRT's 60Hz refresh rate
         if (nframes % 10 == 0) 
         {
             long fps_avg = std::lroundf(fps_sum / 10);
@@ -480,14 +504,3 @@ void emulator::run()
     }
 }
 
-emulator::~emulator()
-{
-    for (int i = 0; i < NUM_SOUNDS; ++i) {
-        Mix_FreeChunk(m.sounds[i]);
-    }
-    Mix_CloseAudio();
-    SDL_DestroyTexture(m_screentex);
-    SDL_DestroyRenderer(m_renderer);
-    SDL_DestroyWindow(m_window);
-    SDL_Quit();
-}

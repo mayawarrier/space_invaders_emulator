@@ -77,7 +77,9 @@ struct emulator
     ~emulator();
 
 private:
-    int read_rom(const fs::path& dir);
+    emulator(uint scalefac);
+
+    int load_rom(const fs::path& dir);
     int init_graphics(uint scresX, uint scresY);
     int init_audio(const fs::path& audiodir);
 

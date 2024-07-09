@@ -8,50 +8,54 @@
 #include <memory>
 
 namespace fs = std::filesystem;
-// can't name this time unfortunately
-namespace tim = std::chrono;
+namespace tim = std::chrono; // can't be 'time' unfortunately
 
 using uint = unsigned int;
 
 #define CONCAT(x, y) x##y
 
-
-// Print error message and return error code.
-template <typename ...Args>
-int ecERROR(int ec, const char* fmt, Args... args)
-{
 #ifdef __clang__
+#define PUSH_WARNINGS \
 _Pragma("clang diagnostic push")
+#define IGNORE_WFORMAT_SECURITY \
 _Pragma("clang diagnostic ignored \"-Wformat-security\"")
+#define POP_WARNINGS \
+_Pragma("clang diagnostic pop")
+#else
+#define PUSH_WARNINGS
+#define IGNORE_WFORMAT_SECURITY
+#define POP_WARNINGS
 #endif
+
+// Print red error message.
+template <typename ...Args>
+void pERROR(const char* fmt, Args... args)
+{
+PUSH_WARNINGS
+IGNORE_WFORMAT_SECURITY
     std::fputs("\033[1;31mError:\033[0m ", stderr);
     std::fprintf(stderr, fmt, args...);
     std::fputs("\n", stderr);
-    return ec;
-#ifdef __clang__
-_Pragma("clang diagnostic pop")
-#endif
+POP_WARNINGS
+}
+
+// Print yellow warning message.
+template <typename ...Args>
+void pWARNING(const char* fmt, Args... args)
+{
+PUSH_WARNINGS
+IGNORE_WFORMAT_SECURITY
+    std::fputs("\033[1;33mWarning:\033[0m ", stderr);
+    std::fprintf(stderr, fmt, args...);
+    std::fputs("\n", stderr);
+POP_WARNINGS
 }
 
 template <typename ...Args>
 int mERROR(const char* fmt, Args... args)
 {
-    return ecERROR(-1, fmt, args...);
-}
-
-template <typename ...Args>
-void pWARNING(const char* fmt, Args... args)
-{
-#ifdef __clang__
-    _Pragma("clang diagnostic push")
-        _Pragma("clang diagnostic ignored \"-Wformat-security\"")
-#endif
-    std::fputs("\033[1;33mWarning:\033[0m ", stderr);
-    std::fprintf(stderr, fmt, args...);
-    std::fputs("\n", stderr);
-#ifdef __clang__
-    _Pragma("clang diagnostic pop")
-#endif
+    pERROR(fmt, args...);
+    return -1;
 }
 
 using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
@@ -65,11 +69,11 @@ using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
 
 // Convert fs::path to a const char*.
 #ifdef _MSC_VER
-#define DECL_UTF8PATH_STR(path) \
+#define DECL_PATH_TO_BSTR(path) \
 auto CONCAT(path, _stdstr) = path.string(); \
 const char* CONCAT(path, _str) = CONCAT(path, _stdstr).c_str();
 #else
-#define DECL_UTF8PATH_STR(path) \
+#define DECL_PATH_TO_BSTR(path) \
 const char* CONCAT(path, _str) = path.c_str();
 #endif
 
