@@ -67,16 +67,6 @@ using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
 #define SAFE_FOPEN(fname, mode) SAFE_FOPENA(fname, mode)
 #endif
 
-// Convert fs::path to a const char*.
-#ifdef _MSC_VER
-#define DECL_PATH_TO_BSTR(path) \
-auto CONCAT(path, _stdstr) = path.string(); \
-const char* CONCAT(path, _str) = CONCAT(path, _stdstr).c_str();
-#else
-#define DECL_PATH_TO_BSTR(path) \
-const char* CONCAT(path, _str) = path.c_str();
-#endif
-
 // this has good codegen
 template <typename T>
 inline void set_bit(T* ptr, int bit, bool val)

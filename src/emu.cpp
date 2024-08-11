@@ -1,7 +1,7 @@
 //
 // Emulate a Taito Space Invaders arcade machine.
 // See https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html
-// for documentation on everything emulated here.
+// for documentation on how the hardware works.
 //
 
 #include <thread>
@@ -31,7 +31,7 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
     machine* m = MACHINE(cpu);
     switch (port)
     {
-    case 0: return 0x0e; // unused by ROM
+    case 0: return 0x0e; // debug port, unused by ROM
     case 1: return m->in_port1;
     case 2: return m->in_port2;
 
@@ -44,31 +44,30 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
     }
 }
 
-
-// looping: repeat sound while pin is on.
-// non-looping: restart sound every positive edge (off->on)
 static bool snd_is_looping(int idx)
 {
     return idx == 0 || idx == 9;
 }
 
+// looping: repeat sound while pin is on.
+// non-looping: restart sound every positive edge (off->on)
 static void handle_sound(machine* m, int idx, bool pin_on)
 {
     if (!m->sounds[idx]) {
         return;
     }
     if (pin_on) {
-        if (!m->snd_playing[idx]) {
+        if (!m->sndpin_lastval[idx]) {
             int loops = snd_is_looping(idx) ? -1 : 0;
             Mix_PlayChannel(idx, m->sounds[idx], loops);
-            m->snd_playing[idx] = true;
+            m->sndpin_lastval[idx] = true;
         }
     } 
     else {
         if (snd_is_looping(idx)) {
             Mix_HaltChannel(idx);
         }
-        m->snd_playing[idx] = false; 
+        m->sndpin_lastval[idx] = false; 
     }
 }
 
@@ -81,7 +80,8 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
         m->shiftreg_off = (word & 0x7);
         break;
 
-    case 4: // shift from MSB
+    case 4: 
+        // shift from MSB
         m->shiftreg >>= 8;
         m->shiftreg |= (i8080_dword_t(word) << 8);
         break;
@@ -99,8 +99,8 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
         }
         break;
 
-        // Ignore watchdog port
-        // (intended to reset machine if a hardware issue occurs)
+        // Watchdog port. Resets machine if unresponsive, 
+        // not required for an emulator
     case 6: break;
 
     default:
@@ -109,50 +109,13 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
     }
 }
 
-static int read_file(const fs::path& path, i8080_word_t* mem, unsigned size)
+// like a palette, same order as PIXFMTS
+enum colr_idx : uint8_t
 {
-    DECL_PATH_TO_BSTR(path)
-
-    scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
-    if (!file) {
-        return mERROR("Could not open file %s", path_str);
-    }
-    if (std::fread(mem, 1, size, file.get()) != size) {
-        return mERROR("Could not read %u bytes from file %s", size, path_str);
-    }
-    std::fgetc(file.get()); // set eof
-    if (!std::feof(file.get())) {
-        return mERROR("%s is larger than %u bytes", path_str, size);
-    }
-    return 0;
-}
-
-int emulator::load_rom(const fs::path& dir)
-{
-    if (fs::exists(dir / "invaders.rom")) {
-        int e = read_file(dir / "invaders.rom", m.mem.get(), 8192);
-        if (e) { return e; }
-        std::printf("Loaded invaders.rom\n");
-        return 0;
-    }
-    else {
-        int e;
-        e = read_file(dir / "invaders.h", &m.mem[0], 2048); if (e) { return e; }
-        e = read_file(dir / "invaders.g", &m.mem[2048], 2048); if (e) { return e; }
-        e = read_file(dir / "invaders.f", &m.mem[4096], 2048); if (e) { return e; }
-        e = read_file(dir / "invaders.e", &m.mem[6144], 2048); if (e) { return e; }
-        std::printf("Loaded ROM from invaders.efgh\n");
-        return 0;
-    }
-}
-
-// like a palette color
-enum col_idx : uint8_t
-{
-    COLIDX_BLACK,
-    COLIDX_GREEN,
-    COLIDX_RED,
-    COLIDX_WHITE,
+    COLRIDX_BLACK,
+    COLRIDX_GREEN,
+    COLRIDX_RED,
+    COLRIDX_WHITE,
 };
 
 static const std::array<pix_fmt, 3> PIXFMTS = {
@@ -173,6 +136,8 @@ static const char* pixfmt_name(uint32_t fmt)
 
 int emulator::init_graphics(uint scresX, uint scresY)
 {
+    std::printf("Initializing graphics...\n");
+
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         return mERROR("SDL_Init(): %s", SDL_GetError());
     }
@@ -183,7 +148,7 @@ int emulator::init_graphics(uint scresX, uint scresY)
         return mERROR("SDL_CreateWindow(): %s", SDL_GetError());
     }
 
-    m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED);
+    m_renderer = SDL_CreateRenderer(m_window, -1, 0);
     if (!m_renderer) {
         return mERROR("SDL_CreateRenderer(): %s", SDL_GetError());
     }
@@ -193,29 +158,36 @@ int emulator::init_graphics(uint scresX, uint scresY)
         return mERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
     }
 
-    std::printf("Using renderer %s\n", rendinfo.name);
+    std::printf("-- Renderer: %s\n", rendinfo.name);
 
-    // use first texture format available 
+    // use first supported texture format
     // see https://stackoverflow.com/questions/56143991/
     m_pixfmt = nullptr;
     for (auto& pixfmt : PIXFMTS) {
         for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
         {
             if (rendinfo.texture_formats[i] == pixfmt.fmt) {
-                std::printf("Using texture format %s\n", pixfmt_name(pixfmt.fmt));
+                std::printf("-- Texture format: %s\n", pixfmt_name(pixfmt.fmt));
                 m_pixfmt = &pixfmt;
                 break;
             }
         }
     }
-    if (!m_pixfmt) {
-        std::string triedfmts;
+    if (!m_pixfmt) 
+    {
+        std::string suppfmts;
         for (auto& pixfmt : PIXFMTS) {
-            if (!triedfmts.empty()) { triedfmts += ", "; }
-            triedfmts += pixfmt_name(pixfmt.fmt);
+            if (!suppfmts.empty()) { suppfmts += ", "; }
+            suppfmts += pixfmt_name(pixfmt.fmt);
         }
-        return mERROR("No known texture format supported with this renderer. "
-            "Tried formats: %s", triedfmts.c_str());
+        std::string hasfmts;
+        for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i) {
+            if (!hasfmts.empty()) { hasfmts += ", "; }
+            hasfmts += pixfmt_name(rendinfo.texture_formats[i]);
+        }
+
+        return mERROR("Could not find a supported texture format.\n"
+            "Supported: %s\nAvailable: %s", suppfmts.c_str(), hasfmts.c_str());
     }
     
     m_screentex = SDL_CreateTexture(m_renderer, 
@@ -224,12 +196,13 @@ int emulator::init_graphics(uint scresX, uint scresY)
         return mERROR("SDL_CreateTexture(): %s", SDL_GetError());
     }
 
-    std::printf("Initialized graphics\n");
     return 0;
 }
 
 int emulator::init_audio(const fs::path& audio_dir) 
 {
+    std::printf("Initializing audio...\n");
+
     // chunksize is small to reduce latency
     if (Mix_OpenAudio(11025, AUDIO_U8, 1, 512) != 0) {
         return mERROR("Mix_OpenAudio(): %s", Mix_GetError());
@@ -238,23 +211,40 @@ int emulator::init_audio(const fs::path& audio_dir)
         return mERROR("Mix_AllocateChannels(): %s", Mix_GetError());
     }
 
-    const char* audio_fnames[NUM_SOUNDS] = {
-        "0.wav", "1.wav", "2.wav", "3.wav", "4.wav",
-        "5.wav", "6.wav", "7.wav", "8.wav", "9.wav"
+    static const char* AUDIO_FILENAMES[NUM_SOUNDS][2] =
+    {
+        {"0.wav", "ufo_highpitch.wav"},
+        {"1.wav", "shoot.wav"},
+        {"2.wav", "explosion.wav"},
+        {"3.wav", "invaderkilled.wav"},
+        {"4.wav", "fastinvader1.wav"},
+        {"5.wav", "fastinvader2.wav"},
+        {"6.wav", "fastinvader3.wav"},
+        {"7.wav", "fastinvader4.wav"},
+        {"8.wav", "ufo_lowpitch.wav"},
+        {"9.wav", "extendedplay.wav"}
     };
+    
     int num_loaded = 0;
     for (int i = 0; i < NUM_SOUNDS; ++i)
     {
-        fs::path path = audio_dir / audio_fnames[i];
-        DECL_PATH_TO_BSTR(path)
-    
-        m.sounds[i] = Mix_LoadWAV(path_str);
-        m.snd_playing[i] = false;
+        m.sounds[i] = nullptr;
+        m.sndpin_lastval[i] = false;
 
-        if (!m.sounds[i]) {
-            pWARNING("Could not open %s: %s", path_str, Mix_GetError());
+        for (int j = 0; j < 2; ++j) 
+        {
+            fs::path path = audio_dir / AUDIO_FILENAMES[i][j];
+            m.sounds[i] = Mix_LoadWAV(path.string().c_str());
+            if (m.sounds[i]) {
+                num_loaded++;
+                break;
+            }
         }
-        num_loaded += (m.sounds[i] != NULL);
+        if (!m.sounds[i]) {
+            std::fputs("-- ", stderr);
+            pWARNING("Audio file %s (aka %s) is missing",
+                AUDIO_FILENAMES[i][0], AUDIO_FILENAMES[i][1]);
+        }
     }
 
     // adjust volume
@@ -263,10 +253,42 @@ int emulator::init_audio(const fs::path& audio_dir)
     Mix_Volume(3, MIX_MAX_VOLUME / 2); // Alien die
     Mix_Volume(1, MIX_MAX_VOLUME / 2); // Shoot
 
-    if (num_loaded == NUM_SOUNDS) {
-        std::printf("Initialized audio\n");
-    } else {
-        pWARNING("Some audio files could not be loaded");
+    return 0;
+}
+
+static int read_file(const fs::path& path, i8080_word_t* mem, unsigned size)
+{
+    auto filename = path.filename().string();
+
+    scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
+    if (!file) {
+        return mERROR("Could not open file %s", filename.c_str());
+    }
+    if (std::fread(mem, 1, size, file.get()) != size) {
+        return mERROR("Could not read %u bytes from file %s", size, filename.c_str());
+    }
+    std::fgetc(file.get()); // set eof
+    if (!std::feof(file.get())) {
+        return mERROR("File %s is larger than %u bytes", filename.c_str(), size);
+    }
+    return 0;
+}
+
+int emulator::load_rom(const fs::path& dir)
+{
+    int e;
+    if (fs::exists(dir / "invaders.rom")) {
+        e = read_file(dir / "invaders.rom", m.mem.get(), 8192);
+        if (e) { return e; }
+        std::printf("Loaded ROM\n");
+    }
+    else {
+        e = read_file(dir / "invaders.h", &m.mem[0], 2048);    if (e) { return e; }
+        e = read_file(dir / "invaders.g", &m.mem[2048], 2048); if (e) { return e; }
+        e = read_file(dir / "invaders.f", &m.mem[4096], 2048); if (e) { return e; }
+        e = read_file(dir / "invaders.e", &m.mem[6144], 2048); if (e) { return e; }
+
+        std::printf("Loaded ROM files: invaders.e,f,g,h\n");
     }
     return 0;
 }
@@ -284,9 +306,18 @@ emulator::emulator(uint scalefac) :
 emulator::emulator(const fs::path& romdir, uint scalefac) :
     emulator(scalefac)
 {
-    m.mem = std::make_unique<i8080_word_t[]>(65536);
-    if (load_rom(romdir) != 0) { 
+    uint scresX = SCREEN_NATIVERES_X * scalefac;
+    uint scresY = SCREEN_NATIVERES_Y * scalefac;
+    if (init_graphics(scresX, scresY) != 0) {
         return; 
+    }
+    if (init_audio(romdir) != 0) { 
+        return; 
+    }
+
+    m.mem = std::make_unique<i8080_word_t[]>(65536);
+    if (load_rom(romdir) != 0) {
+        return;
     }
 
     m.cpu.mem_read = cpu_mem_read;
@@ -303,16 +334,6 @@ emulator::emulator(const fs::path& romdir, uint scalefac) :
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
 
-    std::printf("Initialized emulator core\n");
-
-    uint scresX = SCREEN_NATIVERES_X * scalefac;
-    uint scresY = SCREEN_NATIVERES_Y * scalefac;
-    if (init_graphics(scresX, scresY) != 0) {
-        return; 
-    }
-    if (init_audio(romdir) != 0) { 
-        return; 
-    }
     m_ok = true;
 }
 
@@ -375,15 +396,15 @@ void emulator::gen_frame(uint64_t& last_cpucycles, uint64_t nframes_rend)
 
 // Pixel color after gel overlay
 // https://tcrf.net/images/a/af/SpaceInvadersArcColorUseTV.png
-static col_idx pixel_color(uint x, uint y)
+static colr_idx pixel_color(uint x, uint y)
 {  
     if ((y <= 15 && x > 24 && x < 136) || (y > 15 && y < 71)) {
-        return COLIDX_GREEN;
+        return COLRIDX_GREEN;
     }
     else if (y >= 192 && y < 223) {
-        return COLIDX_RED;
+        return COLRIDX_RED;
     }
-    else { return COLIDX_WHITE; }
+    else { return COLRIDX_WHITE; }
 }
 
 void emulator::render_frame() const
@@ -402,8 +423,8 @@ void emulator::render_frame() const
 
             for (int bit = 0; bit < 8; ++bit)
             {
-                col_idx colidx = get_bit(word, bit) ? pixel_color(x, y) : COLIDX_BLACK;
-                uint32_t color = m_pixfmt->colors[colidx];
+                colr_idx colridx = get_bit(word, bit) ? pixel_color(x, y) : COLRIDX_BLACK;
+                uint32_t color = m_pixfmt->colors[colridx];
 
                 uint st_idx = m_scalefac * (m_scresX * (SCREEN_NATIVERES_Y - y - bit - 1) + x);
 

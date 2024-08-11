@@ -41,12 +41,12 @@ struct machine
     i8080_dword_t shiftreg;
     i8080_word_t shiftreg_off;
 
-    // Video chip interrupts
+    // Video chip
     i8080_word_t intr_opcode;
 
     // Sound chip
     Mix_Chunk* sounds[NUM_SOUNDS];
-    bool snd_playing[NUM_SOUNDS];
+    bool sndpin_lastval[NUM_SOUNDS];
 };
 
 struct pix_fmt
