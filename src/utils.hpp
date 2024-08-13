@@ -7,12 +7,12 @@
 #include <chrono>
 #include <memory>
 
+#define CONCAT(x, y) x##y
+
 namespace fs = std::filesystem;
 namespace tim = std::chrono; // can't be 'time' unfortunately
 
 using uint = unsigned int;
-
-#define CONCAT(x, y) x##y
 
 #ifdef __clang__
 #define PUSH_WARNINGS \
@@ -27,35 +27,66 @@ _Pragma("clang diagnostic pop")
 #define POP_WARNINGS
 #endif
 
+extern std::FILE* LOGFILE;
+
 // Print red error message.
 template <typename ...Args>
-void pERROR(const char* fmt, Args... args)
+void file_PERROR(std::FILE* stream, const char* fmt, Args... args)
 {
 PUSH_WARNINGS
 IGNORE_WFORMAT_SECURITY
-    std::fputs("\033[1;31mError:\033[0m ", stderr);
-    std::fprintf(stderr, fmt, args...);
-    std::fputs("\n", stderr);
+    std::fputs("\033[1;31mError:\033[0m ", stream);
+    std::fprintf(stream, fmt, args...);
+    std::fputs("\n", stream);
 POP_WARNINGS
+}
+
+template <typename ...Args>
+int ERROR(const char* fmt, Args... args) 
+{
+    if (LOGFILE) {
+        file_PERROR(LOGFILE, fmt, args...);
+        std::fflush(LOGFILE);
+    }
+    file_PERROR(stderr, fmt, args...);
+    return -1;
 }
 
 // Print yellow warning message.
 template <typename ...Args>
-void pWARNING(const char* fmt, Args... args)
+void file_PWARNING(std::FILE* stream, const char* fmt, Args... args)
 {
 PUSH_WARNINGS
 IGNORE_WFORMAT_SECURITY
-    std::fputs("\033[1;33mWarning:\033[0m ", stderr);
-    std::fprintf(stderr, fmt, args...);
-    std::fputs("\n", stderr);
+    std::fputs("\033[1;33mWarning:\033[0m ", stream);
+    std::fprintf(stream, fmt, args...);
+    std::fputs("\n", stream);
 POP_WARNINGS
 }
 
 template <typename ...Args>
-int mERROR(const char* fmt, Args... args)
+void WARNING(const char* fmt, Args... args) 
 {
-    pERROR(fmt, args...);
-    return -1;
+    if (LOGFILE) {
+        file_PWARNING(LOGFILE, fmt, args...);
+        std::fflush(LOGFILE);
+    }
+    file_PWARNING(stderr, fmt, args...);
+}
+
+template <typename ...Args>
+void MESSAGE(const char* fmt, Args... args) 
+{
+PUSH_WARNINGS
+IGNORE_WFORMAT_SECURITY
+    if (LOGFILE) {
+        std::fprintf(LOGFILE, fmt, args...);
+        std::fputs("\n", LOGFILE);
+        std::fflush(LOGFILE);
+    }
+    std::printf(fmt, args...);
+    std::printf("\n");
+POP_WARNINGS
 }
 
 using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
