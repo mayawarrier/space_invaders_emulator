@@ -31,7 +31,7 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
     machine* m = MACHINE(cpu);
     switch (port)
     {
-    case 0: return 0x0e; // debug port, unused by ROM
+    case 0: return m->in_port0;
     case 1: return m->in_port1;
     case 2: return m->in_port2;
 
@@ -39,7 +39,7 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
         return i8080_word_t(m->shiftreg >> (8 - m->shiftreg_off));
 
     default: 
-        pWARNING("IO read from unmapped port %d", int(port));
+        WARNING("IO read from unmapped port %d", int(port));
         return 0;
     }
 }
@@ -104,7 +104,7 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
     case 6: break;
 
     default:
-        pWARNING("IO write to unmapped port %d", int(port));
+        WARNING("IO write to unmapped port %d", int(port));
         break;
     }
 }
@@ -134,31 +134,34 @@ static const char* pixfmt_name(uint32_t fmt)
     return str.data();
 }
 
-int emulator::init_graphics(uint scresX, uint scresY)
+int emulator::init_graphics(uint scalefac)
 {
-    std::printf("Initializing graphics...\n");
+    MESSAGE("Initializing graphics...");
+
+    uint scresX = SCREEN_NATIVERES_X * scalefac;
+    uint scresY = SCREEN_NATIVERES_Y * scalefac;
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        return mERROR("SDL_Init(): %s", SDL_GetError());
+        return ERROR("SDL_Init(): %s", SDL_GetError());
     }
 
     m_window = SDL_CreateWindow("Space Invaders",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, scresX, scresY, SDL_WINDOW_HIDDEN);
     if (!m_window) {
-        return mERROR("SDL_CreateWindow(): %s", SDL_GetError());
+        return ERROR("SDL_CreateWindow(): %s", SDL_GetError());
     }
 
     m_renderer = SDL_CreateRenderer(m_window, -1, 0);
     if (!m_renderer) {
-        return mERROR("SDL_CreateRenderer(): %s", SDL_GetError());
+        return ERROR("SDL_CreateRenderer(): %s", SDL_GetError());
     }
 
     SDL_RendererInfo rendinfo;
     if (SDL_GetRendererInfo(m_renderer, &rendinfo) != 0) {
-        return mERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
+        return ERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
     }
 
-    std::printf("-- Renderer: %s\n", rendinfo.name);
+    MESSAGE("-- Renderer: %s", rendinfo.name);
 
     // use first supported texture format
     // see https://stackoverflow.com/questions/56143991/
@@ -167,7 +170,7 @@ int emulator::init_graphics(uint scresX, uint scresY)
         for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
         {
             if (rendinfo.texture_formats[i] == pixfmt.fmt) {
-                std::printf("-- Texture format: %s\n", pixfmt_name(pixfmt.fmt));
+                MESSAGE("-- Using texture format %s", pixfmt_name(pixfmt.fmt));
                 m_pixfmt = &pixfmt;
                 break;
             }
@@ -186,14 +189,14 @@ int emulator::init_graphics(uint scresX, uint scresY)
             hasfmts += pixfmt_name(rendinfo.texture_formats[i]);
         }
 
-        return mERROR("Could not find a supported texture format.\n"
+        return ERROR("Could not find a supported texture format.\n"
             "Supported: %s\nAvailable: %s", suppfmts.c_str(), hasfmts.c_str());
     }
     
     m_screentex = SDL_CreateTexture(m_renderer, 
         m_pixfmt->fmt, SDL_TEXTUREACCESS_STREAMING, scresX, scresY);
     if (!m_screentex) {
-        return mERROR("SDL_CreateTexture(): %s", SDL_GetError());
+        return ERROR("SDL_CreateTexture(): %s", SDL_GetError());
     }
 
     return 0;
@@ -201,14 +204,14 @@ int emulator::init_graphics(uint scresX, uint scresY)
 
 int emulator::init_audio(const fs::path& audio_dir) 
 {
-    std::printf("Initializing audio...\n");
+    MESSAGE("Initializing audio...");
 
     // chunksize is small to reduce latency
     if (Mix_OpenAudio(11025, AUDIO_U8, 1, 512) != 0) {
-        return mERROR("Mix_OpenAudio(): %s", Mix_GetError());
+        return ERROR("Mix_OpenAudio(): %s", Mix_GetError());
     }
     if (Mix_AllocateChannels(NUM_SOUNDS) != NUM_SOUNDS) {
-        return mERROR("Mix_AllocateChannels(): %s", Mix_GetError());
+        return ERROR("Mix_AllocateChannels(): %s", Mix_GetError());
     }
 
     static const char* AUDIO_FILENAMES[NUM_SOUNDS][2] =
@@ -225,7 +228,6 @@ int emulator::init_audio(const fs::path& audio_dir)
         {"9.wav", "extendedplay.wav"}
     };
     
-    int num_loaded = 0;
     for (int i = 0; i < NUM_SOUNDS; ++i)
     {
         m.sounds[i] = nullptr;
@@ -236,14 +238,11 @@ int emulator::init_audio(const fs::path& audio_dir)
             fs::path path = audio_dir / AUDIO_FILENAMES[i][j];
             m.sounds[i] = Mix_LoadWAV(path.string().c_str());
             if (m.sounds[i]) {
-                num_loaded++;
                 break;
             }
         }
         if (!m.sounds[i]) {
-            std::fputs("-- ", stderr);
-            pWARNING("Audio file %s (aka %s) is missing",
-                AUDIO_FILENAMES[i][0], AUDIO_FILENAMES[i][1]);
+            WARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
     }
 
@@ -262,14 +261,14 @@ static int read_file(const fs::path& path, i8080_word_t* mem, unsigned size)
 
     scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
     if (!file) {
-        return mERROR("Could not open file %s", filename.c_str());
+        return ERROR("Could not open file %s", filename.c_str());
     }
     if (std::fread(mem, 1, size, file.get()) != size) {
-        return mERROR("Could not read %u bytes from file %s", size, filename.c_str());
+        return ERROR("Could not read %u bytes from file %s", size, filename.c_str());
     }
     std::fgetc(file.get()); // set eof
     if (!std::feof(file.get())) {
-        return mERROR("File %s is larger than %u bytes", filename.c_str(), size);
+        return ERROR("File %s is larger than %u bytes", filename.c_str(), size);
     }
     return 0;
 }
@@ -280,7 +279,7 @@ int emulator::load_rom(const fs::path& dir)
     if (fs::exists(dir / "invaders.rom")) {
         e = read_file(dir / "invaders.rom", m.mem.get(), 8192);
         if (e) { return e; }
-        std::printf("Loaded ROM\n");
+        MESSAGE("Loaded ROM");
     }
     else {
         e = read_file(dir / "invaders.h", &m.mem[0], 2048);    if (e) { return e; }
@@ -288,7 +287,7 @@ int emulator::load_rom(const fs::path& dir)
         e = read_file(dir / "invaders.f", &m.mem[4096], 2048); if (e) { return e; }
         e = read_file(dir / "invaders.e", &m.mem[6144], 2048); if (e) { return e; }
 
-        std::printf("Loaded ROM files: invaders.e,f,g,h\n");
+        MESSAGE("Loaded ROM files: invaders.e,f,g,h");
     }
     return 0;
 }
@@ -306,15 +305,12 @@ emulator::emulator(uint scalefac) :
 emulator::emulator(const fs::path& romdir, uint scalefac) :
     emulator(scalefac)
 {
-    uint scresX = SCREEN_NATIVERES_X * scalefac;
-    uint scresY = SCREEN_NATIVERES_Y * scalefac;
-    if (init_graphics(scresX, scresY) != 0) {
+    if (init_graphics(scalefac) != 0) {
         return; 
     }
     if (init_audio(romdir) != 0) { 
         return; 
     }
-
     m.mem = std::make_unique<i8080_word_t[]>(65536);
     if (load_rom(romdir) != 0) {
         return;
@@ -328,12 +324,14 @@ emulator::emulator(const fs::path& romdir, uint scalefac) :
     m.cpu.udata = &m;
     m.cpu.reset();
 
-    m.in_port1 = 0x8;
+    m.in_port0 = 0x0e; // debug port
+    m.in_port1 = 0x08;
     m.in_port2 = 0;
     m.shiftreg = 0;
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
 
+    MESSAGE("Ready!");
     m_ok = true;
 }
 
@@ -364,6 +362,20 @@ void emulator::handle_input(SDL_Scancode sc, bool pressed)
     case KEY_P2_FIRE:  set_bit(&m.in_port2, 4, pressed); break;
     case KEY_P2_LEFT:  set_bit(&m.in_port2, 5, pressed); break;
     case KEY_P2_RIGHT: set_bit(&m.in_port2, 6, pressed); break;
+
+    default: break;
+    }
+}
+
+void emulator::handle_switch(int index, bool value)
+{
+    switch (index)
+    {
+    case 3: set_bit(&m.in_port2, 0, value); break;
+    case 4: set_bit(&m.in_port0, 0, value); break;
+    case 5: set_bit(&m.in_port2, 1, value); break;
+    case 6: set_bit(&m.in_port2, 3, value); break;
+    case 7: set_bit(&m.in_port2, 7, value); break;
 
     default: break;
     }
@@ -480,6 +492,7 @@ void emulator::run()
             case SDL_KEYDOWN:
                 handle_input(e.key.keysym.scancode, true);
                 break;
+
             case SDL_KEYUP:
                 handle_input(e.key.keysym.scancode, false);
                 break;

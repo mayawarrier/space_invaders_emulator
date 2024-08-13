@@ -25,6 +25,7 @@
 
 #define SCREEN_NATIVERES_X 224
 #define SCREEN_NATIVERES_Y 256
+#define DEFAULT_RES_SCALEFAC 3
 
 #define NUM_SOUNDS 10
 
@@ -34,6 +35,7 @@ struct machine
     i8080 cpu;
     std::unique_ptr<i8080_word_t[]> mem;
 
+    i8080_word_t in_port0;
     i8080_word_t in_port1;
     i8080_word_t in_port2;
 
@@ -64,15 +66,24 @@ struct emulator
 {
     // \param rom_dir directory containing invaders ROM and audio files
     // \param res_scale resolution scaling factor.
-    // If equal to 2, renders at 2x native resolution, etc.
-    emulator(const fs::path& rom_dir, uint res_scale = 2);
+    // game renders at res_scale * native resolution.
+    emulator(
+        const fs::path& rom_dir, 
+        uint res_scalefac = DEFAULT_RES_SCALEFAC);
 
     // Open a window and start running.
     // Returns when window is closed.
     void run();
+    
+    // Set cabinet DIP switches.
+    void set_switches(uint8_t sw)
+    {
+        for (int i = 3; i < 8; ++i) {
+            handle_switch(i, get_bit(sw, i));
+        }
+    }
 
     bool ok() const { return m_ok; }
-    operator bool() const { return ok(); }
 
     ~emulator();
 
@@ -80,10 +91,11 @@ private:
     emulator(uint scalefac);
 
     int load_rom(const fs::path& dir);
-    int init_graphics(uint scresX, uint scresY);
+    int init_graphics(uint scalefac);
     int init_audio(const fs::path& audiodir);
 
     void handle_input(SDL_Scancode sc, bool pressed);
+    void handle_switch(int index, bool value);
 
     void gen_frame(uint64_t& cpucycles, uint64_t nframes_rend);
     void render_frame() const;
@@ -93,9 +105,11 @@ private:
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
     SDL_Texture* m_screentex;
+
     const pix_fmt* m_pixfmt;
     uint m_scalefac;
     uint m_scresX;
+
     bool m_ok;
 };
 
