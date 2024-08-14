@@ -16,4 +16,9 @@
 //
 bool win32_recreate_console(std::FILE* logfile);
 
+// Try to enable console colors (this is only 
+// supported on some versions of Windows 10 and onwards).
+// Returns true if successful.
+bool win32_enable_console_colors(std::FILE* logfile);
+
 #endif

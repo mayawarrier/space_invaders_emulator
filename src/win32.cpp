@@ -14,7 +14,7 @@ static std::string err_to_str(DWORD ecode)
         FORMAT_MESSAGE_ALLOCATE_BUFFER | 
         FORMAT_MESSAGE_FROM_SYSTEM |
         FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL,
+        NULL, 
         ecode,
         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
         (LPSTR)&msg,
@@ -44,18 +44,18 @@ bool win32_recreate_console(std::FILE* logfile)
             fprint_lasterr(logfile, "AllocConsole");
             return false;
         }
-
+        
         // Reopen C IO streams so printf() etc work
         if (!std::freopen("CONIN$", "r", stdin) ||
             !std::freopen("CONOUT$", "w", stdout) ||
-            !std::freopen("CONERR$", "w", stderr)) 
+            !std::freopen("CONOUT$", "w", stderr))
         {
             std::fprintf(logfile, "Failed to reopen C IO streams\n");
             return false;
         }
         // No need to reopen C++ IO streams, since on 
         // Windows they are implemented using C IO
-
+    
         std::fprintf(logfile, "Created new Win32 console\n");
         return true;
     }
@@ -65,4 +65,26 @@ bool win32_recreate_console(std::FILE* logfile)
         // console app (in which case we don't need a new console)
         return false;
     }
+}
+
+bool win32_enable_console_colors(std::FILE* logfile)
+{
+    // sufficient for both stdout and stderr
+    HANDLE hndOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hndOut == INVALID_HANDLE_VALUE || hndOut == NULL) {
+        return false;
+    }
+
+    DWORD conMode = 0;
+    if (!GetConsoleMode(hndOut, &conMode)) {
+        fprint_lasterr(logfile, "GetConsoleMode");
+        return false;
+    }
+    conMode |= ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    if (!SetConsoleMode(hndOut, conMode)) {
+        fprint_lasterr(logfile, "SetConsoleMode");
+        return false;
+    }
+
+    return true;
 }

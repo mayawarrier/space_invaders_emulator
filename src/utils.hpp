@@ -27,15 +27,24 @@ _Pragma("clang diagnostic pop")
 #define POP_WARNINGS
 #endif
 
+// todo: move to log.cpp
 extern std::FILE* LOGFILE;
+extern bool CONSOLE_HAS_COLORS;
+
+#define ERROR_PREFIX_COLRD "\033[1;31mError:\033[0m "
+#define ERROR_PREFIX "Error: "
+
+#define WARNING_PREFIX_COLRD "\033[1;33mWarning:\033[0m "
+#define WARNING_PREFIX "Warning: "
+
 
 // Print red error message.
 template <typename ...Args>
-void file_PERROR(std::FILE* stream, const char* fmt, Args... args)
+void fput_msg(std::FILE* stream, const char* prefix, const char* fmt, Args... args)
 {
 PUSH_WARNINGS
 IGNORE_WFORMAT_SECURITY
-    std::fputs("\033[1;31mError:\033[0m ", stream);
+    std::fputs(prefix, stream);
     std::fprintf(stream, fmt, args...);
     std::fputs("\n", stream);
 POP_WARNINGS
@@ -45,33 +54,23 @@ template <typename ...Args>
 int ERROR(const char* fmt, Args... args) 
 {
     if (LOGFILE) {
-        file_PERROR(LOGFILE, fmt, args...);
+        fput_msg(LOGFILE, ERROR_PREFIX, fmt, args...);
         std::fflush(LOGFILE);
     }
-    file_PERROR(stderr, fmt, args...);
+    fput_msg(stderr, CONSOLE_HAS_COLORS ? 
+        ERROR_PREFIX_COLRD : ERROR_PREFIX, fmt, args...);    
     return -1;
-}
-
-// Print yellow warning message.
-template <typename ...Args>
-void file_PWARNING(std::FILE* stream, const char* fmt, Args... args)
-{
-PUSH_WARNINGS
-IGNORE_WFORMAT_SECURITY
-    std::fputs("\033[1;33mWarning:\033[0m ", stream);
-    std::fprintf(stream, fmt, args...);
-    std::fputs("\n", stream);
-POP_WARNINGS
 }
 
 template <typename ...Args>
 void WARNING(const char* fmt, Args... args) 
 {
     if (LOGFILE) {
-        file_PWARNING(LOGFILE, fmt, args...);
+        fput_msg(LOGFILE, WARNING_PREFIX, fmt, args...);
         std::fflush(LOGFILE);
     }
-    file_PWARNING(stderr, fmt, args...);
+    fput_msg(stderr, CONSOLE_HAS_COLORS ?
+        WARNING_PREFIX_COLRD : WARNING_PREFIX, fmt, args...);
 }
 
 template <typename ...Args>

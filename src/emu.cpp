@@ -242,6 +242,8 @@ int emulator::init_audio(const fs::path& audio_dir)
             }
         }
         if (!m.sounds[i]) {
+            std::fputs("-- ", LOGFILE);
+            std::fputs("-- ", stderr);
             WARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
     }

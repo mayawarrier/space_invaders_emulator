@@ -12,7 +12,9 @@
 
 
 #define LOGFILE_PATH "spaceinvaders.log"
+
 std::FILE* LOGFILE;
+bool CONSOLE_HAS_COLORS = false;
 
 
 int do_main(int argc, char* argv[])
@@ -88,7 +90,7 @@ int do_main(int argc, char* argv[])
 int main(int argc, char* argv[])
 {
     scopedFILE logfile = SAFE_FOPENA(LOGFILE_PATH, "w");
-    if (!logfile) 
+    if (!logfile)
     {
         const char err_msg[] = "Could not open log file " LOGFILE_PATH "";
         // show a message box, since at this point there is no logfile
@@ -101,6 +103,7 @@ int main(int argc, char* argv[])
 
 #ifdef _WIN32
     bool new_con = win32_recreate_console(LOGFILE);
+    CONSOLE_HAS_COLORS = win32_enable_console_colors(LOGFILE);
 #endif
     int ret = do_main(argc, argv);
 
