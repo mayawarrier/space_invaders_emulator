@@ -1,7 +1,7 @@
 .vs/
 out/
 build/
-libs/SDL2
-libs/SDL2_mixer
+*SDL2/
+*SDL2_mixer/
 # roms + audio
 data/

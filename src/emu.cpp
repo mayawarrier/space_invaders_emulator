@@ -4,6 +4,7 @@
 // for documentation on how the hardware works.
 //
 
+#include <cmath>
 #include <thread>
 #include <string_view>
 

@@ -91,7 +91,7 @@ POP_WARNINGS
 using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
 
 #define SAFE_FOPENA(fname, mode) scopedFILE(std::fopen(fname, mode), std::fclose)
-#ifdef _MSC_VER
+#if defined(_MSC_VER) || defined(__MINGW32__)
 #define SAFE_FOPEN(fname, mode) scopedFILE(::_wfopen(fname, CONCAT(L, mode)), std::fclose)
 #else
 #define SAFE_FOPEN(fname, mode) SAFE_FOPENA(fname, mode)

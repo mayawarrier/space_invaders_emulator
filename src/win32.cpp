@@ -28,7 +28,7 @@ static std::string err_to_str(DWORD ecode)
 static int fprint_lasterr(std::FILE* logfile, const char* fn_name)
 {
     DWORD err = GetLastError();
-    return std::fprintf(logfile, "%s(), error %u: %s\n", 
+    return std::fprintf(logfile, "%s(), error %u: %s", 
         fn_name, (unsigned)err, err_to_str(err).c_str());
 }
 
