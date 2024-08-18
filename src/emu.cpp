@@ -137,7 +137,7 @@ static const char* pixfmt_name(uint32_t fmt)
 
 int emulator::init_graphics(uint scalefac)
 {
-    MESSAGE("Initializing graphics...");
+    MESSAGE("Initializing graphics");
 
     uint scresX = SCREEN_NATIVERES_X * scalefac;
     uint scresY = SCREEN_NATIVERES_Y * scalefac;
@@ -162,7 +162,7 @@ int emulator::init_graphics(uint scalefac)
         return ERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
     }
 
-    MESSAGE("-- Renderer: %s", rendinfo.name);
+    MESSAGE("-- Renderer backend: %s", rendinfo.name);
 
     // use first supported texture format
     // see https://stackoverflow.com/questions/56143991/
@@ -171,7 +171,7 @@ int emulator::init_graphics(uint scalefac)
         for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
         {
             if (rendinfo.texture_formats[i] == pixfmt.fmt) {
-                MESSAGE("-- Using texture format %s", pixfmt_name(pixfmt.fmt));
+                MESSAGE("-- Texture format: %s", pixfmt_name(pixfmt.fmt));
                 m_pixfmt = &pixfmt;
                 break;
             }
@@ -205,7 +205,7 @@ int emulator::init_graphics(uint scalefac)
 
 int emulator::init_audio(const fs::path& audio_dir) 
 {
-    MESSAGE("Initializing audio...");
+    MESSAGE("Initializing audio");
 
     // chunksize is small to reduce latency
     if (Mix_OpenAudio(11025, AUDIO_U8, 1, 512) != 0) {
@@ -214,6 +214,11 @@ int emulator::init_audio(const fs::path& audio_dir)
     if (Mix_AllocateChannels(NUM_SOUNDS) != NUM_SOUNDS) {
         return ERROR("Mix_AllocateChannels(): %s", Mix_GetError());
     }
+    // adjust volume
+    Mix_Volume(0, MIX_MAX_VOLUME / 2); // UFO fly
+    Mix_Volume(8, MIX_MAX_VOLUME / 2); // UFO die
+    Mix_Volume(3, MIX_MAX_VOLUME / 2); // Alien die
+    Mix_Volume(1, MIX_MAX_VOLUME / 2); // Shoot
 
     static const char* AUDIO_FILENAMES[NUM_SOUNDS][2] =
     {
@@ -229,6 +234,7 @@ int emulator::init_audio(const fs::path& audio_dir)
         {"9.wav", "extendedplay.wav"}
     };
     
+    int num_loaded = 0;
     for (int i = 0; i < NUM_SOUNDS; ++i)
     {
         m.sounds[i] = nullptr;
@@ -239,6 +245,7 @@ int emulator::init_audio(const fs::path& audio_dir)
             fs::path path = audio_dir / AUDIO_FILENAMES[i][j];
             m.sounds[i] = Mix_LoadWAV(path.string().c_str());
             if (m.sounds[i]) {
+                num_loaded++;
                 break;
             }
         }
@@ -248,13 +255,11 @@ int emulator::init_audio(const fs::path& audio_dir)
             WARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
     }
-
-    // adjust volume
-    Mix_Volume(0, MIX_MAX_VOLUME / 2); // UFO fly
-    Mix_Volume(8, MIX_MAX_VOLUME / 2); // UFO die
-    Mix_Volume(3, MIX_MAX_VOLUME / 2); // Alien die
-    Mix_Volume(1, MIX_MAX_VOLUME / 2); // Shoot
-
+    if (num_loaded == NUM_SOUNDS) {
+        MESSAGE("Loaded audio files");
+    } else {
+        MESSAGE("Loaded %d/%d audio files", num_loaded, NUM_SOUNDS);
+    }
     return 0;
 }
 
@@ -305,9 +310,36 @@ emulator::emulator(uint scalefac) :
     }
 }
 
+
+// helpful for debugging
+void emulator::print_debugstats()
+{
+    MESSAGE("Platform: "
+        XSTR(COMPILER_NAME) " " XSTR(COMPILER_VERSION)
+#ifdef COMPILER_FRONTNAME
+        " (" XSTR(COMPILER_FRONTNAME) " frontend)"
+#endif
+        ", " XSTR(OS_NAME) " " XSTR(OS_VERSION));
+
+    SDL_version version;
+    SDL_GetVersion(&version);
+
+    MESSAGE("SDL2 version (header/DLL): %d.%d.%d/%d.%d.%d",
+        SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL,
+        version.major, version.minor, version.patch);
+
+    const SDL_version* mix_version = Mix_Linked_Version();
+
+    MESSAGE("SDL2_mixer version (header/DLL): %d.%d.%d/%d.%d.%d",
+        SDL_MIXER_MAJOR_VERSION, SDL_MIXER_MINOR_VERSION, SDL_MIXER_PATCHLEVEL,
+        mix_version->major, mix_version->minor, mix_version->patch);
+}
+
 emulator::emulator(const fs::path& romdir, uint scalefac) :
     emulator(scalefac)
 {
+    print_debugstats();
+
     if (init_graphics(scalefac) != 0) {
         return; 
     }

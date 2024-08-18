@@ -77,7 +77,7 @@
           "type": "STRING"
         }
       ],
-      "intelliSenseMode": "linux-gcc-x64"
+      "intelliSenseMode": ""
     },
     {
       "name": "Mingw64-Release",
@@ -112,7 +112,7 @@
           "type": "STRING"
         }
       ],
-      "intelliSenseMode": "linux-gcc-x64"
+      "intelliSenseMode": ""
     }
   ]
 }

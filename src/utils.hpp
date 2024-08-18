@@ -8,6 +8,8 @@
 #include <memory>
 
 #define CONCAT(x, y) x##y
+#define STR(a) #a
+#define XSTR(a) STR(a)
 
 namespace fs = std::filesystem;
 namespace tim = std::chrono; // can't be 'time' unfortunately

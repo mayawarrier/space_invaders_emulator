@@ -90,6 +90,8 @@ struct emulator
 private:
     emulator(uint scalefac);
 
+    void print_debugstats();
+
     int load_rom(const fs::path& dir);
     int init_graphics(uint scalefac);
     int init_audio(const fs::path& audiodir);

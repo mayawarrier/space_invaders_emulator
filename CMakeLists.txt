@@ -32,6 +32,18 @@ if (WIN32)
     target_compile_definitions(spaceinvaders PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 
+target_compile_definitions(
+    spaceinvaders PRIVATE
+    COMPILER_NAME=${CMAKE_CXX_COMPILER_ID}
+    COMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION}
+    OS_NAME=${CMAKE_SYSTEM_NAME}
+    OS_VERSION=${CMAKE_SYSTEM_VERSION}
+)
+if (DEFINED ${CMAKE_CXX_SIMULATE_ID})
+    target_compile_definitions(spaceinvaders PRIVATE 
+        COMPILER_FRONTNAME=${CMAKE_CXX_SIMULATE_ID})
+endif()
+
 add_custom_command(
     TARGET spaceinvaders POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -61,7 +73,7 @@ find_package(SDL2_mixer CONFIG COMPONENTS SDL2_mixer)
 
 if (NOT SDL2_SDL2_FOUND OR NOT SDL2_mixer_FOUND)
     message(WARNING "Could not find SDL2 DLLs and/or SDL2 CMake config files.\
-                    Downloading amd building SDL2 from source...")
+                    Downloading and building SDL2 from source...")
     if (MINGW)
         # https://github.com/libsdl-org/SDL/issues/5002
         # https://github.com/libsdl-org/SDL/issues/5728
@@ -88,10 +100,10 @@ if (NOT SDL2_SDL2_FOUND OR NOT SDL2_mixer_FOUND)
         set(SDL2MIXER_MOD OFF)
         set(SDL2MIXER_MIDI OFF)
     endif()
-    # 2.6 is the earliest version to supports CMake
+
     FetchContent_Declare(SDL2_mixer
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer
-        GIT_TAG        release-2.6.0)    
+        GIT_TAG        release-2.6.0) # earliest version to support CMake
     FetchContent_MakeAvailable(SDL2_mixer)
 endif()
 
