@@ -1,11 +1,10 @@
 //
-// Emulate a Taito Space Invaders arcade machine.
+// Emulate all the hardware inside the Space Invaders arcade machine.
 // See https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html
 // for documentation on how the hardware works.
 //
 
 #include <cmath>
-#include <thread>
 #include <string_view>
 
 #include "i8080/i8080_opcodes.h"
@@ -312,7 +311,7 @@ emulator::emulator(uint scalefac) :
 
 
 // helpful for debugging
-void emulator::print_debugstats()
+void emulator::print_envstats()
 {
     MESSAGE("Platform: "
         XSTR(COMPILER_NAME) " " XSTR(COMPILER_VERSION)
@@ -338,7 +337,7 @@ void emulator::print_debugstats()
 emulator::emulator(const fs::path& romdir, uint scalefac) :
     emulator(scalefac)
 {
-    print_debugstats();
+    print_envstats();
 
     if (init_graphics(scalefac) != 0) {
         return; 
@@ -541,8 +540,10 @@ void emulator::run()
 
         // Wait until vsync
         auto framedur = clk::now() - t_start;
-        if (framedur < framedur_target) {
-            std::this_thread::sleep_for(framedur_target - framedur);
+        if (framedur < framedur_target) 
+        {
+            auto sleep_ms = tim::round<tim::milliseconds>(framedur_target - framedur);
+            SDL_Delay(uint32_t(sleep_ms.count()));
         }
         
         auto t_laststart = t_start;

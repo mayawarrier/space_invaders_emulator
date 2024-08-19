@@ -43,7 +43,7 @@ struct machine
     i8080_dword_t shiftreg;
     i8080_word_t shiftreg_off;
 
-    // Video chip
+    // Video chip interrupts
     i8080_word_t intr_opcode;
 
     // Sound chip
@@ -90,7 +90,7 @@ struct emulator
 private:
     emulator(uint scalefac);
 
-    void print_debugstats();
+    void print_envstats();
 
     int load_rom(const fs::path& dir);
     int init_graphics(uint scalefac);
