@@ -172,10 +172,11 @@ int emulator::init_graphics(uint scalefac)
             if (rendinfo.texture_formats[i] == pixfmt.fmt) {
                 MESSAGE("-- Texture format: %s", pixfmt_name(pixfmt.fmt));
                 m_pixfmt = &pixfmt;
-                break;
+                goto pixfmt_done;
             }
         }
     }
+pixfmt_done:
     if (!m_pixfmt) 
     {
         std::string suppfmts;
@@ -565,6 +566,7 @@ void emulator::run()
             fps_sum = 0;
 
             std::printf("\rFPS: %ld", fps_avg);
+            std::fflush(stdout);
         } 
         
         float fps = 1.f / tim::duration<float>(t_start - t_laststart).count();
@@ -572,5 +574,8 @@ void emulator::run()
 
         nframes++;
     }
+
+    // FPS printer doesn't print newline
+    std::printf("\n");
 }
 
