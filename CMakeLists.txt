@@ -52,7 +52,7 @@ add_custom_command(
     VERBATIM
 )
 
-# ---------------------- cxxopts ----------------------
+# -------------------------------- cxxopts --------------------------------
 FetchContent_Declare(cxxopts
     GIT_REPOSITORY  https://github.com/jarro2783/cxxopts
     GIT_TAG         origin/master)
@@ -60,10 +60,14 @@ FetchContent_MakeAvailable(cxxopts)
 
 target_link_libraries(spaceinvaders PRIVATE cxxopts)
 
-# ------------------------ SDL ------------------------
-# see https://wiki.libsdl.org/SDL2/README/cmake
 
-# Allow user to provide their own SDL2 DLLs without 
+# ---------------------------------- SDL ----------------------------------
+# Absolute nightmare to get working. Here are some resources:
+# https://wiki.libsdl.org/SDL2/README/cmake
+# https://discourse.libsdl.org/t/how-is-sdl2-supposed-to-be-used-with-cmake/31275
+# https://stackoverflow.com/questions/29191855
+
+# Allow user to provide their own SDL2 DLLs to avoid
 # installing or building from source
 list(APPEND CMAKE_PREFIX_PATH "./")
 
@@ -71,7 +75,24 @@ find_package(SDL2 CONFIG COMPONENTS SDL2)
 find_package(SDL2 CONFIG COMPONENTS SDL2main)
 find_package(SDL2_mixer CONFIG COMPONENTS SDL2_mixer)
 
-if (NOT SDL2_SDL2_FOUND OR NOT SDL2_mixer_FOUND)
+# if the first try above fails, try again using pkg-config
+if (NOT TARGET SDL2::SDL2 OR NOT TARGET SDL2_mixer::SDL2_mixer)
+    find_package(PkgConfig)
+    if (PKG_CONFIG_FOUND)
+        pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
+        pkg_check_modules(SDL2_Mixer REQUIRED IMPORTED_TARGET SDL2_mixer)
+    endif()
+endif()
+
+if (TARGET SDL2::SDL2 AND TARGET SDL2_mixer::SDL2_mixer)
+    set(FOUND_SDL2_CMAKE_CONFIG ON)
+    message(STATUS "Found SDL2 via CMake config")
+elseif (TARGET PkgConfig::SDL2 AND TARGET PkgConfig::SDL2_Mixer)
+    set(FOUND_SDL2_PKGCONFIG ON)
+    message(STATUS "Found SDL2 via PkgConfig")
+endif()
+
+if (NOT FOUND_SDL2_CMAKE_CONFIG AND NOT FOUND_SDL2_PKGCONFIG)
     message(WARNING "Could not find SDL2 DLLs and/or SDL2 CMake config files.\
                     Downloading and building SDL2 from source...")
 
@@ -91,42 +112,55 @@ if (NOT SDL2_SDL2_FOUND OR NOT SDL2_mixer_FOUND)
         GIT_TAG        ${FETCH_SDL2_VERSION})
     FetchContent_MakeAvailable(SDL2)
 
-    if (MINGW)
-        # unused. broken even after installing libraries
-        set(SDL2MIXER_OPUS OFF)
-        set(SDL2MIXER_FLAC OFF)
-        set(SDL2MIXER_MOD OFF)
-        set(SDL2MIXER_MIDI OFF)
-        set(SDL2MIXER_WAVPACK OFF)
-    endif()
+    # unused, causes build issues
+    set(SDL2MIXER_OPUS OFF)
+    set(SDL2MIXER_FLAC OFF)
+    set(SDL2MIXER_MOD OFF)
+    set(SDL2MIXER_MIDI OFF)
+    set(SDL2MIXER_WAVPACK OFF)
 
     # v2.6 onwards supports CMake
     FetchContent_Declare(SDL2_mixer
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer
         GIT_TAG        ${FETCH_SDL2_MIXER_VERSION})
     FetchContent_MakeAvailable(SDL2_mixer)
+
+    set(FOUND_SDL2_CMAKE_CONFIG ON)
 endif()
 
-if(TARGET SDL2::SDL2main)
-    target_link_libraries(spaceinvaders PRIVATE SDL2::SDL2main)
+if (FOUND_SDL2_CMAKE_CONFIG)
+    if(TARGET SDL2::SDL2main)
+        target_link_libraries(spaceinvaders PRIVATE SDL2::SDL2main)
+    endif()
+    target_link_libraries(spaceinvaders PRIVATE SDL2::SDL2)
+    target_link_libraries(spaceinvaders PRIVATE SDL2_mixer::SDL2_mixer)
+
+    set(TARGET_NAME_SDL2 "SDL2::SDL2")
+    set(TARGET_NAME_SDL2_MIXER "SDL2_mixer::SDL2_mixer")
+else()
+    target_link_libraries(spaceinvaders PRIVATE PkgConfig::SDL2)
+    target_link_libraries(spaceinvaders PRIVATE PkgConfig::SDL2_Mixer)
+
+    set(TARGET_NAME_SDL2 "PkgConfig::SDL2")
+    set(TARGET_NAME_SDL2_MIXER "PkgConfig::SDL2_Mixer")
 endif()
-target_link_libraries(spaceinvaders PRIVATE SDL2::SDL2)
-target_link_libraries(spaceinvaders PRIVATE SDL2_mixer::SDL2_mixer)
 
-# Make damn sure program can find SDL2 DLLs at runtime
-add_custom_command(
-    TARGET spaceinvaders POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
-        "$<TARGET_FILE:SDL2::SDL2>" 
-        "$<TARGET_FILE_DIR:spaceinvaders>"
-    VERBATIM
-)
-add_custom_command(
-    TARGET spaceinvaders POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different 
-        "$<TARGET_FILE:SDL2_mixer::SDL2_mixer>" 
-        "$<TARGET_FILE_DIR:spaceinvaders>"
-    VERBATIM
-)
+# https://stackoverflow.com/questions/20433308/
+if (WIN32)
+    add_custom_command(
+        TARGET spaceinvaders POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+            "$<TARGET_FILE:${TARGET_NAME_SDL2}>" 
+            "$<TARGET_FILE_DIR:spaceinvaders>"
+        VERBATIM
+    )
+    add_custom_command(
+        TARGET spaceinvaders POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+            "$<TARGET_FILE:${TARGET_NAME_SDL2_MIXER}>" 
+            "$<TARGET_FILE_DIR:spaceinvaders>"
+        VERBATIM
+    )
+endif()
 
-# ------------------------------------------
+# -------------------------------------------------------------------------
