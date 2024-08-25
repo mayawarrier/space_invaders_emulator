@@ -59,7 +59,7 @@ int do_main(int argc, char* argv[])
 
     fs::path rom_dir = args["romdir"].as<std::string>();
 
-    emulator emu(rom_dir, DEFAULT_RES_SCALEFAC);
+    emulator emu(rom_dir, RES_SCALE_DEFAULT);
     if (!emu.ok()) {
         return -1;
     }

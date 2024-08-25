@@ -23,9 +23,9 @@
 #define KEY_P2_RIGHT SDL_SCANCODE_D
 #define KEY_P2_FIRE SDL_SCANCODE_LCTRL
 
-#define SCREEN_NATIVERES_X 224
-#define SCREEN_NATIVERES_Y 256
-#define DEFAULT_RES_SCALEFAC 3
+#define RES_NATIVE_X 224
+#define RES_NATIVE_Y 256
+#define RES_SCALE_DEFAULT 3
 
 #define NUM_SOUNDS 10
 
@@ -48,7 +48,7 @@ struct machine
 
     // Sound chip
     Mix_Chunk* sounds[NUM_SOUNDS];
-    bool sndpin_lastval[NUM_SOUNDS];
+    uint8_t sndpin_lastvals[NUM_SOUNDS];
 };
 
 struct pix_fmt
@@ -69,7 +69,7 @@ struct emulator
     // game renders at res_scale * native resolution.
     emulator(
         const fs::path& rom_dir, 
-        uint res_scalefac = DEFAULT_RES_SCALEFAC);
+        uint res_scale = RES_SCALE_DEFAULT);
 
     // Open a window and start running.
     // Returns when window is closed.
@@ -92,25 +92,29 @@ private:
 
     void print_envstats();
 
-    int load_rom(const fs::path& dir);
-    int init_graphics(uint scalefac);
+    int init_graphics();
     int init_audio(const fs::path& audiodir);
+    int load_rom(const fs::path& dir);
 
     void handle_input(SDL_Scancode sc, bool pressed);
     void handle_switch(int index, bool value);
 
-    void gen_frame(uint64_t& cpucycles, uint64_t nframes_rend);
-    void render_frame() const;
+    void draw_screen(uint64_t& cpucycles, uint64_t nframes);
+    void draw_handle_ui();
 
 private:
     machine m;
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
     SDL_Texture* m_screentex;
+    SDL_Rect m_screenrect;
 
     const pix_fmt* m_pixfmt;
     uint m_scalefac;
     uint m_scresX;
+    uint m_scresY;
+
+    int m_ui_fps;
 
     bool m_ok;
 };
