@@ -1,7 +1,7 @@
 // 
-// Emulate an Intel 8080 microprocessor.
-// All opcodes (0-0xff) are supported.
-// C++ port of the ANSI C version
+// Emulator for the Intel 8080 microprocessor.
+//
+// Ported to C++ from my ANSI C library:
 // (https://github.com/mayawarrier/intel8080-emulator)
 // 
 // Example usage:

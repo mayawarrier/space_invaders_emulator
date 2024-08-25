@@ -33,7 +33,6 @@
 #endif
 #endif
 
-
 #define min2(a, b) (((a) < (b)) ? (a) : (b))
 
 #define CARRY_BIT     0
@@ -688,7 +687,7 @@ void i8080::reset()
 void i8080::interrupt() { int_rq = 1; }
 
 // Follows the state transitions as closely as possible.
-// (8080 data sheet pg 7)
+// (datasheet pg 7)
 int i8080::step() 
 {
     // execute interrupt if there is one
@@ -711,7 +710,7 @@ int i8080::step()
     }
 
     // Sync incoming interrupt with end of 
-    // instruction cycle (8080 data sheet pg 11).
+    // instruction cycle (datasheet pg 11).
     // This delays execution by one instruction.
     if (int_rq && int_en) {     
         int_ff = 1;

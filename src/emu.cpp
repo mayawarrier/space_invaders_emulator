@@ -1,7 +1,9 @@
 //
-// Emulate all the hardware inside the Space Invaders arcade machine.
+// Emulate all the hardware inside the Space Invaders arcade machine, and 
+// provide a user interface to interact with the emulator.
+// 
 // See https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html
-// for documentation on how the hardware works.
+// for documentation.
 //
 
 #include <cmath>
@@ -167,8 +169,8 @@ int emulator::init_graphics()
         return ERROR("SDL_Init(): %s", SDL_GetError());
     }
 
-    // DirectX causes a temporary freeze if window size/position is set after creation.
-    // Probably due to the fix for https://stackoverflow.com/questions/40312553/
+    // DirectX backend temporarily freezes if window size/position is set after creation.
+    // Probably related to this: https://stackoverflow.com/questions/40312553/
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
 
     m_window = SDL_CreateWindow("Space Invaders", 0, 0, 0, 0, SDL_WINDOW_HIDDEN);
@@ -432,7 +434,7 @@ static int imgui_demo_window()
 emulator::emulator(uint scalefac) :
     m_window(nullptr), m_renderer(nullptr), m_screentex(nullptr),
     m_scalefac(scalefac), 
-    m_scresX(RES_NATIVE_X* scalefac),
+    m_scresX(RES_NATIVE_X * scalefac),
     m_scresY(RES_NATIVE_Y * scalefac),
     m_ok(false)
 {
@@ -662,8 +664,6 @@ void emulator::draw_handle_ui()
 
 // 100ns resolution on Windows
 using clk = tim::steady_clock;
-
-
 
 void emulator::run()
 {
