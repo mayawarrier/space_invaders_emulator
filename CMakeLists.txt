@@ -3,6 +3,11 @@ project(spaceinvaders)
 
 include(FetchContent)
 
+# Fix DOWNLOAD_EXTRACT_TIMESTAMP warning in CMake >= 3.24
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
+	cmake_policy(SET CMP0135 NEW)
+endif()
+
 set(SOURCES 
     "src/i8080/i8080.cpp" 
     "src/i8080/i8080.hpp" 
@@ -60,9 +65,9 @@ FetchContent_MakeAvailable(cxxopts)
 
 target_link_libraries(spaceinvaders PRIVATE cxxopts)
 
-
 # ---------------------------------- SDL ----------------------------------
-# Absolute nightmare to get working. Here are some resources:
+
+# Nightmare to get working. Here are some resources:
 # https://wiki.libsdl.org/SDL2/README/cmake
 # https://discourse.libsdl.org/t/how-is-sdl2-supposed-to-be-used-with-cmake/31275
 # https://stackoverflow.com/questions/29191855
@@ -112,7 +117,7 @@ if (NOT FOUND_SDL2_CMAKE_CONFIG AND NOT FOUND_SDL2_PKGCONFIG)
         GIT_TAG        ${FETCH_SDL2_VERSION})
     FetchContent_MakeAvailable(SDL2)
 
-    # unused, causes build issues
+    # unused
     set(SDL2MIXER_OPUS OFF)
     set(SDL2MIXER_FLAC OFF)
     set(SDL2MIXER_MOD OFF)
@@ -163,4 +168,45 @@ if (WIN32)
     )
 endif()
 
-# -------------------------------------------------------------------------
+# -------------------------------- imgui --------------------------------
+
+# https://github.com/ocornut/imgui/wiki/Getting-Started#compilinglinking
+# https://github.com/ocornut/imgui/discussions/5970
+
+set(FETCH_IMGUI_VERSION "v1.91.0")
+
+FetchContent_Declare(imgui_ext
+    URL https://github.com/ocornut/imgui/archive/refs/tags/${FETCH_IMGUI_VERSION}.zip
+    EXCLUDE_FROM_ALL)
+FetchContent_MakeAvailable(imgui_ext)
+
+file(GLOB IMGUI_SOURCES 
+    ${imgui_ext_SOURCE_DIR}/*.cpp
+    ${imgui_ext_SOURCE_DIR}/*.h
+    ${imgui_ext_SOURCE_DIR}/misc/cpp/imgui_stdlib.h
+    ${imgui_ext_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp)
+
+if (CMAKE_GENERATOR MATCHES "Visual Studio")
+    list(APPEND IMGUI_SOURCES
+        ${imgui_ext_SOURCE_DIR}/misc/debuggers/imgui.natvis
+        ${imgui_ext_SOURCE_DIR}/misc/debuggers/imgui.natstepfilter)
+endif()
+
+set(IMGUI_BACKEND_SOURCES 
+    ${imgui_ext_SOURCE_DIR}/backends/imgui_impl_sdl2.h
+    ${imgui_ext_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+    ${imgui_ext_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.h
+    ${imgui_ext_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp)
+
+add_library(imgui ${IMGUI_SOURCES} ${IMGUI_BACKEND_SOURCES})
+
+target_include_directories(imgui PUBLIC 
+    ${imgui_ext_SOURCE_DIR} 
+    ${imgui_ext_SOURCE_DIR}/backends
+    ${imgui_ext_SOURCE_DIR}/misc/cpp
+)
+target_link_libraries(imgui PUBLIC ${TARGET_NAME_SDL2} ${TARGET_NAME_SDL2_MIXER})
+
+target_link_libraries(spaceinvaders PRIVATE imgui)
+
+# -----------------------------------------------------------------------
