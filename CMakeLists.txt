@@ -5,7 +5,7 @@ include(FetchContent)
 
 # Fix DOWNLOAD_EXTRACT_TIMESTAMP warning in CMake >= 3.24
 if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
-	cmake_policy(SET CMP0135 NEW)
+    cmake_policy(SET CMP0135 NEW)
 endif()
 
 set(SOURCES 
@@ -182,7 +182,9 @@ FetchContent_MakeAvailable(imgui_ext)
 
 file(GLOB IMGUI_SOURCES 
     ${imgui_ext_SOURCE_DIR}/*.cpp
-    ${imgui_ext_SOURCE_DIR}/*.h
+    ${imgui_ext_SOURCE_DIR}/*.h)
+
+list(APPEND IMGUI_SOURCES
     ${imgui_ext_SOURCE_DIR}/misc/cpp/imgui_stdlib.h
     ${imgui_ext_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp)
 

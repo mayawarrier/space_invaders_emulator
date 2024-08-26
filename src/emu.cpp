@@ -1,9 +1,7 @@
 //
-// Emulate all the hardware inside the Space Invaders arcade machine, and 
-// provide a user interface to interact with the emulator.
-// 
 // See https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html
-// for documentation.
+// for documentation on the hardware inside the Space Invaders arcade machine.
+// It provides context for a lot of what is emulated here.
 //
 
 #include <cmath>
@@ -431,11 +429,20 @@ static int imgui_demo_window()
     return 0;
 }
 
+enum sidepanel
+{
+    SIDEPANEL_NONE,
+    SIDEPANEL_HELP,
+    SIDEPANEL_SETTINGS
+};
+
 emulator::emulator(uint scalefac) :
     m_window(nullptr), m_renderer(nullptr), m_screentex(nullptr),
     m_scalefac(scalefac), 
     m_scresX(RES_NATIVE_X * scalefac),
     m_scresY(RES_NATIVE_Y * scalefac),
+    m_ui_fps(FLT_MAX),
+    m_ui_sidepanel(SIDEPANEL_NONE),
     m_ok(false)
 {
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -477,7 +484,7 @@ emulator::emulator(const fs::path& romdir, uint scalefac) :
 {
     print_envstats();
 
-    imgui_demo_window();
+    //imgui_demo_window();
 
     if (init_graphics() != 0 ||
         init_audio(romdir) != 0) {
@@ -642,14 +649,12 @@ void emulator::draw_handle_ui()
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::Button("Settings")) {
+            m_ui_sidepanel = SIDEPANEL_SETTINGS;
         }
         ImGui::SameLine();
 
         if (ImGui::Button("Help!")) {
-            int width, height;
-            SDL_GetWindowSize(m_window, &width, &height);
-            SDL_SetWindowSize(m_window, width + 500, height);
-            SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+            m_ui_sidepanel = SIDEPANEL_HELP;
         }
         ImGui::SameLine();
 
