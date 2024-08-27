@@ -115,7 +115,7 @@ private:
     uint m_scresY;
 
     int m_ui_fps;
-    int m_ui_sidepanel;
+    int m_cur_sidepanel;
 
     bool m_ok;
 };

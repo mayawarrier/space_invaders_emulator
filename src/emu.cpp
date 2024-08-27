@@ -442,7 +442,7 @@ emulator::emulator(uint scalefac) :
     m_scresX(RES_NATIVE_X * scalefac),
     m_scresY(RES_NATIVE_Y * scalefac),
     m_ui_fps(FLT_MAX),
-    m_ui_sidepanel(SIDEPANEL_NONE),
+    m_cur_sidepanel(SIDEPANEL_NONE),
     m_ok(false)
 {
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -640,27 +640,82 @@ void emulator::draw_screen(uint64_t& last_cpucycles, uint64_t nframes_rend)
     SDL_RenderCopy(m_renderer, m_screentex, NULL, &m_screenrect);
 }
 
+static void set_window_width(SDL_Window* window, int new_width)
+{
+    int width, height, xpos, ypos;
+    SDL_GetWindowSize(window, &width, &height);
+    SDL_GetWindowPosition(window, &xpos, &ypos);
+
+    SDL_SetWindowSize(window, new_width, height);
+    SDL_SetWindowPosition(window, xpos - (new_width - width) / 2, ypos);
+}
+
 void emulator::draw_handle_ui()
 {
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
+    int new_sidepanel = m_cur_sidepanel;
+
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::Button("Settings")) {
-            m_ui_sidepanel = SIDEPANEL_SETTINGS;
+            new_sidepanel = 
+                (m_cur_sidepanel == SIDEPANEL_SETTINGS) ?
+                SIDEPANEL_NONE : SIDEPANEL_SETTINGS;
         }
         ImGui::SameLine();
 
         if (ImGui::Button("Help!")) {
-            m_ui_sidepanel = SIDEPANEL_HELP;
+            new_sidepanel =
+                (m_cur_sidepanel == SIDEPANEL_HELP) ?
+                SIDEPANEL_NONE : SIDEPANEL_HELP;
         }
         ImGui::SameLine();
 
         ImGui::Text("FPS: %d", m_ui_fps);
-
         ImGui::EndMainMenuBar();
+    }
+
+    static constexpr int SIDEPANEL_SIZE = 350;
+    static constexpr int SIDEPANEL_FONTSIZE = 20;
+
+    if (new_sidepanel != m_cur_sidepanel)
+    {
+        if (m_cur_sidepanel == SIDEPANEL_NONE) {
+            set_window_width(m_window, m_scresX + SIDEPANEL_SIZE);
+        }
+        else if (new_sidepanel == SIDEPANEL_NONE) {
+            set_window_width(m_window, m_scresX);
+        }
+    }
+    m_cur_sidepanel = new_sidepanel;
+
+    if (m_cur_sidepanel != SIDEPANEL_NONE)
+    {
+        ImGui::SetNextWindowSize(ImVec2(SIDEPANEL_SIZE, m_scresY));
+        ImGui::SetNextWindowPos(ImVec2(m_scresX, m_screenrect.y));
+    }
+    
+    ImGuiWindowFlags sidepanel_flags =
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove;
+
+    switch (m_cur_sidepanel)
+    {
+    case SIDEPANEL_HELP:
+        ImGui::Begin("Help", NULL, sidepanel_flags);
+        ImGui::Text("Help!");
+        ImGui::End();
+        break;
+
+    case SIDEPANEL_SETTINGS:
+        ImGui::Begin("Settings", NULL, sidepanel_flags);
+        ImGui::Text("Settings");
+        ImGui::End();
+        break;
     }
 
     ImGui::Render();
@@ -735,7 +790,7 @@ void emulator::run()
         auto t_laststart = t_start;
         t_start = clk::now();
 
-#define FPS_SMOOTH_NFRAMES 10
+        static constexpr int FPS_SMOOTH_NFRAMES = 10;
 
         // Adjust sleep time to meet CRT's 60Hz refresh rate as closely as possible
         if (nframes % FPS_SMOOTH_NFRAMES == 0) 
