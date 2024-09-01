@@ -6,30 +6,31 @@
 #include <filesystem>
 #include <chrono>
 #include <memory>
+#include <thread>
 
 #define CONCAT(x, y) x##y
 #define STR(a) #a
 #define XSTR(a) STR(a)
 
-namespace fs = std::filesystem;
-namespace tim = std::chrono; // can't be 'time' unfortunately
-
-using uint = unsigned int;
-
 #ifdef __clang__
-#define PUSH_WARNINGS \
-_Pragma("clang diagnostic push")
-#define IGNORE_WFORMAT_SECURITY \
-_Pragma("clang diagnostic ignored \"-Wformat-security\"")
-#define POP_WARNINGS \
-_Pragma("clang diagnostic pop")
+#define PUSH_WARNINGS _Pragma("clang diagnostic push")
+#define POP_WARNINGS  _Pragma("clang diagnostic pop")
+#define IGNORE_WFORMAT_SECURITY _Pragma("clang diagnostic ignored \"-Wformat-security\"")
+
 #else
 #define PUSH_WARNINGS
-#define IGNORE_WFORMAT_SECURITY
 #define POP_WARNINGS
+#define IGNORE_WFORMAT_SECURITY
 #endif
 
-// todo: move to log.cpp
+namespace fs = std::filesystem;
+namespace tim = std::chrono;
+
+using clk = tim::steady_clock; // 100ns resolution on Windows
+using uint = unsigned int;
+
+
+// todo: move logging to its own file
 extern std::FILE* LOGFILE;
 extern bool CONSOLE_HAS_COLORS;
 
@@ -40,7 +41,6 @@ extern bool CONSOLE_HAS_COLORS;
 #define WARNING_PREFIX "Warning: "
 
 
-// Print red error message.
 template <typename ...Args>
 void fput_msg(std::FILE* stream, const char* prefix, const char* fmt, Args... args)
 {
@@ -110,6 +110,45 @@ template <typename T>
 inline bool get_bit(T word, int bit)
 {
     return (word & (0x1 << bit)) != 0;
+}
+
+// More accurate than this_thread::sleep_for(), especially for MINGW
+template <typename T>
+void sleep_for(T tsleep)
+{
+    static constexpr uint64_t us_per_s = 1000000;
+    static constexpr uint32_t wake_interval_ms = 3;
+
+    static const uint64_t perfctr_freq = SDL_GetPerformanceFrequency();
+
+    if (perfctr_freq < us_per_s) [[unlikely]] {
+        SDL_Delay(uint32_t(tim::round<tim::milliseconds>(tsleep).count()));
+        return;
+    }
+
+    const auto tbeg = clk::now();
+    const auto tend = tbeg + tsleep;
+
+    auto tcur = tbeg;
+    auto trem = tend - tbeg;
+    while (tcur < tend)
+    {
+        if (trem > tim::milliseconds(wake_interval_ms)) {
+            SDL_Delay(wake_interval_ms);
+        }
+        else {
+            auto trem_us = tim::round<tim::microseconds>(trem);
+
+            uint64_t cur_ctr = SDL_GetPerformanceCounter();
+            uint64_t target_ctr = cur_ctr + trem_us.count() * perfctr_freq / us_per_s;
+
+            while (cur_ctr < target_ctr) {
+                cur_ctr = SDL_GetPerformanceCounter();
+            }
+        }
+        tcur = clk::now();
+        trem = tend - tcur;
+    }
 }
 
 #endif
