@@ -9,12 +9,13 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
 endif()
 
 set(SOURCES 
-    "src/i8080/i8080.cpp" 
     "src/i8080/i8080.hpp" 
     "src/i8080/i8080_opcodes.h"
+    "src/i8080/i8080.cpp" 
     "src/utils.hpp"
     "src/emu.hpp"
     "src/emu.cpp"
+    "src/gui.cpp"
     "src/main.cpp")
 
 if (WIN32)
@@ -56,6 +57,11 @@ add_custom_command(
         ${CMAKE_BINARY_DIR}/data
     VERBATIM
 )
+
+if (NOT CMAKE_BUILD_TYPE)
+    message(STATUS "No build type selected, default to Release")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+endif()
 
 # -------------------------------- cxxopts --------------------------------
 FetchContent_Declare(cxxopts
@@ -208,6 +214,13 @@ target_include_directories(imgui PUBLIC
     ${imgui_ext_SOURCE_DIR}/misc/cpp
 )
 target_link_libraries(imgui PUBLIC ${TARGET_NAME_SDL2} ${TARGET_NAME_SDL2_MIXER})
+
+target_compile_definitions(imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
+if (NOT CMAKE_BUILD_TYPE MATCHES "Debug")
+    target_compile_definitions(imgui PUBLIC 
+        IMGUI_DISABLE_DEMO_WINDOWS 
+        IMGUI_DISABLE_DEBUG_TOOLS)
+endif()
 
 target_link_libraries(spaceinvaders PRIVATE imgui)
 

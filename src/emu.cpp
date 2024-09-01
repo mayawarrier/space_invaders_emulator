@@ -7,10 +7,6 @@
 #include <cmath>
 #include <string_view>
 
-#include <imgui.h>
-#include <imgui_impl_sdl2.h>
-#include <imgui_impl_sdlrenderer2.h>
-
 #include "i8080/i8080_opcodes.h"
 #include "emu.hpp"
 
@@ -139,37 +135,13 @@ static const char* pixfmt_name(uint32_t fmt)
     return str.data();
 }
 
-// https://github.com/ocornut/imgui/issues/252
-static int imgui_menubar_height()
-{
-    ImGui_ImplSDLRenderer2_NewFrame();
-    ImGui_ImplSDL2_NewFrame();
-    ImGui::NewFrame();
-
-    // nasty workaround!
-    // create a dummy window and measure its menu bar size
-    ImGui::Begin("Dummy", NULL, ImGuiWindowFlags_NoTitleBar);
-    ImGui::BeginMainMenuBar();
-    ImGui::EndMainMenuBar();
-    ImGui::End();
-
-    int height = (int)ImGui::GetFrameHeight();
-    ImGui::EndFrame();
-
-    return height;
-}
-
-int emulator::init_graphics()
+int emu::init_graphics()
 {
     MESSAGE("Initializing graphics");
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         return ERROR("SDL_Init(): %s", SDL_GetError());
     }
-
-    // DirectX backend temporarily freezes if window size/position is set after creation.
-    // Probably related to this: https://stackoverflow.com/questions/40312553/
-    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
 
     m_window = SDL_CreateWindow("Space Invaders", 0, 0, 0, 0, SDL_WINDOW_HIDDEN);
     if (!m_window) {
@@ -187,32 +159,10 @@ int emulator::init_graphics()
 
     MESSAGE("-- Render backend: %s", rendinfo.name);
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGui::StyleColorsDark();
-
-    if (!ImGui_ImplSDL2_InitForSDLRenderer(m_window, m_renderer) ||
-        !ImGui_ImplSDLRenderer2_Init(m_renderer)) {
-        return ERROR("Failed to initialize ImGui with SDL backend");
-    }
-
-    ImFontConfig font_cfg;
-    font_cfg.SizePixels = 15.f;
-
-    ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->Clear();
-    io.Fonts->AddFontDefault(&font_cfg);
-    io.Fonts->Build();
-
-    int menubar_height = imgui_menubar_height();
-    m_screenrect = {
-        .x = 0,
-        .y = menubar_height,
-        .w = int(m_scresX),
-        .h = int(m_scresY)
-    };
-
-    SDL_SetWindowSize(m_window, m_scresX, m_scresY + menubar_height);
+    int e = m_gui.init(this, &m_screenrect);
+    if (e) { return e; }
+    
+    SDL_SetWindowSize(m_window, m_scresX, m_scresY + m_screenrect.y);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
     MESSAGE("-- Screen bounds: x: %d, y: %d, w: %d, h: %d",
@@ -258,7 +208,7 @@ pixfmt_done:
     return 0;
 }
 
-int emulator::init_audio(const fs::path& audio_dir) 
+int emu::init_audio(const fs::path& audio_dir) 
 {
     MESSAGE("Initializing audio");
 
@@ -336,7 +286,7 @@ static int load_file(const fs::path& path, i8080_word_t* mem, unsigned size)
     return 0;
 }
 
-int emulator::load_rom(const fs::path& dir)
+int emu::load_rom(const fs::path& dir)
 {
     int e;
     if (fs::exists(dir / "invaders.rom")) {
@@ -355,94 +305,12 @@ int emulator::load_rom(const fs::path& dir)
     return 0;
 }
 
-static int imgui_demo_window()
-{
-    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-    SDL_Window* window = SDL_CreateWindow("Dear ImGui SDL2+SDL_Renderer example",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
-    if (window == nullptr)
-    {
-        printf("Error: SDL_CreateWindow(): %s\n", SDL_GetError());
-        return -1;
-    }
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
-    if (renderer == nullptr)
-    {
-        SDL_Log("Error creating SDL_Renderer!");
-        return -1;
-    }
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-
-    ImGui::StyleColorsLight();
-
-    ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
-    ImGui_ImplSDLRenderer2_Init(renderer);
-
-    bool running = true;
-    bool show_demo_window = true;
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-    while (running)
-    {
-        SDL_Event event;
-        while (SDL_PollEvent(&event))
-        {
-            ImGui_ImplSDL2_ProcessEvent(&event);
-            if (event.type == SDL_QUIT)
-                running = false;
-            if (event.type == SDL_WINDOWEVENT &&
-                event.window.event == SDL_WINDOWEVENT_CLOSE &&
-                event.window.windowID == SDL_GetWindowID(window))
-                running = false;
-        }
-        if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED)
-        {
-            SDL_Delay(10);
-            continue;
-        }
-
-        ImGui_ImplSDLRenderer2_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
-        ImGui::NewFrame();
-
-        ImGui::ShowDemoWindow(&show_demo_window);
-
-        ImGui::Render();
-        SDL_RenderSetScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-        SDL_SetRenderDrawColor(renderer, (Uint8)(clear_color.x * 255), (Uint8)(clear_color.y * 255), (Uint8)(clear_color.z * 255), (Uint8)(clear_color.w * 255));
-        SDL_RenderClear(renderer);
-        ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
-        SDL_RenderPresent(renderer);
-    }
-
-    ImGui_ImplSDLRenderer2_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
-
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-
-    return 0;
-}
-
-enum sidepanel
-{
-    SIDEPANEL_NONE,
-    SIDEPANEL_HELP,
-    SIDEPANEL_SETTINGS
-};
-
-emulator::emulator(uint scalefac) :
+emu::emu(uint scalefac) :
     m_window(nullptr), m_renderer(nullptr), m_screentex(nullptr),
     m_scalefac(scalefac), 
     m_scresX(RES_NATIVE_X * scalefac),
     m_scresY(RES_NATIVE_Y * scalefac),
-    m_ui_fps(FLT_MAX),
-    m_cur_sidepanel(SIDEPANEL_NONE),
     m_ok(false)
 {
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -451,7 +319,7 @@ emulator::emulator(uint scalefac) :
 }
 
 // helpful for debugging
-void emulator::print_envstats()
+void emu::print_dbginfo()
 {
     MESSAGE("Platform: "
         XSTR(COMPILER_NAME) " " XSTR(COMPILER_VERSION)
@@ -473,18 +341,15 @@ void emulator::print_envstats()
         SDL_MIXER_MAJOR_VERSION, SDL_MIXER_MINOR_VERSION, SDL_MIXER_PATCHLEVEL,
         mix_version->major, mix_version->minor, mix_version->patch);
 
-    MESSAGE("ImGui version: %s", ImGui::GetVersion());
+    m_gui.print_dbginfo();
 
     MESSAGE("");
 }
 
-
-emulator::emulator(const fs::path& romdir, uint scalefac) :
-    emulator(scalefac)
+emu::emu(const fs::path& romdir, uint scalefac) :
+    emu(scalefac)
 {
-    print_envstats();
-
-    //imgui_demo_window();
+    print_dbginfo();
 
     if (init_graphics() != 0 ||
         init_audio(romdir) != 0) {
@@ -514,7 +379,7 @@ emulator::emulator(const fs::path& romdir, uint scalefac) :
     m_ok = true;
 }
 
-emulator::~emulator()
+emu::~emu()
 {
     for (int i = 0; i < NUM_SOUNDS; ++i) {
         Mix_FreeChunk(m.sounds[i]);
@@ -522,16 +387,14 @@ emulator::~emulator()
     Mix_CloseAudio();
     SDL_DestroyTexture(m_screentex);
 
-    ImGui_ImplSDLRenderer2_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
+    m_gui.shutdown();
 
     SDL_DestroyRenderer(m_renderer);
     SDL_DestroyWindow(m_window);
     SDL_Quit();
 }
 
-void emulator::handle_input(SDL_Scancode sc, bool pressed)
+void emu::handle_input(SDL_Scancode sc, bool pressed)
 {
     switch (sc)
     {
@@ -551,7 +414,7 @@ void emulator::handle_input(SDL_Scancode sc, bool pressed)
     }
 }
 
-void emulator::handle_switch(int index, bool value)
+void emu::set_switch(int index, bool value)
 {
     switch (index)
     {
@@ -560,25 +423,24 @@ void emulator::handle_switch(int index, bool value)
     case 5: set_bit(&m.in_port2, 1, value); break;
     case 6: set_bit(&m.in_port2, 3, value); break;
     case 7: set_bit(&m.in_port2, 7, value); break;
-
     default: break;
     }
 }
 
-// Pixel color after gel overlay
-// https://tcrf.net/images/a/af/SpaceInvadersArcColorUseTV.png
-static colr_idx pixel_color(uint x, uint y)
-{  
-    if ((y <= 15 && x > 24 && x < 136) || (y > 15 && y < 71)) {
-        return COLRIDX_GREEN;
+bool emu::get_switch(int index)
+{
+    switch (index)
+    {
+    case 3: return get_bit(m.in_port2, 0);
+    case 4: return get_bit(m.in_port0, 0);
+    case 5: return get_bit(m.in_port2, 1);
+    case 6: return get_bit(m.in_port2, 3);
+    case 7: return get_bit(m.in_port2, 7);
+    default: return false;
     }
-    else if (y >= 192 && y < 223) {
-        return COLRIDX_RED;
-    }
-    else { return COLRIDX_WHITE; }
 }
 
-void emulator::draw_screen(uint64_t& last_cpucycles, uint64_t nframes_rend)
+void emu::run_cpu(uint64_t& last_cpucycles, uint64_t nframes_rend)
 {
     // 33333.33 clk cycles at emulated CPU's 2Mhz clock speed (16667us/0.5us)
     uint64_t frame_cycles = 33333 + (nframes_rend % 3 == 0);
@@ -600,7 +462,23 @@ void emulator::draw_screen(uint64_t& last_cpucycles, uint64_t nframes_rend)
 
     // extra cycles adjusted in next frame
     last_cpucycles += frame_cycles;
+}
 
+// Pixel color after gel overlay
+// https://tcrf.net/images/a/af/SpaceInvadersArcColorUseTV.png
+static colr_idx pixel_color(uint x, uint y)
+{
+    if ((y <= 15 && x > 24 && x < 136) || (y > 15 && y < 71)) {
+        return COLRIDX_GREEN;
+    }
+    else if (y >= 192 && y < 223) {
+        return COLRIDX_RED;
+    }
+    else { return COLRIDX_WHITE; }
+}
+
+void emu::draw_screen()
+{
     void* pixels; int pitch;
     SDL_LockTexture(m_screentex, NULL, &pixels, &pitch);
 
@@ -640,100 +518,16 @@ void emulator::draw_screen(uint64_t& last_cpucycles, uint64_t nframes_rend)
     SDL_RenderCopy(m_renderer, m_screentex, NULL, &m_screenrect);
 }
 
-static void set_window_width(SDL_Window* window, int new_width)
-{
-    int width, height, xpos, ypos;
-    SDL_GetWindowSize(window, &width, &height);
-    SDL_GetWindowPosition(window, &xpos, &ypos);
-
-    SDL_SetWindowSize(window, new_width, height);
-    SDL_SetWindowPosition(window, xpos - (new_width - width) / 2, ypos);
-}
-
-void emulator::draw_handle_ui()
-{
-    ImGui_ImplSDLRenderer2_NewFrame();
-    ImGui_ImplSDL2_NewFrame();
-    ImGui::NewFrame();
-
-    int new_sidepanel = m_cur_sidepanel;
-
-    if (ImGui::BeginMainMenuBar())
-    {
-        if (ImGui::Button("Settings")) {
-            new_sidepanel = 
-                (m_cur_sidepanel == SIDEPANEL_SETTINGS) ?
-                SIDEPANEL_NONE : SIDEPANEL_SETTINGS;
-        }
-        ImGui::SameLine();
-
-        if (ImGui::Button("Help!")) {
-            new_sidepanel =
-                (m_cur_sidepanel == SIDEPANEL_HELP) ?
-                SIDEPANEL_NONE : SIDEPANEL_HELP;
-        }
-        ImGui::SameLine();
-
-        ImGui::Text("FPS: %d", m_ui_fps);
-        ImGui::EndMainMenuBar();
-    }
-
-    static constexpr int SIDEPANEL_SIZE = 350;
-    static constexpr int SIDEPANEL_FONTSIZE = 20;
-
-    if (new_sidepanel != m_cur_sidepanel)
-    {
-        if (m_cur_sidepanel == SIDEPANEL_NONE) {
-            set_window_width(m_window, m_scresX + SIDEPANEL_SIZE);
-        }
-        else if (new_sidepanel == SIDEPANEL_NONE) {
-            set_window_width(m_window, m_scresX);
-        }
-    }
-    m_cur_sidepanel = new_sidepanel;
-
-    if (m_cur_sidepanel != SIDEPANEL_NONE)
-    {
-        ImGui::SetNextWindowSize(ImVec2(SIDEPANEL_SIZE, m_scresY));
-        ImGui::SetNextWindowPos(ImVec2(m_scresX, m_screenrect.y));
-    }
-    
-    ImGuiWindowFlags sidepanel_flags =
-        ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove;
-
-    switch (m_cur_sidepanel)
-    {
-    case SIDEPANEL_HELP:
-        ImGui::Begin("Help", NULL, sidepanel_flags);
-        ImGui::Text("Help!");
-        ImGui::End();
-        break;
-
-    case SIDEPANEL_SETTINGS:
-        ImGui::Begin("Settings", NULL, sidepanel_flags);
-        ImGui::Text("Settings");
-        ImGui::End();
-        break;
-    }
-
-    ImGui::Render();
-    ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_renderer);
-}
-
-// 100ns resolution on Windows
-using clk = tim::steady_clock;
-
-void emulator::run()
+void emu::run()
 {
     SDL_ShowWindow(m_window);
 
     uint64_t nframes = 0;   // total frames rendered
-    uint64_t cpucycles = 0; // 8080 cpu cycles
-    float fps_sum = 0;
+    uint64_t cpucycles = 0; // 8080 elapsed cpu cycles 
 
-    tim::microseconds tframe_target(16667); // 60 fps
+    // 60 Hz CRT refresh rate
+    static constexpr tim::microseconds tframe_target(16667);
+
     clk::time_point t_start = clk::now();
 
     bool running = true;
@@ -742,7 +536,7 @@ void emulator::run()
         SDL_Event e;
         while (SDL_PollEvent(&e))
         {
-            ImGui_ImplSDL2_ProcessEvent(&e);
+            m_gui.process_event(&e);
 
             switch (e.type)
             {
@@ -751,12 +545,12 @@ void emulator::run()
                 break;
 
             case SDL_KEYDOWN:
-                if (!ImGui::GetIO().WantCaptureKeyboard) {
+                if (!m_gui.want_keyboard()) {
                     handle_input(e.key.keysym.scancode, true);
                 }
                 break;
             case SDL_KEYUP:
-                if (!ImGui::GetIO().WantCaptureKeyboard) {
+                if (!m_gui.want_keyboard()) {
                     handle_input(e.key.keysym.scancode, false);
                 }
                 break;
@@ -772,54 +566,31 @@ void emulator::run()
             continue;
         }
 
-        SDL_SetRenderDrawColor(m_renderer, 255, 0, 0, 255);
+        // Run CPU for 1 frame.
+        run_cpu(cpucycles, nframes);
+
+        SDL_SetRenderDrawColor(m_renderer, 36, 36, 36, 255);
         SDL_RenderClear(m_renderer);
 
-        draw_screen(cpucycles, nframes);
-        draw_handle_ui();
+        draw_screen();
+        m_gui.draw();
 
         SDL_RenderPresent(m_renderer);
 
-        // Wait until vsync
+        // Vsync
         auto tframe = clk::now() - t_start;
         if (tframe < tframe_target) {
-            auto sleep_ms = tim::round<tim::milliseconds>(tframe_target - tframe);
-            SDL_Delay(uint32_t(sleep_ms.count()));
+            sleep_for(tframe_target - tframe);
         }
 
         auto t_laststart = t_start;
         t_start = clk::now();
-
-        static constexpr int FPS_SMOOTH_NFRAMES = 10;
-
-        // Adjust sleep time to meet CRT's 60Hz refresh rate as closely as possible
-        if (nframes % FPS_SMOOTH_NFRAMES == 0) 
-        {
-            long fps_avg = std::lroundf(fps_sum / FPS_SMOOTH_NFRAMES);
-            if (fps_avg < 57) {
-                tframe_target -= tim::microseconds(1000);
-            } else if (fps_avg < 60) {
-                tframe_target -= tim::microseconds(100);
-            } else if (fps_avg > 63) {
-                tframe_target += tim::microseconds(1000);
-            } else if (fps_avg > 60) {
-                tframe_target += tim::microseconds(100);
-            }
-            fps_sum = 0;
-
-            std::printf("\rFPS: %ld", fps_avg);
-            std::fflush(stdout);
-
-            m_ui_fps = (int)fps_avg;
-        } 
         
-        float fps = 1.f / tim::duration<float>(t_start - t_laststart).count();
-        fps_sum += fps;
+        float delta_t = tim::duration<float>(t_start - t_laststart).count();
+        m_gui.set_delta_t(delta_t);
+        m_gui.set_fps(1.f / delta_t);
 
         nframes++;
     }
-
-    // newline for cmd prompt
-    std::printf("\n");
 }
 
