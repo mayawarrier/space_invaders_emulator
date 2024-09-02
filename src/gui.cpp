@@ -34,14 +34,11 @@ struct color
     }
 };
 
-static constexpr color HEADER_COLOR(48, 82, 121, 255);
-static constexpr color SUBHEADER_COLOR = HEADER_COLOR.brighter(50);
-
-enum sidepanel
+enum panel_type
 {
-    SIDEPANEL_NONE,
-    SIDEPANEL_HELP,
-    SIDEPANEL_SETTINGS
+    PANEL_NONE,
+    PANEL_HELP,
+    PANEL_SETTINGS
 };
 
 int emu_gui::init(emu* emu, SDL_Rect* screen_rect)
@@ -49,7 +46,7 @@ int emu_gui::init(emu* emu, SDL_Rect* screen_rect)
     // demo_window();
 
     m_emu = emu;
-    m_cur_sidepanel = SIDEPANEL_NONE;
+    m_cur_panel = PANEL_NONE;
     m_fps = -1;
     m_deltat_min = FLT_MAX;
     m_deltat_max = FLT_MIN;
@@ -154,29 +151,18 @@ static void draw_ralign_text(const char* fmt, Args... args)
     ImGui::Text(ptxt);
 }
 
-static void set_panel_bgcolor(ImU32 color)
-{
-    ImVec2 wndpos = ImGui::GetWindowPos();
-    ImVec2 wndsize = ImGui::GetWindowSize();
-
-    // Draw a filled rectangle as the background
-    ImGui::GetWindowDrawList()->AddRectFilled(wndpos,
-        ImVec2(wndpos.x + wndsize.x, wndpos.y + wndsize.y), color);
-}
-
 static void draw_header(const char* title, color colr, bool right_align = false)
 {
     ImVec2 dpos = ImGui::GetCursorScreenPos();
     ImVec2 wndsize = ImGui::GetWindowSize();
     ImVec2 wndpos = ImGui::GetWindowPos();
-
-    float hdr_size = ImGui::GetFont()->FontSize + ImGui::GetStyle().WindowPadding.y * 2;
+    float wndpadding = ImGui::GetStyle().WindowPadding.y;
+    float hdr_size = ImGui::GetFont()->FontSize + wndpadding * 2;
 
     ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(wndpos.x, dpos.y),
         ImVec2(wndpos.x + wndsize.x, dpos.y + hdr_size), colr.to_imcolor());
 
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y);
-
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + wndpadding);
     if (right_align) {
         draw_ralign_text(title);
     } else {
@@ -218,7 +204,108 @@ static bool draw_dip_switch(int index, bool value)
     return value;
 }
 
-//void emu_gui::draw_sidepanel(const char* title,)
+static constexpr int PANEL_SIZE = 350;
+static constexpr color PANEL_BGCOLOR(36, 36, 36, 255);
+static constexpr color HEADER_BGCOLOR(48, 82, 121, 255);
+static constexpr color SUBHDR_BGCOLOR = HEADER_BGCOLOR.brighter(50);
+
+
+void emu_gui::draw_help_content()
+{}
+
+void emu_gui::draw_settings_content()
+{
+    ImGui::PushFont(m_txt_font);
+    draw_header("Cabinet DIP switches", SUBHDR_BGCOLOR, true);
+    ImGui::PopFont();
+    ImGui::NewLine();
+
+    float sw_txtpos[5];
+
+    ImGui::SetCursorPosX(ImGui::GetFrameHeight() * 2);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(20, 0));
+    for (int i = 7; i >= 3; --i)
+    {
+        sw_txtpos[i - 3] = ImGui::GetCursorPosX();
+
+        bool cur_val = m_emu->get_switch(i);
+        bool upd_val = draw_dip_switch(i, cur_val);
+        m_emu->set_switch(i, upd_val);
+
+        if (i != 3) {
+            ImGui::SameLine();
+        }
+    }
+    ImGui::PopStyleVar();
+
+    ImGui::PushFont(m_txt_font);
+    for (int i = 7; i >= 3; --i)
+    {
+        char sw_name[] = { 'D', 'I', 'P', char(0x30 + i), '\0' };
+        ImGui::SetCursorPosX(sw_txtpos[i - 3]);
+        ImGui::Text(sw_name);
+        ImGui::SameLine();
+    }
+    ImGui::PopFont();
+
+    ImGui::NewLine();
+    ImGui::NewLine();
+
+    draw_ralign_text("See README for how these");
+    draw_ralign_text("affect game behavior.");
+    ImGui::NewLine();
+
+    ImGui::PushFont(m_txt_font);
+    draw_header("Audio", SUBHDR_BGCOLOR, true);
+    ImGui::PopFont();
+    ImGui::NewLine();
+    
+    int volume = m_emu->get_volume();
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 10));
+    ImGui::SliderInt("", &volume, 0, MAX_VOLUME);
+    ImGui::PopStyleVar();
+    m_emu->set_volume(volume);
+
+    //ImGui::Text("Some long text testsgs");
+    //ImGui::Text("Some long text testsgs");
+    //ImGui::Text("Some long text testsgs");
+    //ImGui::Text("Some long text testsgs");
+    //ImGui::Text("Some long text testsgs");
+}
+
+void emu_gui::draw_panel(const char* title, void(emu_gui::*content_cb)())
+{
+    static constexpr ImGuiWindowFlags PANEL_FLAGS =
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove;
+
+    const ImVec2 wndpos(m_emu->m_scresX, m_menubar_height);
+    const ImVec2 wndsize(PANEL_SIZE, m_emu->m_scresY);
+
+    ImGui::SetNextWindowPos(wndpos);
+    ImGui::SetNextWindowSize(wndsize);
+
+    if (ImGui::Begin(title, NULL, PANEL_FLAGS))
+    {
+        // background
+        ImGui::GetWindowDrawList()->AddRectFilled(wndpos,
+            ImVec2(wndpos.x + wndsize.x, wndpos.y + wndsize.y),
+            PANEL_BGCOLOR.to_imcolor());
+
+        ImGui::PushFont(m_hdr_font);
+        ImGui::SetCursorPosY(0); // remove padding
+        draw_header(title, HEADER_BGCOLOR, true);
+        ImGui::PopFont();
+
+        ImGui::NewLine();
+
+        (this->*content_cb)();
+
+        ImGui::End();
+    }
+}
 
 void emu_gui::draw()
 {
@@ -226,21 +313,19 @@ void emu_gui::draw()
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    int new_sidepanel = m_cur_sidepanel;
+    int new_panel = m_cur_panel;
 
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::Button("Settings")) {
-            new_sidepanel =
-                (m_cur_sidepanel == SIDEPANEL_SETTINGS) ?
-                SIDEPANEL_NONE : SIDEPANEL_SETTINGS;
+            new_panel = (m_cur_panel == PANEL_SETTINGS) ?
+                PANEL_NONE : PANEL_SETTINGS;
         }
         ImGui::SameLine();
 
         if (ImGui::Button("Help!")) {
-            new_sidepanel =
-                (m_cur_sidepanel == SIDEPANEL_HELP) ?
-                SIDEPANEL_NONE : SIDEPANEL_HELP;
+            new_panel = (m_cur_panel == PANEL_HELP) ?
+                PANEL_NONE : PANEL_HELP;
         }
         ImGui::SameLine();
 
@@ -251,117 +336,21 @@ void emu_gui::draw()
         ImGui::EndMainMenuBar();
     }
 
-    static constexpr int SIDEPANEL_SIZE = 350;
-
-    if (new_sidepanel != m_cur_sidepanel)
+    if (new_panel != m_cur_panel)
     {
-        if (m_cur_sidepanel == SIDEPANEL_NONE) {
-            set_window_width(m_emu->m_window, m_emu->m_scresX + SIDEPANEL_SIZE);
+        if (m_cur_panel == PANEL_NONE) {
+            set_window_width(m_emu->m_window, m_emu->m_scresX + PANEL_SIZE);
         }
-        else if (new_sidepanel == SIDEPANEL_NONE) {
+        else if (new_panel == PANEL_NONE) {
             set_window_width(m_emu->m_window, m_emu->m_scresX);
         }
     }
-    m_cur_sidepanel = new_sidepanel;
+    m_cur_panel = new_panel;
 
-    ImGuiWindowFlags sidepanel_flags =
-        ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove;
-
-    
-
-    switch (m_cur_sidepanel)
+    switch (m_cur_panel)
     {
-    case SIDEPANEL_HELP:
-        ImGui::Begin("Help", NULL, sidepanel_flags);
-        ImGui::Text("Help!");
-        ImGui::End();
-        break;
-
-    case SIDEPANEL_SETTINGS:
-
-        float hdr_size = m_hdr_font->FontSize + ImGui::GetStyle().WindowPadding.y * 2;
-
-        ImGui::SetNextWindowPos(ImVec2(m_emu->m_scresX, m_menubar_height));
-        ImGui::SetNextWindowSize(ImVec2(SIDEPANEL_SIZE, hdr_size));
-
-        if (ImGui::Begin("Settings", NULL, sidepanel_flags))
-        {
-            set_panel_bgcolor(IM_COL32(48, 82, 121, 255));
-
-            ImGui::PushFont(m_hdr_font);
-            draw_ralign_text("Settings");
-            ImGui::PopFont();
-
-            ImGui::End();
-        }
-
-        ImGui::SetNextWindowPos(ImVec2(m_emu->m_scresX, m_menubar_height + hdr_size));
-        ImGui::SetNextWindowSize(ImVec2(SIDEPANEL_SIZE, m_emu->m_scresY - hdr_size));
-
-        if (ImGui::Begin("SettingsText", NULL, sidepanel_flags))
-        {
-            set_panel_bgcolor(IM_COL32(36, 36, 36, 255));
-
-            ImGui::PushFont(m_txt_font);
-            draw_header("Cabinet DIP switches", SUBHEADER_COLOR, true);
-            ImGui::PopFont();
-
-            ImGui::NewLine();
-
-            ImGui::SetCursorPosX(ImGui::GetFrameHeight() * 2);
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(20, 0));
-
-            float sw_txtpos[5];
-            for (int i = 7; i >= 3; --i)
-            {           
-                sw_txtpos[i - 3] = ImGui::GetCursorPosX();
-
-                bool cur_val = m_emu->get_switch(i);
-                bool upd_val = draw_dip_switch(i, cur_val);
-                m_emu->set_switch(i, upd_val);
-
-                if (i != 3) {
-                    ImGui::SameLine();
-                }
-            }
-            ImGui::PopStyleVar();
-
-            ImGui::PushFont(m_txt_font);
-            for (int i = 7; i >= 3; --i)
-            {
-                char sw_name[] = { 'D', 'I', 'P', char(0x30 + i), '\0'};
-                ImGui::SetCursorPosX(sw_txtpos[i - 3]);
-                ImGui::Text(sw_name);
-                ImGui::SameLine();
-            }
-            ImGui::PopFont();
-
-            ImGui::NewLine();
-            ImGui::NewLine();
-
-            draw_ralign_text("See README for how these");
-            draw_ralign_text("affect game behavior.");
-            ImGui::NewLine();
-            
-            ImGui::PushFont(m_txt_font);
-            draw_header("Audio", SUBHEADER_COLOR, true);
-            ImGui::PopFont();
-
-            ImGui::NewLine();
-            
-            ImGui::Text("Some long text testsgs");
-            ImGui::Text("Some long text testsgs");
-            ImGui::Text("Some long text testsgs");
-            ImGui::Text("Some long text testsgs");
-            ImGui::Text("Some long text testsgs");
-
-            ImGui::End();
-        }
-
-        break;
+    case PANEL_HELP:     draw_panel("Help!",    &emu_gui::draw_help_content); break;
+    case PANEL_SETTINGS: draw_panel("Settings", &emu_gui::draw_settings_content); break;
     }
 
     ImGui::Render();

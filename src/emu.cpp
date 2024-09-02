@@ -208,6 +208,20 @@ pixfmt_done:
     return 0;
 }
 
+static const int MAX_VOLUMES[] = 
+{
+    MIX_MAX_VOLUME / 2, // UFO fly
+    MIX_MAX_VOLUME / 2, // Shoot
+    MIX_MAX_VOLUME,
+    MIX_MAX_VOLUME / 2, // Alien die
+    MIX_MAX_VOLUME,
+    MIX_MAX_VOLUME,
+    MIX_MAX_VOLUME,
+    MIX_MAX_VOLUME,
+    MIX_MAX_VOLUME / 2, // UFO die
+    MIX_MAX_VOLUME,
+};
+
 int emu::init_audio(const fs::path& audio_dir) 
 {
     MESSAGE("Initializing audio");
@@ -219,11 +233,10 @@ int emu::init_audio(const fs::path& audio_dir)
     if (Mix_AllocateChannels(NUM_SOUNDS) != NUM_SOUNDS) {
         return ERROR("Mix_AllocateChannels(): %s", Mix_GetError());
     }
-    // adjust volume
-    Mix_Volume(0, MIX_MAX_VOLUME / 2); // UFO fly
-    Mix_Volume(8, MIX_MAX_VOLUME / 2); // UFO die
-    Mix_Volume(3, MIX_MAX_VOLUME / 2); // Alien die
-    Mix_Volume(1, MIX_MAX_VOLUME / 2); // Shoot
+    // adjust volume, some tracks are too loud
+    for (int i = 0; i < NUM_SOUNDS; ++i) {
+        Mix_Volume(i, MAX_VOLUMES[i]);
+    }
 
     static const char* AUDIO_FILENAMES[NUM_SOUNDS][2] =
     {
@@ -305,12 +318,12 @@ int emu::load_rom(const fs::path& dir)
     return 0;
 }
 
-
 emu::emu(uint scalefac) :
     m_window(nullptr), m_renderer(nullptr), m_screentex(nullptr),
     m_scalefac(scalefac), 
     m_scresX(RES_NATIVE_X * scalefac),
     m_scresY(RES_NATIVE_Y * scalefac),
+    m_volume(MAX_VOLUME),
     m_ok(false)
 {
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -438,6 +451,19 @@ bool emu::get_switch(int index)
     case 7: return get_bit(m.in_port2, 7);
     default: return false;
     }
+}
+
+void emu::set_volume(int new_volume)
+{
+    assert(new_volume >= 0 && new_volume <= 100);
+    if (new_volume != m_volume)
+    {
+        for (int i = 0; i < NUM_SOUNDS; ++i) {
+            int scaled_vol = int((float(new_volume) / MAX_VOLUME) * MAX_VOLUMES[i]);
+            Mix_Volume(i, scaled_vol);
+        }
+        m_volume = new_volume;
+    } 
 }
 
 void emu::run_cpu(uint64_t& last_cpucycles, uint64_t nframes_rend)

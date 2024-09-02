@@ -29,6 +29,7 @@
 #define RES_SCALE_DEFAULT 3
 
 #define NUM_SOUNDS 10
+#define MAX_VOLUME 100
 
 
 struct machine
@@ -88,14 +89,17 @@ struct emu_gui
     void draw();
 
 private:
-    void draw_sidepanel();
+    void draw_panel(const char* title, void(emu_gui::*content_cb)());
+    void draw_help_content();
+    void draw_settings_content();
 
 private:
     emu* m_emu;
     ImFont* m_hdr_font;
     ImFont* m_txt_font;
     int m_menubar_height;
-    int m_cur_sidepanel;
+    int m_cur_panel;
+
     int m_fps;
     float m_deltat;
     float m_deltat_min;
@@ -142,6 +146,9 @@ private:
     bool get_switch(int index);
     void set_switch(int index, bool value);
 
+    int get_volume() { return m_volume; }
+    void set_volume(int volume);
+
     void run_cpu(uint64_t& cpucycles, uint64_t nframes);
 
     void draw_screen();
@@ -157,6 +164,7 @@ private:
     uint m_scalefac;
     uint m_scresX;
     uint m_scresY;
+    int m_volume;
 
     emu_gui m_gui;
 
