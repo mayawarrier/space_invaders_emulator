@@ -15,7 +15,14 @@
 #ifdef __clang__
 #define PUSH_WARNINGS _Pragma("clang diagnostic push")
 #define POP_WARNINGS  _Pragma("clang diagnostic pop")
-#define IGNORE_WFORMAT_SECURITY _Pragma("clang diagnostic ignored \"-Wformat-security\"")
+#define IGNORE_WFORMAT_SECURITY \
+_Pragma("clang diagnostic ignored \"-Wformat-security\"")
+
+#elif defined(__GNUC__)
+#define PUSH_WARNINGS _Pragma("GCC diagnostic push")
+#define POP_WARNINGS  _Pragma("GCC diagnostic pop")
+#define IGNORE_WFORMAT_SECURITY \
+_Pragma("GCC diagnostic ignored \"-Wformat-security\"")
 
 #else
 #define PUSH_WARNINGS
@@ -117,8 +124,7 @@ template <typename T>
 void sleep_for(T tsleep)
 {
     static constexpr uint64_t us_per_s = 1000000;
-    static constexpr uint32_t wake_interval_ms = 3;
-
+    static constexpr auto wake_interval_ms = tim::milliseconds(3);
     static const uint64_t perfctr_freq = SDL_GetPerformanceFrequency();
 
     if (perfctr_freq < us_per_s) [[unlikely]] {
@@ -133,12 +139,13 @@ void sleep_for(T tsleep)
     auto trem = tend - tbeg;
     while (tcur < tend)
     {
-        if (trem > tim::milliseconds(wake_interval_ms)) {
-            SDL_Delay(wake_interval_ms);
+        trem = tend - tcur;
+
+        if (trem > wake_interval_ms) {
+            SDL_Delay(wake_interval_ms.count());
         }
         else {
             auto trem_us = tim::round<tim::microseconds>(trem);
-
             uint64_t cur_ctr = SDL_GetPerformanceCounter();
             uint64_t target_ctr = cur_ctr + trem_us.count() * perfctr_freq / us_per_s;
 
@@ -147,7 +154,6 @@ void sleep_for(T tsleep)
             }
         }
         tcur = clk::now();
-        trem = tend - tcur;
     }
 }
 
