@@ -15,6 +15,7 @@ set(SOURCES
     "src/utils.hpp"
     "src/emu.hpp"
     "src/emu.cpp"
+    "src/gui.hpp"
     "src/gui.cpp"
     "src/main.cpp")
 

@@ -10,6 +10,10 @@
 #include "i8080/i8080_opcodes.h"
 #include "emu.hpp"
 
+#include <imgui.h>
+#include <imgui_impl_sdl2.h>
+#include <imgui_impl_sdlrenderer2.h>
+
 
 static inline machine* MACHINE(i8080* cpu) { 
     return static_cast<machine*>(cpu->udata);
@@ -547,7 +551,7 @@ void emu::draw_screen()
 void emu::run()
 {
     SDL_ShowWindow(m_window);
-
+        
     uint64_t nframes = 0;   // total frames rendered
     uint64_t cpucycles = 0; // 8080 elapsed cpu cycles 
 
@@ -561,27 +565,32 @@ void emu::run()
     {
         SDL_Event e;
         while (SDL_PollEvent(&e))
+
+            // todo: HANDLE GAME EVENTS AFTER UI EVENTS!
         {
             m_gui.process_event(&e);
 
-            switch (e.type)
+            if (!m_gui.showing_sidepanel())
             {
-            case SDL_QUIT:
-                running = false;
-                break;
+                switch (e.type)
+                {
+                case SDL_QUIT:
+                    running = false;
+                    break;
 
-            case SDL_KEYDOWN:
-                if (!m_gui.want_keyboard()) {
-                    handle_input(e.key.keysym.scancode, true);
-                }
-                break;
-            case SDL_KEYUP:
-                if (!m_gui.want_keyboard()) {
-                    handle_input(e.key.keysym.scancode, false);
-                }
-                break;
+                case SDL_KEYDOWN:
+                    if (!m_gui.want_keyboard()) {
+                        handle_input(e.key.keysym.scancode, true);
+                    }
+                    break;
+                case SDL_KEYUP:
+                    if (!m_gui.want_keyboard()) {
+                        handle_input(e.key.keysym.scancode, false);
+                    }
+                    break;
 
-            default: break;
+                default: break;
+                }
             }
         }
         // Pause when minimized

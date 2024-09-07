@@ -3,6 +3,7 @@
 #define UTILS_HPP
 
 #include <cstdio>
+#include <algorithm>
 #include <filesystem>
 #include <chrono>
 #include <memory>
@@ -30,10 +31,11 @@ _Pragma("GCC diagnostic ignored \"-Wformat-security\"")
 #define IGNORE_WFORMAT_SECURITY
 #endif
 
+
 namespace fs = std::filesystem;
 namespace tim = std::chrono;
 
-using clk = tim::steady_clock; // 100ns resolution on Windows
+using clk = tim::steady_clock;
 using uint = unsigned int;
 
 

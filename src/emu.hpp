@@ -4,12 +4,14 @@
 
 #include <array>
 #include <memory>
+#include <bitset>
+
 #include <SDL.h>
 #include <SDL_mixer.h>
-#include <imgui.h>
 
 #include "i8080/i8080.hpp"
 #include "utils.hpp"
+#include "gui.hpp"
 
 
 #define KEY_CREDIT SDL_SCANCODE_RETURN
@@ -64,48 +66,6 @@ struct pix_fmt
     {}
 };
 
-struct emu;
-
-struct emu_gui
-{
-    int init(emu* emu, SDL_Rect* screen_rect);
-    void shutdown();
-
-    void print_dbginfo();
-
-    void set_fps(int fps) { m_fps = fps; }
-
-    void set_delta_t(float delta_t) 
-    {
-        m_deltat = delta_t;
-        m_deltat_min = std::min(m_deltat_min, delta_t);
-        m_deltat_max = std::max(m_deltat_max, delta_t);
-    }
-
-    bool process_event(SDL_Event* e);
-    bool want_keyboard();
-    bool want_mouse();
-
-    void draw();
-
-private:
-    void draw_panel(const char* title, void(emu_gui::*content_cb)());
-    void draw_help_content();
-    void draw_settings_content();
-
-private:
-    emu* m_emu;
-    ImFont* m_hdr_font;
-    ImFont* m_txt_font;
-    int m_menubar_height;
-    int m_cur_panel;
-
-    int m_fps;
-    float m_deltat;
-    float m_deltat_min;
-    float m_deltat_max;
-};
-
 struct emu
 {
     // \param rom_dir directory containing invaders ROM and audio files
@@ -130,7 +90,7 @@ struct emu
 
     ~emu();
 
-    friend emu_gui;
+    friend emu_interface;
 
 private:
     emu(uint scalefac);
@@ -159,13 +119,12 @@ private:
     SDL_Renderer* m_renderer;
     SDL_Rect m_screenrect;
     SDL_Texture* m_screentex;
-
     const pix_fmt* m_pixfmt;
     uint m_scalefac;
     uint m_scresX;
     uint m_scresY;
-    int m_volume;
 
+    int m_volume;
     emu_gui m_gui;
 
     bool m_ok;
