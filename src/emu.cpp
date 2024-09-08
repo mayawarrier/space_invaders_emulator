@@ -6,13 +6,14 @@
 
 #include <cmath>
 #include <string_view>
-
-#include "i8080/i8080_opcodes.h"
-#include "emu.hpp"
-
 #include <imgui.h>
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_sdlrenderer2.h>
+
+
+#include "i8080/i8080_opcodes.h"
+#include "gui.hpp"
+#include "emu.hpp"
 
 
 static inline machine* MACHINE(i8080* cpu) { 
@@ -163,8 +164,8 @@ int emu::init_graphics()
 
     MESSAGE("-- Render backend: %s", rendinfo.name);
 
-    int e = m_gui.init(this, &m_screenrect);
-    if (e) { return e; }
+    m_gui = std::make_unique<emu_gui>(this, &m_screenrect);
+    if (!m_gui->ok()) { return -1; }
     
     SDL_SetWindowSize(m_window, m_scresX, m_scresY + m_screenrect.y);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
@@ -327,7 +328,6 @@ emu::emu(uint scalefac) :
     m_scalefac(scalefac), 
     m_scresX(RES_NATIVE_X * scalefac),
     m_scresY(RES_NATIVE_Y * scalefac),
-    m_volume(MAX_VOLUME),
     m_ok(false)
 {
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -358,7 +358,7 @@ void emu::print_dbginfo()
         SDL_MIXER_MAJOR_VERSION, SDL_MIXER_MINOR_VERSION, SDL_MIXER_PATCHLEVEL,
         mix_version->major, mix_version->minor, mix_version->patch);
 
-    m_gui.print_dbginfo();
+    m_gui->print_dbginfo();
 
     MESSAGE("");
 }
@@ -404,7 +404,7 @@ emu::~emu()
     Mix_CloseAudio();
     SDL_DestroyTexture(m_screentex);
 
-    m_gui.shutdown();
+    m_gui.reset();
 
     SDL_DestroyRenderer(m_renderer);
     SDL_DestroyWindow(m_window);
@@ -457,9 +457,11 @@ bool emu::get_switch(int index)
     }
 }
 
-void emu::set_volume(int new_volume)
+int emu_interface::get_volume() { return m_volume; }
+
+void emu_interface::set_volume(int new_volume)
 {
-    assert(new_volume >= 0 && new_volume <= 100);
+    SDL_assert(new_volume >= 0 && new_volume <= 100);
     if (new_volume != m_volume)
     {
         for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -568,9 +570,9 @@ void emu::run()
 
             // todo: HANDLE GAME EVENTS AFTER UI EVENTS!
         {
-            m_gui.process_event(&e);
+            m_gui->process_event(&e);
 
-            if (!m_gui.showing_sidepanel())
+            if (!m_gui->showing_sidepanel())
             {
                 switch (e.type)
                 {
@@ -579,12 +581,12 @@ void emu::run()
                     break;
 
                 case SDL_KEYDOWN:
-                    if (!m_gui.want_keyboard()) {
+                    if (!m_gui->want_keyboard()) {
                         handle_input(e.key.keysym.scancode, true);
                     }
                     break;
                 case SDL_KEYUP:
-                    if (!m_gui.want_keyboard()) {
+                    if (!m_gui->want_keyboard()) {
                         handle_input(e.key.keysym.scancode, false);
                     }
                     break;
@@ -608,7 +610,7 @@ void emu::run()
         SDL_RenderClear(m_renderer);
 
         draw_screen();
-        m_gui.draw();
+        m_gui->draw();
 
         SDL_RenderPresent(m_renderer);
 
@@ -622,8 +624,8 @@ void emu::run()
         t_start = clk::now();
         
         float delta_t = tim::duration<float>(t_start - t_laststart).count();
-        m_gui.set_delta_t(delta_t);
-        m_gui.set_fps(1.f / delta_t);
+        m_gui->set_delta_t(delta_t);
+        m_gui->set_fps(1.f / delta_t);
 
         nframes++;
     }

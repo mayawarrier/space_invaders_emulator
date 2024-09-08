@@ -6,42 +6,28 @@
 #include <imgui.h>
 
 #include "utils.hpp"
+#include "emu.hpp"
 
-struct inputkey_widget
+struct gui_inputkey
 {
-    const char* label;
     SDL_Scancode key;
     bool focused;
 
-    inputkey_widget(const char* label, SDL_Scancode dflt_key) :
-        label(label), key(dflt_key), focused(false)
+    gui_inputkey(SDL_Scancode dflt_key) :
+        key(dflt_key), focused(false)
     {}
 
-    inputkey_widget() :
-        inputkey_widget("", SDL_SCANCODE_UNKNOWN)
+    gui_inputkey() :
+        gui_inputkey(SDL_SCANCODE_UNKNOWN)
     {}
-
-    // If last_keypress set to 0 after this call, it
-    // indicates that the key input is consumed
-    void draw(SDL_Scancode& last_keypress);
-};
-
-struct emu;
-
-struct emu_interface
-{
-    emu_interface(emu* e) :
-        m_emu(e)
-    {}
-
-private:
-    emu* m_emu;
 };
 
 struct emu_gui
 {
-    int init(emu* emu, SDL_Rect* screen_rect);
-    void shutdown();
+    emu_gui(emu_interface emu, SDL_Rect* screen_rect);
+    ~emu_gui();
+        
+    bool ok() const { return m_ok; }
 
     void print_dbginfo();
 
@@ -62,35 +48,39 @@ struct emu_gui
 
     void draw();
 
-private:
-    void draw_panel(const char* title, void(emu_gui::* content_cb)());
+private: 
     void draw_help_content();
     void draw_settings_content();
+    void draw_panel(const char* title, void(emu_gui::*draw_content)());
+
+    void draw_inputkey(const char* label, gui_inputkey& state);
 
 private:
-    emu* m_emu;
+    emu_interface m_emu;
     ImFont* m_hdr_font;
     ImFont* m_txt_font;
     int m_menubar_height;
     int m_cur_panel;
     SDL_Scancode m_lastkeypress;
 
-    inputkey_widget m_keywgt_p1left;
-    inputkey_widget m_keywgt_p1right;
-    inputkey_widget m_keywgt_p1fire;
-
-    inputkey_widget m_keywgt_p2left;
-    inputkey_widget m_keywgt_p2right;
-    inputkey_widget m_keywgt_p2fire;
-
-    inputkey_widget m_keywgt_1pstart;
-    inputkey_widget m_keywgt_2pstart;
-    inputkey_widget m_keywgt_coinslot;
-
     int m_fps;
     float m_deltat;
     float m_deltat_min;
     float m_deltat_max;
+
+    gui_inputkey m_keywgt_p1left;
+    gui_inputkey m_keywgt_p1right;
+    gui_inputkey m_keywgt_p1fire;
+
+    gui_inputkey m_keywgt_p2left;
+    gui_inputkey m_keywgt_p2right;
+    gui_inputkey m_keywgt_p2fire;
+
+    gui_inputkey m_keywgt_1pstart;
+    gui_inputkey m_keywgt_2pstart;
+    gui_inputkey m_keywgt_coinslot;
+
+    bool m_ok;
 };
 
 

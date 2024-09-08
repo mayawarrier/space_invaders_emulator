@@ -42,29 +42,34 @@ enum panel_type
     PANEL_SETTINGS
 };
 
-int emu_gui::init(emu* emu, SDL_Rect* screen_rect)
+emu_gui::emu_gui(emu_interface emu, SDL_Rect* screen_rect) :
+    m_emu(emu), 
+    m_cur_panel(PANEL_NONE),
+    m_lastkeypress(SDL_SCANCODE_UNKNOWN), 
+    m_fps(-1),
+    m_deltat_min(FLT_MAX),
+    m_deltat_max(FLT_MIN),
+    m_keywgt_p1left(SDL_SCANCODE_LEFT),
+    m_keywgt_p1right(SDL_SCANCODE_RIGHT),
+    m_keywgt_p1fire(SDL_SCANCODE_SPACE),
+    m_keywgt_p2left(SDL_SCANCODE_LEFT),
+    m_keywgt_p2right(SDL_SCANCODE_RIGHT),
+    m_keywgt_p2fire(SDL_SCANCODE_SPACE),
+    m_keywgt_1pstart(SDL_SCANCODE_1),
+    m_keywgt_2pstart(SDL_SCANCODE_2),
+    m_keywgt_coinslot(SDL_SCANCODE_RETURN),
+    m_ok(false)
 {
-    demo_window();
-
-    m_emu = emu;
-    m_cur_panel = PANEL_NONE;
-    m_lastkeypress = SDL_SCANCODE_UNKNOWN;
-
-    m_keywgt_p1left = { "Player 1 Left ", SDL_SCANCODE_LEFT };
-    m_keywgt_p1right = { "Player 1 Right", SDL_SCANCODE_RIGHT };
-    m_keywgt_p1fire = { "Player 1 Fire ", SDL_SCANCODE_SPACE };
-
-    m_fps = -1;
-    m_deltat_min = FLT_MAX;
-    m_deltat_max = FLT_MIN;
+    //demo_window();
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-    if (!ImGui_ImplSDL2_InitForSDLRenderer(emu->m_window, emu->m_renderer) ||
-        !ImGui_ImplSDLRenderer2_Init(emu->m_renderer)) {
-        return ERROR("Failed to initialize ImGui with SDL backend");
+    if (!ImGui_ImplSDL2_InitForSDLRenderer(emu.window(), emu.renderer()) ||
+        !ImGui_ImplSDLRenderer2_Init(emu.renderer())) {
+        ERROR("Failed to initialize ImGui with SDL backend");
+        return;
     }
 
     ImGuiIO& io = ImGui::GetIO();
@@ -97,14 +102,15 @@ int emu_gui::init(emu* emu, SDL_Rect* screen_rect)
         *screen_rect = {
             .x = 0,
             .y = m_menubar_height,
-            .w = int(emu->m_scresX),
-            .h = int(emu->m_scresY)
+            .w = int(emu.screenresX()),
+            .h = int(emu.screenresY())
         };
-    }
-    return 0;
+    }  
+
+    m_ok = true;
 }
 
-void emu_gui::shutdown()
+emu_gui::~emu_gui()
 {
     ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
@@ -164,7 +170,7 @@ static void draw_rtalign_text(const char* fmt, Args... args)
     ImGui::TextUnformatted(ptxt);
 }
 
-static void draw_header(const char* title, color colr, bool right_align = false)
+static void draw_header(const char* title, color colr, bool right_align = true)
 {
     ImVec2 dpos = ImGui::GetCursorScreenPos();
     ImVec2 wndsize = ImGui::GetWindowSize();
@@ -217,7 +223,7 @@ static bool draw_dip_switch(int index, bool value)
     return value;
 }
 
-void inputkey_widget::draw(SDL_Scancode& last_keypress)
+void emu_gui::draw_inputkey(const char* label, gui_inputkey& state)
 {
     ImGuiStyle style = ImGui::GetStyle();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -238,28 +244,28 @@ void inputkey_widget::draw(SDL_Scancode& last_keypress)
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
-    ImGui::Selectable("", &focused, 0, inputsize);
+    ImGui::Selectable("", &state.focused, 0, inputsize);
     ImGui::PopStyleColor(3);
     ImGui::PopID();
 
     // check if out of focus
-    if (focused && !ImGui::IsItemHovered() &&
+    if (state.focused && !ImGui::IsItemHovered() &&
         ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        focused = false;
+        state.focused = false;
     }
 
-    ImU32 bgcolor = focused ? 
+    ImU32 bgcolor = state.focused ? 
         ImGui::GetColorU32(ImGuiCol_FrameBgActive) : 
         ImGui::GetColorU32(ImGuiCol_FrameBg);
 
     // Render a textbox-like widget
     draw_list->AddRectFilled(dpos, dpos + inputsize, bgcolor, style.FrameRounding);
-    draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), 
-        dpos + style.FramePadding, ImGui::GetColorU32(ImGuiCol_Text), SDL_GetScancodeName(key));
+    draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), dpos + style.FramePadding, 
+        ImGui::GetColorU32(ImGuiCol_Text), SDL_GetScancodeName(state.key));
 
-    if (focused && last_keypress != SDL_SCANCODE_UNKNOWN) {
-        key = last_keypress;
-        last_keypress = SDL_SCANCODE_UNKNOWN; // consume
+    if (state.focused && m_lastkeypress != SDL_SCANCODE_UNKNOWN) {
+        state.key = m_lastkeypress;
+        m_lastkeypress = SDL_SCANCODE_UNKNOWN; // consume
     }
 
     ImGui::SameLine();
@@ -283,7 +289,7 @@ void emu_gui::draw_settings_content()
     ImVec2 wndpadding = ImGui::GetStyle().WindowPadding;
 
     ImGui::PushFont(m_txt_font);
-    draw_header("Cabinet DIP switches", SUBHDR_BGCOLOR, true);
+    draw_header("Cabinet DIP switches", SUBHDR_BGCOLOR);
     ImGui::PopFont();
     ImGui::NewLine();
 
@@ -295,9 +301,9 @@ void emu_gui::draw_settings_content()
     {
         sw_txtpos[i - 3] = ImGui::GetCursorPosX();
 
-        bool cur_val = m_emu->get_switch(i);
+        bool cur_val = m_emu.get_switch(i);
         bool upd_val = draw_dip_switch(i, cur_val);
-        m_emu->set_switch(i, upd_val);
+        m_emu.set_switch(i, upd_val);
 
         if (i != 3) {
             ImGui::SameLine();
@@ -323,23 +329,23 @@ void emu_gui::draw_settings_content()
     ImGui::Spacing();
 
     int num_ships = 0;
-    set_bit(&num_ships, 0, m_emu->get_switch(3));
-    set_bit(&num_ships, 1, m_emu->get_switch(5));
+    set_bit(&num_ships, 0, m_emu.get_switch(3));
+    set_bit(&num_ships, 1, m_emu.get_switch(5));
     num_ships += 3;
 
     ImGui::Text("Number of ships: %d", num_ships);
-    ImGui::Text("Extra ship at: %d points", m_emu->get_switch(6) ? 1000 : 1500);
-    ImGui::Text("Diagnostics at startup: %s", m_emu->get_switch(4) ? "Enabled" : "Disabled");
-    ImGui::Text("Coins displayed in demo screen: %s", m_emu->get_switch(7) ? "No" : "Yes");
+    ImGui::Text("Extra ship at: %d points", m_emu.get_switch(6) ? 1000 : 1500);
+    ImGui::Text("Diagnostics at startup: %s", m_emu.get_switch(4) ? "Enabled" : "Disabled");
+    ImGui::Text("Coins displayed in demo screen: %s", m_emu.get_switch(7) ? "No" : "Yes");
 
     ImGui::NewLine();
 
     ImGui::PushFont(m_txt_font);
-    draw_header("Audio", SUBHDR_BGCOLOR, true);
+    draw_header("Audio", SUBHDR_BGCOLOR);
     ImGui::PopFont();
     ImGui::NewLine();
 
-    int volume = m_emu->get_volume();
+    int volume = m_emu.get_volume();
     {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(7, 7));
 
@@ -356,60 +362,42 @@ void emu_gui::draw_settings_content()
         ImGui::SetCursorPos(txtpos);
         ImGui::TextUnformatted("Volume");
     }
-    m_emu->set_volume(volume);
+    m_emu.set_volume(volume);
 
     ImGui::NewLine();
 
     ImGui::PushFont(m_txt_font);
-    draw_header("Controls", SUBHDR_BGCOLOR, true);
+    draw_header("Controls", SUBHDR_BGCOLOR);
     ImGui::PopFont();
 
     ImGui::NewLine();
 
-    m_keywgt_p1left.draw(m_lastkeypress);
-    m_keywgt_p1right.draw(m_lastkeypress);
-    m_keywgt_p1fire.draw(m_lastkeypress);
+    draw_inputkey("Player 1 Left ", m_keywgt_p1left);
+    draw_inputkey("Player 1 Right", m_keywgt_p1right);
+    draw_inputkey("Player 1 Fire ", m_keywgt_p1fire);
     ImGui::NewLine();
 
+    draw_inputkey("Player 2 Left ", m_keywgt_p2left);
+    draw_inputkey("Player 2 Right", m_keywgt_p2right);
+    draw_inputkey("Player 2 Fire ", m_keywgt_p2fire);
+    ImGui::NewLine();
 
-
-    //draw_key_input("Player 1 right", &m_key_p1right);
-    //draw_key_input("Player 1 shoot", &m_key_p1_left);
-    //draw_key_input("Player 1 right", buf2);
-    //draw_key_input("Player 1 shoot", buf3);
-    m_lastkeypress = SDL_SCANCODE_UNKNOWN;
-
-    //std::printf("Player 1 Left: %s\n", SDL_GetScancodeName(KEY_P1_LEFT));
-    //std::printf("Player 1 Right: %s\n", SDL_GetScancodeName(KEY_P1_RIGHT));
-    //std::printf("Player 1 Fire: %s\n", SDL_GetScancodeName(KEY_P1_FIRE));
-    //std::printf("\n");
-    //std::printf("Player 2 Left: %s\n", SDL_GetScancodeName(KEY_P2_LEFT));
-    //std::printf("Player 2 Right: %s\n", SDL_GetScancodeName(KEY_P2_RIGHT));
-    //std::printf("Player 2 Fire: %s\n", SDL_GetScancodeName(KEY_P2_FIRE));
-    //std::printf("\n");
-    //std::printf("Coin Slot: %s\n", SDL_GetScancodeName(KEY_CREDIT));
-    //std::printf("1-Player Start: %s\n", SDL_GetScancodeName(KEY_1P_START));
-    //std::printf("2-Player Start: %s\n", SDL_GetScancodeName(KEY_2P_START));
-    //std::printf("\n");
-
-    //ImGui::Text("Some long text testsgs");
-    //ImGui::Text("Some long text testsgs");
-    //ImGui::Text("Some long text testsgs");
-    //ImGui::Text("Some long text testsgs");
-    //ImGui::Text("Some long text testsgs");
+    draw_inputkey("1P Start ", m_keywgt_1pstart);
+    draw_inputkey("2P Start ", m_keywgt_2pstart);
+    draw_inputkey("Coin Slot", m_keywgt_coinslot);
 }
 
-void emu_gui::draw_panel(const char* title, void(emu_gui::*content_cb)())
+void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
 {
     static constexpr ImGuiWindowFlags PANEL_FLAGS = 
         ImGuiWindowFlags_NoTitleBar |
         ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove; // |
-        //ImGuiWindowFlags_NoNavInputs;
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoNavInputs;
 
-    const ImVec2 wndpos(m_emu->m_scresX, m_menubar_height);
-    const ImVec2 wndsize(PANEL_SIZE, m_emu->m_scresY);
+    const ImVec2 wndpos(m_emu.screenresX(), m_menubar_height);
+    const ImVec2 wndsize(PANEL_SIZE, m_emu.screenresY());
 
     ImGui::SetNextWindowPos(wndpos);
     ImGui::SetNextWindowSize(wndsize);
@@ -423,12 +411,12 @@ void emu_gui::draw_panel(const char* title, void(emu_gui::*content_cb)())
 
         ImGui::PushFont(m_hdr_font);
         ImGui::SetCursorPosY(0); // remove padding
-        draw_header(title, HEADER_BGCOLOR, true);
+        draw_header(title, HEADER_BGCOLOR);
         ImGui::PopFont();
 
         ImGui::NewLine();
 
-        (this->*content_cb)();
+        (this->*draw_content)();
 
         ImGui::End();
     }
@@ -466,10 +454,10 @@ void emu_gui::draw()
     if (new_panel != m_cur_panel)
     {
         if (m_cur_panel == PANEL_NONE) {
-            set_window_width(m_emu->m_window, m_emu->m_scresX + PANEL_SIZE);
+            set_window_width(m_emu.window(), m_emu.screenresX() + PANEL_SIZE);
         }
         else if (new_panel == PANEL_NONE) {
-            set_window_width(m_emu->m_window, m_emu->m_scresX);
+            set_window_width(m_emu.window(), m_emu.screenresX());
         }
     }
     m_cur_panel = new_panel;
@@ -480,8 +468,11 @@ void emu_gui::draw()
     case PANEL_SETTINGS: draw_panel("Settings", &emu_gui::draw_settings_content); break;
     }
 
+    // drop last key
+    m_lastkeypress = SDL_SCANCODE_UNKNOWN;
+
     ImGui::Render();
-    ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_emu->m_renderer);
+    ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_emu.renderer());
 }
 
 #ifndef IMGUI_DISABLE_DEMO_WINDOWS

@@ -11,7 +11,6 @@
 
 #include "i8080/i8080.hpp"
 #include "utils.hpp"
-#include "gui.hpp"
 
 
 #define KEY_CREDIT SDL_SCANCODE_RETURN
@@ -52,7 +51,7 @@ struct machine
 
     // Sound chip
     Mix_Chunk* sounds[NUM_SOUNDS];
-    uint8_t sndpin_lastvals[NUM_SOUNDS];
+    std::bitset<NUM_SOUNDS> sndpin_lastvals;
 };
 
 struct pix_fmt
@@ -66,6 +65,36 @@ struct pix_fmt
     {}
 };
 
+struct emu;
+struct emu_gui;
+
+// GUI can only use functions from here.
+struct emu_interface
+{
+    emu_interface(emu* e) :
+        m_emu(e), m_volume(MAX_VOLUME)
+    {}
+    emu_interface() :
+        emu_interface(nullptr)
+    {}
+
+    SDL_Window* window();
+    SDL_Renderer* renderer();
+
+    uint screenresX();
+    uint screenresY();
+
+    bool get_switch(int index);
+    void set_switch(int index, bool value);
+
+    int get_volume();
+    void set_volume(int volume);
+
+private:
+    emu* m_emu;
+    int m_volume;
+};
+
 struct emu
 {
     // \param rom_dir directory containing invaders ROM and audio files
@@ -74,9 +103,9 @@ struct emu
     emu(const fs::path& rom_dir, 
         uint res_scale = RES_SCALE_DEFAULT);
 
-    // Open a window and start running.
-    // Returns when window is closed.
-    void run();
+    ~emu();
+
+    bool ok() const { return m_ok; }
 
     // Set cabinet DIP switches.
     void set_switches(uint8_t values)
@@ -86,9 +115,9 @@ struct emu
         }
     }
 
-    bool ok() const { return m_ok; }
-
-    ~emu();
+    // Open a window and start running.
+    // Returns when window is closed.
+    void run();
 
     friend emu_interface;
 
@@ -106,9 +135,6 @@ private:
     bool get_switch(int index);
     void set_switch(int index, bool value);
 
-    int get_volume() { return m_volume; }
-    void set_volume(int volume);
-
     void run_cpu(uint64_t& cpucycles, uint64_t nframes);
 
     void draw_screen();
@@ -119,15 +145,28 @@ private:
     SDL_Renderer* m_renderer;
     SDL_Rect m_screenrect;
     SDL_Texture* m_screentex;
+    std::bitset<SDL_NUM_SCANCODES> m_keypressed;
+    std::unique_ptr<emu_gui> m_gui;
+
     const pix_fmt* m_pixfmt;
     uint m_scalefac;
     uint m_scresX;
     uint m_scresY;
 
-    int m_volume;
-    emu_gui m_gui;
-
     bool m_ok;
 };
+
+inline SDL_Window* emu_interface::window() { return m_emu->m_window; }
+inline SDL_Renderer* emu_interface::renderer() { return m_emu->m_renderer; }
+
+inline uint emu_interface::screenresX() { return m_emu->m_scresX; } // excluding UI
+inline uint emu_interface::screenresY() { return m_emu->m_scresY; }
+
+inline bool emu_interface::get_switch(int index) {
+    return m_emu->get_switch(index);
+}
+inline void emu_interface::set_switch(int index, bool value) {
+    m_emu->set_switch(index, value);
+}
 
 #endif
