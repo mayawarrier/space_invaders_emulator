@@ -1,9 +1,10 @@
 
 #include <cstdio>
 #include <cstdlib>
-
+#include <string>
 #include <Windows.h>
 
+#include "utils.hpp"
 #include "win32.hpp"
 
 
@@ -22,26 +23,33 @@ static std::string err_to_str(DWORD ecode)
 
     std::string ret(msg, msgsize);
     LocalFree(msg);
+
+    if (ret.ends_with("\r\n")) {
+        ret.erase(ret.size() - 2, 2);
+    }
+    if (ret.ends_with("\n")) {
+        ret.pop_back();
+    }
     return ret;
 }
 
-static int fprint_lasterr(std::FILE* logfile, const char* fn_name)
+static int log_lasterror(const char* fn_name)
 {
     DWORD err = GetLastError();
-    return std::fprintf(logfile, "%s(), error %u: %s", 
+    return logERROR("%s(), error %u: %s", 
         fn_name, (unsigned)err, err_to_str(err).c_str());
 }
 
-bool win32_recreate_console(std::FILE* logfile)
+bool win32_recreate_console()
 {
     if (AttachConsole(ATTACH_PARENT_PROCESS))
     {
         if (!FreeConsole()) {
-            fprint_lasterr(logfile, "FreeConsole");
+            log_lasterror("FreeConsole");
             return false;
         }
         if (!AllocConsole()) {
-            fprint_lasterr(logfile, "AllocConsole");
+            log_lasterror("AllocConsole");
             return false;
         }
         
@@ -50,13 +58,13 @@ bool win32_recreate_console(std::FILE* logfile)
             !std::freopen("CONOUT$", "w", stdout) ||
             !std::freopen("CONOUT$", "w", stderr))
         {
-            std::fprintf(logfile, "Failed to reopen C IO streams\n");
+            logERROR("Failed to reopen C IO streams\n");
             return false;
         }
         // No need to reopen C++ IO streams, since on 
         // Windows they are implemented using C IO
     
-        std::fprintf(logfile, "Created new Win32 console\n");
+        logERROR("Created new Win32 console\n");
         return true;
     }
     else {
@@ -67,7 +75,7 @@ bool win32_recreate_console(std::FILE* logfile)
     }
 }
 
-bool win32_enable_console_colors(std::FILE* logfile)
+bool win32_enable_console_colors()
 {
     // sufficient for both stdout and stderr
     HANDLE hndOut = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -77,14 +85,51 @@ bool win32_enable_console_colors(std::FILE* logfile)
 
     DWORD conMode = 0;
     if (!GetConsoleMode(hndOut, &conMode)) {
-        fprint_lasterr(logfile, "GetConsoleMode");
+        log_lasterror("GetConsoleMode");
         return false;
     }
     conMode |= ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
     if (!SetConsoleMode(hndOut, conMode)) {
-        fprint_lasterr(logfile, "SetConsoleMode");
+        log_lasterror("SetConsoleMode");
         return false;
     }
 
     return true;
 }
+
+#ifdef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+
+static thread_local HANDLE HIGHRES_TIMER = NULL;
+
+void win32_sleep_highres(uint64_t ns)
+{
+    if (!HIGHRES_TIMER) 
+    {
+        HIGHRES_TIMER = CreateWaitableTimerExW(NULL, NULL, 
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+        if (!HIGHRES_TIMER) {
+            log_lasterror("CreateWaitableTimerExW");
+            HIGHRES_TIMER = INVALID_HANDLE_VALUE; // do not try again
+        }
+    }
+
+    if (HIGHRES_TIMER == INVALID_HANDLE_VALUE) {
+        Sleep(DWORD(ns / NS_PER_MS));
+    }
+    else {
+        LARGE_INTEGER tsleep;
+        tsleep.QuadPart = -((LONGLONG)ns / 100);
+
+        if (!SetWaitableTimerEx(HIGHRES_TIMER, &tsleep, 0, NULL, NULL, NULL, 0)) {
+            log_lasterror("SetWaitableTimerEx");
+            CloseHandle(HIGHRES_TIMER);
+            HIGHRES_TIMER = INVALID_HANDLE_VALUE; // do not try again
+        }
+
+        WaitForSingleObject(HIGHRES_TIMER, INFINITE);
+    }
+}
+
+#else
+void win32_sleep_highres(uint64_t ns) { Sleep(DWORD(ns / NS_PER_MS)); }
+#endif

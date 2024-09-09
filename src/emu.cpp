@@ -6,14 +6,14 @@
 
 #include <cmath>
 #include <string_view>
-#include <imgui.h>
-#include <imgui_impl_sdl2.h>
-#include <imgui_impl_sdlrenderer2.h>
-
 
 #include "i8080/i8080_opcodes.h"
 #include "gui.hpp"
 #include "emu.hpp"
+
+#ifdef _WIN32
+#include "win32.hpp"
+#endif
 
 
 static inline machine* MACHINE(i8080* cpu) { 
@@ -45,7 +45,7 @@ static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
         return i8080_word_t(m->shiftreg >> (8 - m->shiftreg_off));
 
     default: 
-        WARNING("IO read from unmapped port %d", int(port));
+        logWARNING("IO read from unmapped port %d", int(port));
         return 0;
     }
 }
@@ -110,7 +110,7 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
     case 6: break;
 
     default:
-        WARNING("IO write to unmapped port %d", int(port));
+        logWARNING("IO write to unmapped port %d", int(port));
         break;
     }
 }
@@ -142,27 +142,27 @@ static const char* pixfmt_name(uint32_t fmt)
 
 int emu::init_graphics(bool enable_ui)
 {
-    MESSAGE("Initializing graphics");
+    logMESSAGE("Initializing graphics");
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        return ERROR("SDL_Init(): %s", SDL_GetError());
+        return logERROR("SDL_Init(): %s", SDL_GetError());
     }
 
     m_window = SDL_CreateWindow("Space Invaders", 0, 0, 0, 0, SDL_WINDOW_HIDDEN);
     if (!m_window) {
-        return ERROR("SDL_CreateWindow(): %s", SDL_GetError());
+        return logERROR("SDL_CreateWindow(): %s", SDL_GetError());
     }
     m_renderer = SDL_CreateRenderer(m_window, -1, 0);
     if (!m_renderer) {
-        return ERROR("SDL_CreateRenderer(): %s", SDL_GetError());
+        return logERROR("SDL_CreateRenderer(): %s", SDL_GetError());
     }
 
     SDL_RendererInfo rendinfo;
     if (SDL_GetRendererInfo(m_renderer, &rendinfo) != 0) {
-        return ERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
+        return logERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
     }
 
-    MESSAGE("-- Render backend: %s", rendinfo.name);
+    logMESSAGE("-- Render backend: %s", rendinfo.name);
 
     if (enable_ui) {
         m_gui = std::make_unique<emu_gui>(this);
@@ -181,7 +181,7 @@ int emu::init_graphics(bool enable_ui)
     SDL_SetWindowSize(m_window, m_scresX, m_scresY + m_viewportrect.y);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
-    MESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d",
+    logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d",
         m_viewportrect.x, m_viewportrect.y, m_viewportrect.w, m_viewportrect.h);
 
     // use first supported texture format
@@ -191,7 +191,7 @@ int emu::init_graphics(bool enable_ui)
         for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
         {
             if (rendinfo.texture_formats[i] == pixfmt.fmt) {
-                MESSAGE("-- Texture format: %s", pixfmt_name(pixfmt.fmt));
+                logMESSAGE("-- Texture format: %s", pixfmt_name(pixfmt.fmt));
                 m_pixfmt = &pixfmt;
                 goto pixfmt_done;
             }
@@ -211,14 +211,14 @@ pixfmt_done:
             hasfmts += pixfmt_name(rendinfo.texture_formats[i]);
         }
 
-        return ERROR("Could not find a supported texture format.\n"
+        return logERROR("Could not find a supported texture format.\n"
             "Supported: %s\nAvailable: %s", suppfmts.c_str(), hasfmts.c_str());
     }
     
     m_viewporttex = SDL_CreateTexture(m_renderer, 
         m_pixfmt->fmt, SDL_TEXTUREACCESS_STREAMING, m_scresX, m_scresY);
     if (!m_viewporttex) {
-        return ERROR("SDL_CreateTexture(): %s", SDL_GetError());
+        return logERROR("SDL_CreateTexture(): %s", SDL_GetError());
     }
 
     return 0;
@@ -240,14 +240,14 @@ static const int MAX_VOLUMES[] =
 
 int emu::init_audio(const fs::path& audio_dir) 
 {
-    MESSAGE("Initializing audio");
+    logMESSAGE("Initializing audio");
 
     // chunksize is small to reduce latency
     if (Mix_OpenAudio(11025, AUDIO_U8, 1, 512) != 0) {
-        return ERROR("Mix_OpenAudio(): %s", Mix_GetError());
+        return logERROR("Mix_OpenAudio(): %s", Mix_GetError());
     }
     if (Mix_AllocateChannels(NUM_SOUNDS) != NUM_SOUNDS) {
-        return ERROR("Mix_AllocateChannels(): %s", Mix_GetError());
+        return logERROR("Mix_AllocateChannels(): %s", Mix_GetError());
     }
     // adjust volume, some tracks are too loud
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -286,13 +286,13 @@ int emu::init_audio(const fs::path& audio_dir)
         if (!m.sounds[i]) {
             std::fputs("-- ", LOGFILE);
             std::fputs("-- ", stderr);
-            WARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
+            logWARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
     }
     if (num_loaded == NUM_SOUNDS) {
-        MESSAGE("Loaded audio files");
+        logMESSAGE("Loaded audio files");
     } else {
-        MESSAGE("Loaded %d/%d audio files", num_loaded, NUM_SOUNDS);
+        logMESSAGE("Loaded %d/%d audio files", num_loaded, NUM_SOUNDS);
     }
     return 0;
 }
@@ -303,14 +303,14 @@ static int load_file(const fs::path& path, i8080_word_t* mem, unsigned size)
 
     scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
     if (!file) {
-        return ERROR("Could not open file %s", filename.c_str());
+        return logERROR("Could not open file %s", filename.c_str());
     }
     if (std::fread(mem, 1, size, file.get()) != size) {
-        return ERROR("Could not read %u bytes from file %s", size, filename.c_str());
+        return logERROR("Could not read %u bytes from file %s", size, filename.c_str());
     }
     std::fgetc(file.get()); // set eof
     if (!std::feof(file.get())) {
-        return ERROR("File %s is larger than %u bytes", filename.c_str(), size);
+        return logERROR("File %s is larger than %u bytes", filename.c_str(), size);
     }
     return 0;
 }
@@ -321,7 +321,7 @@ int emu::load_rom(const fs::path& dir)
     if (fs::exists(dir / "invaders.rom")) {
         e = load_file(dir / "invaders.rom", m.mem.get(), 8192);
         if (e) { return e; }
-        MESSAGE("Loaded ROM");
+        logMESSAGE("Loaded ROM");
     }
     else {
         e = load_file(dir / "invaders.h", &m.mem[0], 2048);    if (e) { return e; }
@@ -329,7 +329,7 @@ int emu::load_rom(const fs::path& dir)
         e = load_file(dir / "invaders.f", &m.mem[4096], 2048); if (e) { return e; }
         e = load_file(dir / "invaders.e", &m.mem[6144], 2048); if (e) { return e; }
 
-        MESSAGE("Loaded ROM files: invaders.e,f,g,h");
+        logMESSAGE("Loaded ROM files: invaders.e,f,g,h");
     }
     return 0;
 }
@@ -366,7 +366,7 @@ emu::emu(uint scalefac) :
 // helpful for debugging
 void emu::print_dbginfo()
 {
-    MESSAGE("Platform: "
+    logMESSAGE("Platform: "
         XSTR(COMPILER_NAME) " " XSTR(COMPILER_VERSION)
 #ifdef COMPILER_FRONTNAME
         " (" XSTR(COMPILER_FRONTNAME) " frontend)"
@@ -376,13 +376,13 @@ void emu::print_dbginfo()
     SDL_version version;
     SDL_GetVersion(&version);
 
-    MESSAGE("SDL2 version (header/DLL): %d.%d.%d/%d.%d.%d",
+    logMESSAGE("SDL2 version (header/DLL): %d.%d.%d/%d.%d.%d",
         SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_PATCHLEVEL,
         version.major, version.minor, version.patch);
 
     const SDL_version* mix_version = Mix_Linked_Version();
 
-    MESSAGE("SDL2_mixer version (header/DLL): %d.%d.%d/%d.%d.%d",
+    logMESSAGE("SDL2_mixer version (header/DLL): %d.%d.%d/%d.%d.%d",
         SDL_MIXER_MAJOR_VERSION, SDL_MIXER_MINOR_VERSION, SDL_MIXER_PATCHLEVEL,
         mix_version->major, mix_version->minor, mix_version->patch);
 
@@ -390,7 +390,7 @@ void emu::print_dbginfo()
         m_gui->print_dbginfo();
     }
 
-    MESSAGE("");
+    logMESSAGE("");
 }
 
 emu::emu(const fs::path& romdir, bool enable_ui, uint scalefac) :
@@ -422,7 +422,7 @@ emu::emu(const fs::path& romdir, bool enable_ui, uint scalefac) :
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
 
-    MESSAGE("Ready!");
+    logMESSAGE("Ready!");
     m_ok = true;
 }
 
@@ -571,6 +571,49 @@ void emu::draw_screen()
     SDL_RenderCopy(m_renderer, m_viewporttex, NULL, &m_viewportrect);
 }
 
+// Much more accurate than std::sleep_for().
+template <typename T>
+static void vsync_sleep_for(T tsleep)
+{
+    static constexpr uint64_t us_per_s = 1000000;
+    static constexpr auto wake_interval_ms = tim::milliseconds(3);
+    static const uint64_t perfctr_freq = SDL_GetPerformanceFrequency();
+
+    if (perfctr_freq < us_per_s) [[unlikely]] {
+        SDL_Delay(uint32_t(tim::round<tim::milliseconds>(tsleep).count()));
+        return;
+    }
+
+    auto tcur = clk::now();
+    auto tend = tcur + tsleep;
+    auto trem = tend - tcur;
+
+    while (tcur < tend)
+    {
+        trem = tend - tcur;
+
+        if (trem > wake_interval_ms) {
+#ifdef _WIN32
+            win32_sleep_highres(wake_interval_ms.count() * NS_PER_MS);
+#else
+            SDL_Delay(wake_interval_ms.count());
+#endif  
+            // adjust for stdlib + call overhead
+            tend -= tim::microseconds(2);
+        }
+        else {
+            auto trem_us = tim::round<tim::microseconds>(trem);
+            uint64_t cur_ctr = SDL_GetPerformanceCounter();
+            uint64_t target_ctr = cur_ctr + trem_us.count() * perfctr_freq / us_per_s;
+
+            while (cur_ctr < target_ctr) {
+                cur_ctr = SDL_GetPerformanceCounter();
+            }
+        }
+        tcur = clk::now();
+    }
+}
+
 void emu::run()
 {
     SDL_ShowWindow(m_window);
@@ -635,7 +678,7 @@ void emu::run()
         // Vsync
         auto tframe = clk::now() - t_start;
         if (tframe < tframe_target) {
-            sleep_for(tframe_target - tframe);
+            vsync_sleep_for(tframe_target - tframe);
         }
 
         auto t_laststart = t_start;

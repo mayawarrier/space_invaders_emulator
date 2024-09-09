@@ -65,7 +65,7 @@ emu_gui::emu_gui(emu_interface emu) :
 
     if (!ImGui_ImplSDL2_InitForSDLRenderer(emu.window(), emu.renderer()) ||
         !ImGui_ImplSDLRenderer2_Init(emu.renderer())) {
-        ERROR("Failed to initialize ImGui with SDL backend");
+        logERROR("Failed to initialize ImGui with SDL backend");
         return;
     }
 
@@ -109,7 +109,7 @@ emu_gui::~emu_gui()
 
 void emu_gui::print_dbginfo()
 {
-    MESSAGE("ImGui version: %s", ImGui::GetVersion());
+    logMESSAGE("ImGui version: %s", ImGui::GetVersion());
 }
 
 bool emu_gui::process_event(SDL_Event* e) 
@@ -479,11 +479,11 @@ int demo_window()
     SDL_Window* window = SDL_CreateWindow("Dear ImGui SDL2+SDL_Renderer example",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
     if (window == nullptr) {
-        return ERROR("Demo SDL_CreateWindow(): %s", SDL_GetError());
+        return logERROR("Demo SDL_CreateWindow(): %s", SDL_GetError());
     }
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
     if (renderer == nullptr) {
-        return ERROR("Demo SDL_CreateRenderer(): %s", SDL_GetError());
+        return logERROR("Demo SDL_CreateRenderer(): %s", SDL_GetError());
     }
 
     IMGUI_CHECKVERSION();

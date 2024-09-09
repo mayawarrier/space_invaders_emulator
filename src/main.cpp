@@ -27,14 +27,14 @@ int do_main(int argc, char* argv[])
             cxxopts::value<std::string>()->default_value("data/"), "<dir>")
         ("s,switches", "Set cabinet DIP switches (0=off, 1=on). See README for how this affects game behavior.", 
             cxxopts::value<std::string>()->default_value("00000000"), "<bits>")
-        ("no-ui", "Disable emulator UI (settings panel etc.)");
+        ("no-ui", "Disable emulator UI (settings/help panels etc.)");
              
     cxxopts::ParseResult args;
     try {
         args = opts.parse(argc, argv);
     }
     catch (std::exception& e) {
-        return ERROR(e.what());
+        return logERROR(e.what());
     }
 
     if (args["help"].as<bool>()) {
@@ -76,11 +76,11 @@ int do_main(int argc, char* argv[])
         uint8_t sw;
         auto res = std::from_chars(begin, end, sw, 2);
         if (res.ec != std::errc() || res.ptr != end) {
-            return ERROR(sw_errmsg);
+            return logERROR(sw_errmsg);
         }
         emu.set_switches(sw);
     }
-    else return ERROR(sw_errmsg);
+    else return logERROR(sw_errmsg);
 
     // Start!
     emu.run();
@@ -93,18 +93,18 @@ int main(int argc, char* argv[])
     scopedFILE logfile = SAFE_FOPENA(LOGFILE_PATH, "w");
     if (!logfile)
     {
-        const char err_msg[] = "Could not open log file " LOGFILE_PATH "";
+        const char err_msg[] = "Could not open log file " LOGFILE_PATH;
         // show a message box, since at this point there is no logfile
         // (and on Windows no console either).
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", err_msg, NULL);
-        return ERROR(err_msg);
+        return logERROR(err_msg);
     }
 
     LOGFILE = logfile.get();
 
 #ifdef _WIN32
-    bool new_con = win32_recreate_console(LOGFILE);
-    CONSOLE_HAS_COLORS = win32_enable_console_colors(LOGFILE);
+    bool new_con = win32_recreate_console();
+    CONSOLE_HAS_COLORS = win32_enable_console_colors();
 #endif
     int ret = do_main(argc, argv);
 

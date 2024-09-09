@@ -7,11 +7,12 @@
 #include <filesystem>
 #include <chrono>
 #include <memory>
-#include <thread>
 
 #define CONCAT(x, y) x##y
 #define STR(a) #a
 #define XSTR(a) STR(a)
+
+#define NS_PER_MS 1000000
 
 #ifdef __clang__
 #define PUSH_WARNINGS _Pragma("clang diagnostic push")
@@ -39,7 +40,7 @@ using clk = tim::steady_clock;
 using uint = unsigned int;
 
 
-// todo: move logging to its own file
+// todo: move logging to its own file?
 extern std::FILE* LOGFILE;
 extern bool CONSOLE_HAS_COLORS;
 
@@ -62,7 +63,7 @@ POP_WARNINGS
 }
 
 template <typename ...Args>
-int ERROR(const char* fmt, Args... args) 
+int logERROR(const char* fmt, Args... args) 
 {
     if (LOGFILE) {
         fput_msg(LOGFILE, ERROR_PREFIX, fmt, args...);
@@ -74,7 +75,7 @@ int ERROR(const char* fmt, Args... args)
 }
 
 template <typename ...Args>
-void WARNING(const char* fmt, Args... args) 
+void logWARNING(const char* fmt, Args... args) 
 {
     if (LOGFILE) {
         fput_msg(LOGFILE, WARNING_PREFIX, fmt, args...);
@@ -85,7 +86,7 @@ void WARNING(const char* fmt, Args... args)
 }
 
 template <typename ...Args>
-void MESSAGE(const char* fmt, Args... args) 
+void logMESSAGE(const char* fmt, Args... args) 
 {
 PUSH_WARNINGS
 IGNORE_WFORMAT_SECURITY
@@ -119,44 +120,6 @@ template <typename T>
 inline bool get_bit(T word, int bit)
 {
     return (word & (0x1 << bit)) != 0;
-}
-
-// More accurate than this_thread::sleep_for(), especially for MINGW
-template <typename T>
-void sleep_for(T tsleep)
-{
-    static constexpr uint64_t us_per_s = 1000000;
-    static constexpr auto wake_interval_ms = tim::milliseconds(3);
-    static const uint64_t perfctr_freq = SDL_GetPerformanceFrequency();
-
-    if (perfctr_freq < us_per_s) [[unlikely]] {
-        SDL_Delay(uint32_t(tim::round<tim::milliseconds>(tsleep).count()));
-        return;
-    }
-
-    const auto tbeg = clk::now();
-    const auto tend = tbeg + tsleep;
-
-    auto tcur = tbeg;
-    auto trem = tend - tbeg;
-    while (tcur < tend)
-    {
-        trem = tend - tcur;
-
-        if (trem > wake_interval_ms) {
-            SDL_Delay(wake_interval_ms.count());
-        }
-        else {
-            auto trem_us = tim::round<tim::microseconds>(trem);
-            uint64_t cur_ctr = SDL_GetPerformanceCounter();
-            uint64_t target_ctr = cur_ctr + trem_us.count() * perfctr_freq / us_per_s;
-
-            while (cur_ctr < target_ctr) {
-                cur_ctr = SDL_GetPerformanceCounter();
-            }
-        }
-        tcur = clk::now();
-    }
 }
 
 #endif
