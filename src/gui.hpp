@@ -8,19 +8,6 @@
 #include "utils.hpp"
 #include "emu.hpp"
 
-struct gui_inputkey
-{
-    SDL_Scancode key;
-    bool focused;
-
-    gui_inputkey(SDL_Scancode dflt_key) :
-        key(dflt_key), focused(false)
-    {}
-
-    gui_inputkey() :
-        gui_inputkey(SDL_SCANCODE_UNKNOWN)
-    {}
-};
 
 struct emu_gui
 {
@@ -63,7 +50,7 @@ private:
     void draw_help_content();
     void draw_settings_content();
     void draw_panel(const char* title, void(emu_gui::*draw_content)());
-    void draw_inputkey(const char* label, gui_inputkey& state);
+    void draw_inputkey(const char* label, inputtype inptype);
 
 private:
     emu_interface m_emu;
@@ -79,17 +66,7 @@ private:
     float m_deltat_min;
     float m_deltat_max;
 
-    gui_inputkey m_keywgt_p1left;
-    gui_inputkey m_keywgt_p1right;
-    gui_inputkey m_keywgt_p1fire;
-
-    gui_inputkey m_keywgt_p2left;
-    gui_inputkey m_keywgt_p2right;
-    gui_inputkey m_keywgt_p2fire;
-
-    gui_inputkey m_keywgt_1pstart;
-    gui_inputkey m_keywgt_2pstart;
-    gui_inputkey m_keywgt_coinslot;
+    bool m_inputkey_focused[INPUT_NUM_INPUTS];
 
     bool m_ok;
 };

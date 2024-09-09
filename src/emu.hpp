@@ -95,6 +95,8 @@ struct emu_interface
     int get_volume() const;
     void set_volume(int volume);
 
+    SDL_Scancode* input2keymap();
+
 private:
     emu* m_emu;
     int m_volume;
@@ -173,6 +175,10 @@ inline bool emu_interface::get_switch(int index) const {
 }
 inline void emu_interface::set_switch(int index, bool value) {
     m_emu->set_switch(index, value);
+}
+
+inline SDL_Scancode* emu_interface::input2keymap() { 
+    return m_emu->m_input2key; 
 }
 
 #endif

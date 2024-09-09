@@ -43,24 +43,21 @@ enum panel_type
 };
 
 emu_gui::emu_gui(emu_interface emu) :
-    m_emu(emu), 
+    m_emu(emu),
+    m_hdr_font(nullptr),
+    m_txt_font(nullptr),
+    m_menubar_height(0),
     m_cur_panel(PANEL_NONE),
     m_lastkeypress(SDL_SCANCODE_UNKNOWN), 
     m_fps(-1),
+    m_deltat(0),
     m_deltat_min(FLT_MAX),
     m_deltat_max(FLT_MIN),
-    m_keywgt_p1left(SDL_SCANCODE_LEFT),
-    m_keywgt_p1right(SDL_SCANCODE_RIGHT),
-    m_keywgt_p1fire(SDL_SCANCODE_SPACE),
-    m_keywgt_p2left(SDL_SCANCODE_LEFT),
-    m_keywgt_p2right(SDL_SCANCODE_RIGHT),
-    m_keywgt_p2fire(SDL_SCANCODE_SPACE),
-    m_keywgt_1pstart(SDL_SCANCODE_1),
-    m_keywgt_2pstart(SDL_SCANCODE_2),
-    m_keywgt_coinslot(SDL_SCANCODE_RETURN),
     m_ok(false)
 {
     //demo_window();
+
+    std::fill_n(m_inputkey_focused, INPUT_NUM_INPUTS, false);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -98,7 +95,7 @@ emu_gui::emu_gui(emu_interface emu) :
 
         m_menubar_height = int(ImGui::GetFrameHeight());
         ImGui::EndFrame();
-    }  
+    }
 
     m_ok = true;
 }
@@ -216,11 +213,13 @@ static bool draw_dip_switch(int index, bool value)
     return value;
 }
 
-void emu_gui::draw_inputkey(const char* label, gui_inputkey& state)
+void emu_gui::draw_inputkey(const char* label, inputtype inptype)
 {
+    bool& focused = m_inputkey_focused[inptype];
+    SDL_Scancode& key = m_emu.input2keymap()[inptype];
+
     ImGuiStyle style = ImGui::GetStyle();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
     ImVec2 wndsize = ImGui::GetWindowSize();
     float inputwidth = wndsize.x / 3;
     ImVec2 wndpadding = style.WindowPadding;
@@ -237,33 +236,33 @@ void emu_gui::draw_inputkey(const char* label, gui_inputkey& state)
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
-    ImGui::Selectable("", &state.focused, 0, inputsize);
+    ImGui::Selectable("", &focused, 0, inputsize);
     ImGui::PopStyleColor(3);
     ImGui::PopID();
 
-    if (state.focused) {
+    if (focused) {
         ImGui::SetNextFrameWantCaptureKeyboard(true);
     }
-    bool next_frame_unfocused = state.focused &&
+    bool next_frame_unfocused = focused &&
         !ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
 
-    ImU32 bgcolor = state.focused ? 
+    ImU32 bgcolor = focused ?
         ImGui::GetColorU32(ImGuiCol_FrameBgActive) : 
         ImGui::GetColorU32(ImGuiCol_FrameBg);
 
     // Render a textbox-like widget
     draw_list->AddRectFilled(dpos, dpos + inputsize, bgcolor, style.FrameRounding);
     draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), dpos + style.FramePadding, 
-        ImGui::GetColorU32(ImGuiCol_Text), SDL_GetScancodeName(state.key));
+        ImGui::GetColorU32(ImGuiCol_Text), SDL_GetScancodeName(key));
 
-    if (state.focused && m_lastkeypress != SDL_SCANCODE_UNKNOWN) {
-        state.key = m_lastkeypress;
+    if (focused && m_lastkeypress != SDL_SCANCODE_UNKNOWN) {
+        key = m_lastkeypress;
         m_lastkeypress = SDL_SCANCODE_UNKNOWN; // consume
     }
 
     // update for next frame
     if (next_frame_unfocused) {
-        state.focused = false;
+        focused = false;
         ImGui::SetNextFrameWantCaptureKeyboard(false);
     }
 
@@ -371,19 +370,19 @@ void emu_gui::draw_settings_content()
 
     ImGui::NewLine();
 
-    draw_inputkey("Player 1 Left ", m_keywgt_p1left);
-    draw_inputkey("Player 1 Right", m_keywgt_p1right);
-    draw_inputkey("Player 1 Fire ", m_keywgt_p1fire);
+    draw_inputkey("Player 1 Left ", INPUT_P1_LEFT);
+    draw_inputkey("Player 1 Right", INPUT_P1_RIGHT);
+    draw_inputkey("Player 1 Fire ", INPUT_P1_FIRE);
     ImGui::NewLine();
 
-    draw_inputkey("Player 2 Left ", m_keywgt_p2left);
-    draw_inputkey("Player 2 Right", m_keywgt_p2right);
-    draw_inputkey("Player 2 Fire ", m_keywgt_p2fire);
+    draw_inputkey("Player 2 Left ", INPUT_P2_LEFT);
+    draw_inputkey("Player 2 Right", INPUT_P2_RIGHT);
+    draw_inputkey("Player 2 Fire ", INPUT_P2_FIRE);
     ImGui::NewLine();
 
-    draw_inputkey("1P Start", m_keywgt_1pstart);
-    draw_inputkey("2P Start", m_keywgt_2pstart);
-    draw_inputkey("Insert coin", m_keywgt_coinslot);
+    draw_inputkey("1P Start", INPUT_1P_START);
+    draw_inputkey("2P Start", INPUT_2P_START);
+    draw_inputkey("Insert coin", INPUT_CREDIT);
 }
 
 void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
