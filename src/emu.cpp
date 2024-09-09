@@ -140,7 +140,7 @@ static const char* pixfmt_name(uint32_t fmt)
     return str.data();
 }
 
-int emu::init_graphics()
+int emu::init_graphics(bool enable_ui)
 {
     MESSAGE("Initializing graphics");
 
@@ -164,14 +164,25 @@ int emu::init_graphics()
 
     MESSAGE("-- Render backend: %s", rendinfo.name);
 
-    m_gui = std::make_unique<emu_gui>(this, &m_screenrect);
-    if (!m_gui->ok()) { return -1; }
-    
-    SDL_SetWindowSize(m_window, m_scresX, m_scresY + m_screenrect.y);
+    if (enable_ui) {
+        m_gui = std::make_unique<emu_gui>(this);
+        if (!m_gui->ok()) { return -1; }
+        m_viewportrect = m_gui->viewport_rect();
+    }
+    else {
+        m_viewportrect = {
+            .x = 0,
+            .y = 0,
+            .w = int(m_scresX),
+            .h = int(m_scresY)
+        };
+    }
+
+    SDL_SetWindowSize(m_window, m_scresX, m_scresY + m_viewportrect.y);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
-    MESSAGE("-- Screen bounds: x: %d, y: %d, w: %d, h: %d",
-        m_screenrect.x, m_screenrect.y, m_screenrect.w, m_screenrect.h);
+    MESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d",
+        m_viewportrect.x, m_viewportrect.y, m_viewportrect.w, m_viewportrect.h);
 
     // use first supported texture format
     // see https://stackoverflow.com/questions/56143991/
@@ -204,9 +215,9 @@ pixfmt_done:
             "Supported: %s\nAvailable: %s", suppfmts.c_str(), hasfmts.c_str());
     }
     
-    m_screentex = SDL_CreateTexture(m_renderer, 
+    m_viewporttex = SDL_CreateTexture(m_renderer, 
         m_pixfmt->fmt, SDL_TEXTUREACCESS_STREAMING, m_scresX, m_scresY);
-    if (!m_screentex) {
+    if (!m_viewporttex) {
         return ERROR("SDL_CreateTexture(): %s", SDL_GetError());
     }
 
@@ -324,7 +335,11 @@ int emu::load_rom(const fs::path& dir)
 }
 
 emu::emu(uint scalefac) :
-    m_window(nullptr), m_renderer(nullptr), m_screentex(nullptr),
+    m_window(nullptr),
+    m_renderer(nullptr),
+    m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
+    m_viewporttex(nullptr),
+    m_pixfmt(nullptr),
     m_scalefac(scalefac), 
     m_scresX(RES_NATIVE_X * scalefac),
     m_scresY(RES_NATIVE_Y * scalefac),
@@ -333,6 +348,19 @@ emu::emu(uint scalefac) :
     for (int i = 0; i < NUM_SOUNDS; ++i) {
         m.sounds[i] = nullptr;
     }
+
+    // defaults
+    m_input2key[INPUT_P1_LEFT] = SDL_SCANCODE_LEFT;
+    m_input2key[INPUT_P1_RIGHT] = SDL_SCANCODE_RIGHT;
+    m_input2key[INPUT_P1_FIRE] = SDL_SCANCODE_SPACE;
+
+    m_input2key[INPUT_P2_LEFT] = SDL_SCANCODE_LEFT;
+    m_input2key[INPUT_P2_RIGHT] = SDL_SCANCODE_RIGHT;
+    m_input2key[INPUT_P2_FIRE] = SDL_SCANCODE_SPACE;
+
+    m_input2key[INPUT_CREDIT] = SDL_SCANCODE_RETURN;
+    m_input2key[INPUT_1P_START] = SDL_SCANCODE_1;
+    m_input2key[INPUT_2P_START] = SDL_SCANCODE_2;
 }
 
 // helpful for debugging
@@ -358,17 +386,19 @@ void emu::print_dbginfo()
         SDL_MIXER_MAJOR_VERSION, SDL_MIXER_MINOR_VERSION, SDL_MIXER_PATCHLEVEL,
         mix_version->major, mix_version->minor, mix_version->patch);
 
-    m_gui->print_dbginfo();
+    if (m_gui) {
+        m_gui->print_dbginfo();
+    }
 
     MESSAGE("");
 }
 
-emu::emu(const fs::path& romdir, uint scalefac) :
+emu::emu(const fs::path& romdir, bool enable_ui, uint scalefac) :
     emu(scalefac)
 {
     print_dbginfo();
 
-    if (init_graphics() != 0 ||
+    if (init_graphics(enable_ui) != 0 ||
         init_audio(romdir) != 0) {
         return;
     }
@@ -402,33 +432,13 @@ emu::~emu()
         Mix_FreeChunk(m.sounds[i]);
     }
     Mix_CloseAudio();
-    SDL_DestroyTexture(m_screentex);
+    SDL_DestroyTexture(m_viewporttex);
 
     m_gui.reset();
 
     SDL_DestroyRenderer(m_renderer);
     SDL_DestroyWindow(m_window);
     SDL_Quit();
-}
-
-void emu::handle_input(SDL_Scancode sc, bool pressed)
-{
-    switch (sc)
-    {
-    case KEY_CREDIT:   set_bit(&m.in_port1, 0, pressed); break;
-    case KEY_2P_START: set_bit(&m.in_port1, 1, pressed); break;
-    case KEY_1P_START: set_bit(&m.in_port1, 2, pressed); break;
-
-    case KEY_P1_FIRE:  set_bit(&m.in_port1, 4, pressed); break;
-    case KEY_P1_LEFT:  set_bit(&m.in_port1, 5, pressed); break;
-    case KEY_P1_RIGHT: set_bit(&m.in_port1, 6, pressed); break;
-
-    case KEY_P2_FIRE:  set_bit(&m.in_port2, 4, pressed); break;
-    case KEY_P2_LEFT:  set_bit(&m.in_port2, 5, pressed); break;
-    case KEY_P2_RIGHT: set_bit(&m.in_port2, 6, pressed); break;
-
-    default: break;
-    }
 }
 
 void emu::set_switch(int index, bool value)
@@ -444,7 +454,7 @@ void emu::set_switch(int index, bool value)
     }
 }
 
-bool emu::get_switch(int index)
+bool emu::get_switch(int index) const
 {
     switch (index)
     {
@@ -457,7 +467,7 @@ bool emu::get_switch(int index)
     }
 }
 
-int emu_interface::get_volume() { return m_volume; }
+int emu_interface::get_volume() const { return m_volume; }
 
 void emu_interface::set_volume(int new_volume)
 {
@@ -465,15 +475,26 @@ void emu_interface::set_volume(int new_volume)
     if (new_volume != m_volume)
     {
         for (int i = 0; i < NUM_SOUNDS; ++i) {
-            int scaled_vol = int((float(new_volume) / MAX_VOLUME) * MAX_VOLUMES[i]);
+            int scaled_vol = int((float(new_volume) / MAX_VOLUME_UI) * MAX_VOLUMES[i]);
             Mix_Volume(i, scaled_vol);
         }
         m_volume = new_volume;
     } 
 }
 
-void emu::run_cpu(uint64_t& last_cpucycles, uint64_t nframes_rend)
+void emu::emulate_cpu(uint64_t& last_cpucycles, uint64_t nframes_rend)
 {
+    // pass input to machine ports
+    set_bit(&m.in_port1, 0, m_keypressed[m_input2key[INPUT_CREDIT]]);
+    set_bit(&m.in_port1, 1, m_keypressed[m_input2key[INPUT_2P_START]]);
+    set_bit(&m.in_port1, 2, m_keypressed[m_input2key[INPUT_1P_START]]);
+    set_bit(&m.in_port1, 4, m_keypressed[m_input2key[INPUT_P1_FIRE]]);
+    set_bit(&m.in_port1, 5, m_keypressed[m_input2key[INPUT_P1_LEFT]]);
+    set_bit(&m.in_port1, 6, m_keypressed[m_input2key[INPUT_P1_RIGHT]]);
+    set_bit(&m.in_port2, 4, m_keypressed[m_input2key[INPUT_P2_FIRE]]);
+    set_bit(&m.in_port2, 5, m_keypressed[m_input2key[INPUT_P2_LEFT]]);
+    set_bit(&m.in_port2, 6, m_keypressed[m_input2key[INPUT_P2_RIGHT]]);
+
     // 33333.33 clk cycles at emulated CPU's 2Mhz clock speed (16667us/0.5us)
     uint64_t frame_cycles = 33333 + (nframes_rend % 3 == 0);
 
@@ -512,7 +533,7 @@ static colr_idx pixel_color(uint x, uint y)
 void emu::draw_screen()
 {
     void* pixels; int pitch;
-    SDL_LockTexture(m_screentex, NULL, &pixels, &pitch);
+    SDL_LockTexture(m_viewporttex, NULL, &pixels, &pitch);
 
     uint VRAM_idx = 0;
     i8080_word_t* VRAM_start = &m.mem[0x2400];
@@ -546,19 +567,19 @@ void emu::draw_screen()
             }
         }
     }
-    SDL_UnlockTexture(m_screentex);
-    SDL_RenderCopy(m_renderer, m_screentex, NULL, &m_screenrect);
+    SDL_UnlockTexture(m_viewporttex);
+    SDL_RenderCopy(m_renderer, m_viewporttex, NULL, &m_viewportrect);
 }
 
 void emu::run()
 {
     SDL_ShowWindow(m_window);
         
-    uint64_t nframes = 0;   // total frames rendered
-    uint64_t cpucycles = 0; // 8080 elapsed cpu cycles 
-
     // 60 Hz CRT refresh rate
-    static constexpr tim::microseconds tframe_target(16667);
+    static constexpr auto tframe_target = tim::microseconds(16667);
+
+    uint64_t nframes = 0;
+    uint64_t cpucycles = 0; 
 
     clk::time_point t_start = clk::now();
 
@@ -567,32 +588,31 @@ void emu::run()
     {
         SDL_Event e;
         while (SDL_PollEvent(&e))
-
-            // todo: HANDLE GAME EVENTS AFTER UI EVENTS!
         {
-            m_gui->process_event(&e);
+            bool handle_keyevent = true;
+            if (m_gui) {
+                m_gui->process_event(&e);
+                handle_keyevent = !m_gui->want_keyboard();
+            }
 
-            if (!m_gui->showing_sidepanel())
+            switch (e.type)
             {
-                switch (e.type)
-                {
-                case SDL_QUIT:
-                    running = false;
-                    break;
+            case SDL_QUIT:
+                running = false;
+                break;
 
-                case SDL_KEYDOWN:
-                    if (!m_gui->want_keyboard()) {
-                        handle_input(e.key.keysym.scancode, true);
-                    }
-                    break;
-                case SDL_KEYUP:
-                    if (!m_gui->want_keyboard()) {
-                        handle_input(e.key.keysym.scancode, false);
-                    }
-                    break;
-
-                default: break;
+            case SDL_KEYDOWN:
+                if (handle_keyevent) {
+                    m_keypressed[e.key.keysym.scancode] = true;
                 }
+                break;
+            case SDL_KEYUP:
+                if (handle_keyevent) {
+                    m_keypressed[e.key.keysym.scancode] = false;
+                }
+                break;
+
+            default: break;
             }
         }
         // Pause when minimized
@@ -603,15 +623,13 @@ void emu::run()
             continue;
         }
 
-        // Run CPU for 1 frame.
-        run_cpu(cpucycles, nframes);
-
-        SDL_SetRenderDrawColor(m_renderer, 36, 36, 36, 255);
-        SDL_RenderClear(m_renderer);
-
+        // Emulate CPU for 1 frame.
+        emulate_cpu(cpucycles, nframes);
+        // Draw contents of VRAM.
         draw_screen();
-        m_gui->draw();
 
+        if (m_gui) { m_gui->run(); }
+        
         SDL_RenderPresent(m_renderer);
 
         // Vsync
@@ -623,9 +641,12 @@ void emu::run()
         auto t_laststart = t_start;
         t_start = clk::now();
         
-        float delta_t = tim::duration<float>(t_start - t_laststart).count();
-        m_gui->set_delta_t(delta_t);
-        m_gui->set_fps(1.f / delta_t);
+        if (m_gui) 
+        {
+            float delta_t = tim::duration<float>(t_start - t_laststart).count();
+            m_gui->set_delta_t(delta_t);
+            m_gui->set_fps(1.f / delta_t);
+        }
 
         nframes++;
     }

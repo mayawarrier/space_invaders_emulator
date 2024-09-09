@@ -13,25 +13,30 @@
 #include "utils.hpp"
 
 
-#define KEY_CREDIT SDL_SCANCODE_RETURN
-#define KEY_1P_START SDL_SCANCODE_1
-#define KEY_2P_START SDL_SCANCODE_2
-
-#define KEY_P1_LEFT SDL_SCANCODE_LEFT
-#define KEY_P1_RIGHT SDL_SCANCODE_RIGHT
-#define KEY_P1_FIRE SDL_SCANCODE_SPACE
-
-#define KEY_P2_LEFT SDL_SCANCODE_A
-#define KEY_P2_RIGHT SDL_SCANCODE_D
-#define KEY_P2_FIRE SDL_SCANCODE_LCTRL
-
 #define RES_NATIVE_X 224
 #define RES_NATIVE_Y 256
 #define RES_SCALE_DEFAULT 3
 
 #define NUM_SOUNDS 10
-#define MAX_VOLUME 100
+#define MAX_VOLUME_UI 100
 
+
+enum inputtype
+{
+    INPUT_P1_LEFT,
+    INPUT_P1_RIGHT,
+    INPUT_P1_FIRE, 
+
+    INPUT_P2_LEFT,
+    INPUT_P2_RIGHT,
+    INPUT_P2_FIRE,
+
+    INPUT_CREDIT,
+    INPUT_1P_START,
+    INPUT_2P_START,
+
+    INPUT_NUM_INPUTS
+};
 
 struct machine
 {
@@ -42,12 +47,12 @@ struct machine
     i8080_word_t in_port1;
     i8080_word_t in_port2;
 
+    // Video chip interrupts
+    i8080_word_t intr_opcode;
+
     // Shift register chip
     i8080_dword_t shiftreg;
     i8080_word_t shiftreg_off;
-
-    // Video chip interrupts
-    i8080_word_t intr_opcode;
 
     // Sound chip
     Mix_Chunk* sounds[NUM_SOUNDS];
@@ -72,7 +77,7 @@ struct emu_gui;
 struct emu_interface
 {
     emu_interface(emu* e) :
-        m_emu(e), m_volume(MAX_VOLUME)
+        m_emu(e), m_volume(MAX_VOLUME_UI)
     {}
     emu_interface() :
         emu_interface(nullptr)
@@ -81,13 +86,13 @@ struct emu_interface
     SDL_Window* window();
     SDL_Renderer* renderer();
 
-    uint screenresX();
-    uint screenresY();
+    uint screenresX() const; // excluding UI
+    uint screenresY() const;
 
-    bool get_switch(int index);
+    bool get_switch(int index) const;
     void set_switch(int index, bool value);
 
-    int get_volume();
+    int get_volume() const;
     void set_volume(int volume);
 
 private:
@@ -98,9 +103,11 @@ private:
 struct emu
 {
     // \param rom_dir directory containing invaders ROM and audio files
+    // \param enable_ui True to enable emulator UI.
     // \param res_scale resolution scaling factor.
     // game renders at res_scale * native resolution.
     emu(const fs::path& rom_dir, 
+        bool enable_ui = true,
         uint res_scale = RES_SCALE_DEFAULT);
 
     ~emu();
@@ -126,32 +133,31 @@ private:
 
     void print_dbginfo();
 
-    int init_graphics();
+    int init_graphics(bool enable_ui);
     int init_audio(const fs::path& audiodir);
     int load_rom(const fs::path& dir);
 
-    void handle_input(SDL_Scancode sc, bool pressed);
-
-    bool get_switch(int index);
+    bool get_switch(int index) const;
     void set_switch(int index, bool value);
 
-    void run_cpu(uint64_t& cpucycles, uint64_t nframes);
-
+    void emulate_cpu(uint64_t& cpucycles, uint64_t nframes);
     void draw_screen();
 
 private:
     machine m;
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
-    SDL_Rect m_screenrect;
-    SDL_Texture* m_screentex;
-    std::bitset<SDL_NUM_SCANCODES> m_keypressed;
     std::unique_ptr<emu_gui> m_gui;
+    SDL_Rect m_viewportrect;
+    SDL_Texture* m_viewporttex;
 
     const pix_fmt* m_pixfmt;
     uint m_scalefac;
     uint m_scresX;
     uint m_scresY;
+
+    std::bitset<SDL_NUM_SCANCODES> m_keypressed;
+    SDL_Scancode m_input2key[INPUT_NUM_INPUTS];
 
     bool m_ok;
 };
@@ -159,10 +165,10 @@ private:
 inline SDL_Window* emu_interface::window() { return m_emu->m_window; }
 inline SDL_Renderer* emu_interface::renderer() { return m_emu->m_renderer; }
 
-inline uint emu_interface::screenresX() { return m_emu->m_scresX; } // excluding UI
-inline uint emu_interface::screenresY() { return m_emu->m_scresY; }
+inline uint emu_interface::screenresX() const { return m_emu->m_scresX; }
+inline uint emu_interface::screenresY() const { return m_emu->m_scresY; }
 
-inline bool emu_interface::get_switch(int index) {
+inline bool emu_interface::get_switch(int index) const {
     return m_emu->get_switch(index);
 }
 inline void emu_interface::set_switch(int index, bool value) {

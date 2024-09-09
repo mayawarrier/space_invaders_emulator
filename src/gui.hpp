@@ -24,12 +24,29 @@ struct gui_inputkey
 
 struct emu_gui
 {
-    emu_gui(emu_interface emu, SDL_Rect* screen_rect);
+    emu_gui(emu_interface emu);
     ~emu_gui();
-        
-    bool ok() const { return m_ok; }
 
     void print_dbginfo();
+
+    bool process_event(SDL_Event* e);
+
+    // True if GUI wants keyboard inputs.
+    bool want_keyboard();
+    // True if GUI wants mouse inputs.
+    bool want_mouse();
+
+    void run();
+
+    SDL_Rect viewport_rect() const
+    {
+        return {
+            .x = 0,
+            .y = m_menubar_height,
+            .w = int(m_emu.screenresX()),
+            .h = int(m_emu.screenresY())
+        };
+    }
 
     void set_fps(int fps) { m_fps = fps; }
 
@@ -40,19 +57,12 @@ struct emu_gui
         m_deltat_max = std::max(m_deltat_max, delta_t);
     }
 
-    bool showing_sidepanel() { return m_cur_panel != 0; }
-
-    bool process_event(SDL_Event* e);
-    bool want_keyboard();
-    bool want_mouse();
-
-    void draw();
+    bool ok() const { return m_ok; }
 
 private: 
     void draw_help_content();
     void draw_settings_content();
     void draw_panel(const char* title, void(emu_gui::*draw_content)());
-
     void draw_inputkey(const char* label, gui_inputkey& state);
 
 private:
@@ -61,6 +71,7 @@ private:
     ImFont* m_txt_font;
     int m_menubar_height;
     int m_cur_panel;
+    // in current frame
     SDL_Scancode m_lastkeypress;
 
     int m_fps;

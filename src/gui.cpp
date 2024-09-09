@@ -42,7 +42,7 @@ enum panel_type
     PANEL_SETTINGS
 };
 
-emu_gui::emu_gui(emu_interface emu, SDL_Rect* screen_rect) :
+emu_gui::emu_gui(emu_interface emu) :
     m_emu(emu), 
     m_cur_panel(PANEL_NONE),
     m_lastkeypress(SDL_SCANCODE_UNKNOWN), 
@@ -98,13 +98,6 @@ emu_gui::emu_gui(emu_interface emu, SDL_Rect* screen_rect) :
 
         m_menubar_height = int(ImGui::GetFrameHeight());
         ImGui::EndFrame();
-
-        *screen_rect = {
-            .x = 0,
-            .y = m_menubar_height,
-            .w = int(emu.screenresX()),
-            .h = int(emu.screenresY())
-        };
     }  
 
     m_ok = true;
@@ -239,7 +232,7 @@ void emu_gui::draw_inputkey(const char* label, gui_inputkey& state)
     ImGui::SetCursorPos(inputpos);
     ImVec2 dpos = ImGui::GetCursorScreenPos();
 
-    // invisible selectable to grab focus
+    // invisible selectable to determine focus
     ImGui::PushID(label);
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
@@ -248,11 +241,11 @@ void emu_gui::draw_inputkey(const char* label, gui_inputkey& state)
     ImGui::PopStyleColor(3);
     ImGui::PopID();
 
-    // check if out of focus
-    if (state.focused && !ImGui::IsItemHovered() &&
-        ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        state.focused = false;
+    if (state.focused) {
+        ImGui::SetNextFrameWantCaptureKeyboard(true);
     }
+    bool next_frame_unfocused = state.focused &&
+        !ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
 
     ImU32 bgcolor = state.focused ? 
         ImGui::GetColorU32(ImGuiCol_FrameBgActive) : 
@@ -266,6 +259,12 @@ void emu_gui::draw_inputkey(const char* label, gui_inputkey& state)
     if (state.focused && m_lastkeypress != SDL_SCANCODE_UNKNOWN) {
         state.key = m_lastkeypress;
         m_lastkeypress = SDL_SCANCODE_UNKNOWN; // consume
+    }
+
+    // update for next frame
+    if (next_frame_unfocused) {
+        state.focused = false;
+        ImGui::SetNextFrameWantCaptureKeyboard(false);
     }
 
     ImGui::SameLine();
@@ -354,7 +353,7 @@ void emu_gui::draw_settings_content()
         ImVec2 txtpos(sliderposX - voltxtsizeX - wndpadding.x, ImGui::GetCursorPosY());
 
         ImGui::SetCursorPosX(sliderposX);
-        ImGui::SliderInt("##volume", &volume, 0, MAX_VOLUME);
+        ImGui::SliderInt("##volume", &volume, 0, MAX_VOLUME_UI);
         ImGui::PopStyleVar();
 
         ImGui::SameLine();
@@ -382,9 +381,9 @@ void emu_gui::draw_settings_content()
     draw_inputkey("Player 2 Fire ", m_keywgt_p2fire);
     ImGui::NewLine();
 
-    draw_inputkey("1P Start ", m_keywgt_1pstart);
-    draw_inputkey("2P Start ", m_keywgt_2pstart);
-    draw_inputkey("Coin Slot", m_keywgt_coinslot);
+    draw_inputkey("1P Start", m_keywgt_1pstart);
+    draw_inputkey("2P Start", m_keywgt_2pstart);
+    draw_inputkey("Insert coin", m_keywgt_coinslot);
 }
 
 void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
@@ -422,7 +421,7 @@ void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
     }
 }
 
-void emu_gui::draw()
+void emu_gui::run()
 {
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
@@ -468,7 +467,6 @@ void emu_gui::draw()
     case PANEL_SETTINGS: draw_panel("Settings", &emu_gui::draw_settings_content); break;
     }
 
-    // drop last key
     m_lastkeypress = SDL_SCANCODE_UNKNOWN;
 
     ImGui::Render();

@@ -25,8 +25,9 @@ int do_main(int argc, char* argv[])
         ("c,ctrl", "Show control scheme.")
         ("r,romdir", "Directory containing Space Invaders ROM and audio files.", 
             cxxopts::value<std::string>()->default_value("data/"), "<dir>")
-        ("s,switches", "Set the cabinet's DIP switches (0=off, 1=on). See README for how this affects game behavior.", 
-            cxxopts::value<std::string>()->default_value("00000000"), "<bits>");
+        ("s,switches", "Set cabinet DIP switches (0=off, 1=on). See README for how this affects game behavior.", 
+            cxxopts::value<std::string>()->default_value("00000000"), "<bits>")
+        ("no-ui", "Disable emulator UI (settings panel etc.)");
              
     cxxopts::ParseResult args;
     try {
@@ -42,24 +43,24 @@ int do_main(int argc, char* argv[])
     }
     else if (args["ctrl"].as<bool>()) 
     {
-        std::printf("Player 1 Left: %s\n", SDL_GetScancodeName(KEY_P1_LEFT));
-        std::printf("Player 1 Right: %s\n", SDL_GetScancodeName(KEY_P1_RIGHT));
-        std::printf("Player 1 Fire: %s\n", SDL_GetScancodeName(KEY_P1_FIRE));
-        std::printf("\n");
-        std::printf("Player 2 Left: %s\n", SDL_GetScancodeName(KEY_P2_LEFT));
-        std::printf("Player 2 Right: %s\n", SDL_GetScancodeName(KEY_P2_RIGHT));
-        std::printf("Player 2 Fire: %s\n", SDL_GetScancodeName(KEY_P2_FIRE));
-        std::printf("\n");
-        std::printf("Coin Slot: %s\n", SDL_GetScancodeName(KEY_CREDIT));
-        std::printf("1-Player Start: %s\n", SDL_GetScancodeName(KEY_1P_START));
-        std::printf("2-Player Start: %s\n", SDL_GetScancodeName(KEY_2P_START));
-        std::printf("\n");
+        //std::printf("Player 1 Left: %s\n", SDL_GetScancodeName(KEY_P1_LEFT));
+        //std::printf("Player 1 Right: %s\n", SDL_GetScancodeName(KEY_P1_RIGHT));
+        //std::printf("Player 1 Fire: %s\n", SDL_GetScancodeName(KEY_P1_FIRE));
+        //std::printf("\n");
+        //std::printf("Player 2 Left: %s\n", SDL_GetScancodeName(KEY_P2_LEFT));
+        //std::printf("Player 2 Right: %s\n", SDL_GetScancodeName(KEY_P2_RIGHT));
+        //std::printf("Player 2 Fire: %s\n", SDL_GetScancodeName(KEY_P2_FIRE));
+        //std::printf("\n");
+        //std::printf("Coin Slot: %s\n", SDL_GetScancodeName(KEY_CREDIT));
+        //std::printf("1-Player Start: %s\n", SDL_GetScancodeName(KEY_1P_START));
+        //std::printf("2-Player Start: %s\n", SDL_GetScancodeName(KEY_2P_START));
+        //std::printf("\n");
         return 0;
     }
 
     fs::path rom_dir = args["romdir"].as<std::string>();
 
-    emu emu(rom_dir, RES_SCALE_DEFAULT);
+    emu emu(rom_dir, !args["no-ui"].as<bool>());
     if (!emu.ok()) {
         return -1;
     }
