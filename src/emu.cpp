@@ -144,9 +144,14 @@ int emu::init_graphics(bool enable_ui)
 {
     logMESSAGE("Initializing graphics");
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         return logERROR("SDL_Init(): %s", SDL_GetError());
     }
+
+    // Prevents several assorted freezes on Windows
+#ifdef _WIN32
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "direct3d11");
+#endif
 
     m_window = SDL_CreateWindow("Space Invaders", 0, 0, 0, 0, SDL_WINDOW_HIDDEN);
     if (!m_window) {
@@ -173,12 +178,12 @@ int emu::init_graphics(bool enable_ui)
         m_viewportrect = {
             .x = 0,
             .y = 0,
-            .w = int(m_scresX),
-            .h = int(m_scresY)
+            .w = int(m_screenresX),
+            .h = int(m_screenresY)
         };
     }
 
-    SDL_SetWindowSize(m_window, m_scresX, m_scresY + m_viewportrect.y);
+    SDL_SetWindowSize(m_window, m_screenresX, m_screenresY + m_viewportrect.y);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
     logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d",
@@ -216,7 +221,7 @@ pixfmt_done:
     }
     
     m_viewporttex = SDL_CreateTexture(m_renderer, 
-        m_pixfmt->fmt, SDL_TEXTUREACCESS_STREAMING, m_scresX, m_scresY);
+        m_pixfmt->fmt, SDL_TEXTUREACCESS_STREAMING, m_screenresX, m_screenresY);
     if (!m_viewporttex) {
         return logERROR("SDL_CreateTexture(): %s", SDL_GetError());
     }
@@ -226,7 +231,7 @@ pixfmt_done:
 
 static const int MAX_VOLUMES[] = 
 {
-    MIX_MAX_VOLUME / 2, // UFO fly
+    MIX_MAX_VOLUME / 3, // UFO fly
     MIX_MAX_VOLUME / 2, // Shoot
     MIX_MAX_VOLUME,
     MIX_MAX_VOLUME / 2, // Alien die
@@ -341,8 +346,8 @@ emu::emu(uint scalefac) :
     m_viewporttex(nullptr),
     m_pixfmt(nullptr),
     m_scalefac(scalefac), 
-    m_scresX(RES_NATIVE_X * scalefac),
-    m_scresY(RES_NATIVE_Y * scalefac),
+    m_screenresX(RES_NATIVE_X * scalefac),
+    m_screenresY(RES_NATIVE_Y * scalefac),
     m_ok(false)
 {
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -398,7 +403,7 @@ emu::emu(const fs::path& romdir, bool enable_ui, uint scalefac) :
 {
     print_dbginfo();
 
-    if (init_graphics(enable_ui) != 0 ||
+    if (init_graphics(enable_ui) != 0 || 
         init_audio(romdir) != 0) {
         return;
     }
@@ -537,6 +542,8 @@ void emu::draw_screen()
 
     uint VRAM_idx = 0;
     i8080_word_t* VRAM_start = &m.mem[0x2400];
+    // may not be equal to screenresX!
+    const uint texpitch = pitch / m_pixfmt->bypp;
 
     // Unpack (8 on/off pixels per byte) and rotate counter-clockwise
     for (uint x = 0; x < RES_NATIVE_X; ++x) {
@@ -549,13 +556,13 @@ void emu::draw_screen()
                 colr_idx colridx = get_bit(word, bit) ? pixel_color(x, y) : COLRIDX_BLACK;
                 uint32_t color = m_pixfmt->colors[colridx];
 
-                uint st_idx = m_scalefac * (m_scresX * (RES_NATIVE_Y - y - bit - 1) + x);
+                uint st_idx = m_scalefac * (texpitch * (RES_NATIVE_Y - y - bit - 1) + x);
 
                 // Draw a square instead of a pixel if resolution is higher than native
                 for (uint xsqr = 0; xsqr < m_scalefac; ++xsqr) {
                     for (uint ysqr = 0; ysqr < m_scalefac; ++ysqr)
                     {
-                        uint idx = st_idx + m_scresX * ysqr + xsqr;
+                        uint idx = st_idx + texpitch * ysqr + xsqr;
 
                         switch (m_pixfmt->bpp)
                         {
@@ -678,6 +685,7 @@ void emu::run()
         // Vsync
         auto tframe = clk::now() - t_start;
         if (tframe < tframe_target) {
+            // move tframe into vsync_sleep_for, more accurate timing
             vsync_sleep_for(tframe_target - tframe);
         }
 

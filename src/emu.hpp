@@ -62,11 +62,15 @@ struct machine
 struct pix_fmt
 {
     uint32_t fmt;
+    uint bypp;
     uint bpp;
     std::array<uint32_t, 4> colors;
 
     pix_fmt(uint32_t fmt, std::array<uint32_t, 4> pal) :
-        fmt(fmt), bpp(SDL_BITSPERPIXEL(fmt)), colors(pal)
+        fmt(fmt), 
+        bypp(SDL_BYTESPERPIXEL(fmt)), 
+        bpp(SDL_BITSPERPIXEL(fmt)), 
+        colors(pal)
     {}
 };
 
@@ -154,9 +158,9 @@ private:
     SDL_Texture* m_viewporttex;
 
     const pix_fmt* m_pixfmt;
-    uint m_scalefac;
-    uint m_scresX;
-    uint m_scresY;
+    const uint m_scalefac;
+    const uint m_screenresX;
+    const uint m_screenresY;
 
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
     SDL_Scancode m_input2key[INPUT_NUM_INPUTS];
@@ -167,8 +171,8 @@ private:
 inline SDL_Window* emu_interface::window() { return m_emu->m_window; }
 inline SDL_Renderer* emu_interface::renderer() { return m_emu->m_renderer; }
 
-inline uint emu_interface::screenresX() const { return m_emu->m_scresX; }
-inline uint emu_interface::screenresY() const { return m_emu->m_scresY; }
+inline uint emu_interface::screenresX() const { return m_emu->m_screenresX; }
+inline uint emu_interface::screenresY() const { return m_emu->m_screenresY; }
 
 inline bool emu_interface::get_switch(int index) const {
     return m_emu->get_switch(index);

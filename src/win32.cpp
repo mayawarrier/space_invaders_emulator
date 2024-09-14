@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
 #include "utils.hpp"
@@ -120,10 +122,14 @@ void win32_sleep_highres(uint64_t ns)
         LARGE_INTEGER tsleep;
         tsleep.QuadPart = -((LONGLONG)ns / 100);
 
-        if (!SetWaitableTimerEx(HIGHRES_TIMER, &tsleep, 0, NULL, NULL, NULL, 0)) {
+        if (!SetWaitableTimerEx(HIGHRES_TIMER, &tsleep, 0, NULL, NULL, NULL, 0)) 
+        {
             log_lasterror("SetWaitableTimerEx");
             CloseHandle(HIGHRES_TIMER);
             HIGHRES_TIMER = INVALID_HANDLE_VALUE; // do not try again
+
+            Sleep(DWORD(ns / NS_PER_MS));
+            return;
         }
 
         WaitForSingleObject(HIGHRES_TIMER, INFINITE);
