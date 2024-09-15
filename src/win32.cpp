@@ -103,7 +103,7 @@ bool win32_enable_console_colors()
 
 static thread_local HANDLE HIGHRES_TIMER = NULL;
 
-void win32_sleep_highres(uint64_t ns)
+void win32_sleep_ns(uint64_t ns)
 {
     if (!HIGHRES_TIMER) 
     {
@@ -137,5 +137,5 @@ void win32_sleep_highres(uint64_t ns)
 }
 
 #else
-void win32_sleep_highres(uint64_t ns) { Sleep(DWORD(ns / NS_PER_MS)); }
+void win32_sleep_ns(uint64_t ns) { Sleep(DWORD(ns / NS_PER_MS)); }
 #endif

@@ -21,6 +21,6 @@ bool win32_enable_console_colors();
 
 // Sleep using a high resolution timer if possible, otherwise just Sleep().
 // (Highres timer is only supported on Windows 10 1803 and later).
-void win32_sleep_highres(uint64_t ns);
+void win32_sleep_ns(uint64_t ns);
 
 #endif

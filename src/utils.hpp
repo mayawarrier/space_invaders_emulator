@@ -13,6 +13,9 @@
 #define XSTR(a) STR(a)
 
 #define NS_PER_MS 1000000
+#define NS_PER_US 1000
+#define US_PER_MS 1000
+#define US_PER_S  1000000
 
 #ifdef __clang__
 #define PUSH_WARNINGS _Pragma("clang diagnostic push")

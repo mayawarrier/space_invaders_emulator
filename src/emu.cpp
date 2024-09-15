@@ -578,15 +578,15 @@ void emu::draw_screen()
     SDL_RenderCopy(m_renderer, m_viewporttex, NULL, &m_viewportrect);
 }
 
-// Much more accurate than std::sleep_for().
+// Much more accurate than std::sleep_for() or PRESENT_VSYNC.
 template <typename T>
 static void vsync_sleep_for(T tsleep)
 {
-    static constexpr uint64_t us_per_s = 1000000;
-    static constexpr auto wake_interval_ms = tim::milliseconds(3);
+    static constexpr auto wake_interval_us = tim::microseconds(3000);
+    static constexpr auto wake_tolerance = tim::microseconds(500);
     static const uint64_t perfctr_freq = SDL_GetPerformanceFrequency();
 
-    if (perfctr_freq < us_per_s) [[unlikely]] {
+    if (perfctr_freq < US_PER_S) [[unlikely]] {
         SDL_Delay(uint32_t(tim::round<tim::milliseconds>(tsleep).count()));
         return;
     }
@@ -599,11 +599,11 @@ static void vsync_sleep_for(T tsleep)
     {
         trem = tend - tcur;
 
-        if (trem > wake_interval_ms) {
+        if (trem > wake_interval_us + wake_tolerance) {
 #ifdef _WIN32
-            win32_sleep_highres(wake_interval_ms.count() * NS_PER_MS);
+            win32_sleep_ns(wake_interval_us.count() * NS_PER_US);
 #else
-            SDL_Delay(wake_interval_ms.count());
+            SDL_Delay(wake_interval_us.count() / US_PER_MS);
 #endif  
             // adjust for stdlib + call overhead
             tend -= tim::microseconds(2);
@@ -611,7 +611,7 @@ static void vsync_sleep_for(T tsleep)
         else {
             auto trem_us = tim::round<tim::microseconds>(trem);
             uint64_t cur_ctr = SDL_GetPerformanceCounter();
-            uint64_t target_ctr = cur_ctr + trem_us.count() * perfctr_freq / us_per_s;
+            uint64_t target_ctr = cur_ctr + trem_us.count() * perfctr_freq / US_PER_S;
 
             while (cur_ctr < target_ctr) {
                 cur_ctr = SDL_GetPerformanceCounter();
@@ -678,21 +678,24 @@ void emu::run()
         // Draw contents of VRAM.
         draw_screen();
 
-        if (m_gui) { m_gui->run(); }
+        if (m_gui) { 
+            m_gui->run();
+        }
         
         SDL_RenderPresent(m_renderer);
 
         // Vsync
         auto tframe = clk::now() - t_start;
         if (tframe < tframe_target) {
-            // move tframe into vsync_sleep_for, more accurate timing
             vsync_sleep_for(tframe_target - tframe);
         }
 
         auto t_laststart = t_start;
         t_start = clk::now();
         
-        if (m_gui) 
+        // exclude first frame, first one is always
+        // slower due to lazy initialization
+        if (m_gui && nframes != 0) 
         {
             float delta_t = tim::duration<float>(t_start - t_laststart).count();
             m_gui->set_delta_t(delta_t);
