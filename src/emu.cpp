@@ -148,9 +148,9 @@ int emu::init_graphics(bool enable_ui)
         return logERROR("SDL_Init(): %s", SDL_GetError());
     }
 
-    // Prevents several assorted freezes on Windows
+    // Prevents several assorted freezes and lag on Windows
 #ifdef _WIN32
-    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "direct3d11");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
 #endif
 
     m_window = SDL_CreateWindow("Space Invaders", 0, 0, 0, 0, SDL_WINDOW_HIDDEN);

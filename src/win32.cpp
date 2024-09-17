@@ -66,7 +66,7 @@ bool win32_recreate_console()
         // No need to reopen C++ IO streams, since on 
         // Windows they are implemented using C IO
     
-        logERROR("Created new Win32 console\n");
+        logMESSAGE("Created new Win32 console\n");
         return true;
     }
     else {
