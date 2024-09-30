@@ -81,6 +81,8 @@ emu_gui::emu_gui(emu_interface emu) :
     m_hdr_font = io.Fonts->AddFontDefault(&hdr_fontcfg);
     io.Fonts->Build();
 
+    io.IniFilename = nullptr;
+
     // nasty workaround to determine menubar height
     // https://github.com/ocornut/imgui/issues/252
     {
@@ -147,7 +149,7 @@ static void draw_rtalign_text(const char* fmt, Args... args)
     if (sizeof...(args) == 0) {
         ptxt = fmt;
     } else {
-        std::snprintf(txtbuf, 512, fmt, args...);
+        std::snprintf(txtbuf, 128, fmt, args...);
         ptxt = txtbuf;
     }
 
@@ -286,103 +288,111 @@ void emu_gui::draw_settings_content()
     ImVec2 wndsize = ImGui::GetWindowSize();
     ImVec2 wndpadding = ImGui::GetStyle().WindowPadding;
 
-    ImGui::PushFont(m_txt_font);
-    draw_header("Cabinet DIP switches", SUBHDR_BGCOLOR);
-    ImGui::PopFont();
-    ImGui::NewLine();
-
-    float sw_txtpos[5];
-
-    ImGui::SetCursorPosX(ImGui::GetFrameHeight() * 2);
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(20, 0));
-    for (int i = 7; i >= 3; --i)
+    // DIP Switches section
     {
-        sw_txtpos[i - 3] = ImGui::GetCursorPosX();
+        ImGui::PushFont(m_txt_font);
+        draw_header("DIP switches", SUBHDR_BGCOLOR);
+        ImGui::PopFont();
+        ImGui::NewLine();
 
-        bool cur_val = m_emu.get_switch(i);
-        bool upd_val = draw_dip_switch(i, cur_val);
-        m_emu.set_switch(i, upd_val);
+        float sw_txtpos[5];
 
-        if (i != 3) {
-            ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetFrameHeight() * 2);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(20, 0));
+        for (int i = 7; i >= 3; --i)
+        {
+            sw_txtpos[i - 3] = ImGui::GetCursorPosX();
+
+            bool cur_val = m_emu.get_switch(i);
+            bool upd_val = draw_dip_switch(i, cur_val);
+            m_emu.set_switch(i, upd_val);
+
+            if (i != 3) {
+                ImGui::SameLine();
+            }
         }
-    }
-    ImGui::PopStyleVar();
-
-    ImGui::PushFont(m_txt_font);
-    for (int i = 7; i >= 3; --i)
-    {
-        char sw_name[] = { 'D', 'I', 'P', char(0x30 + i), '\0' };
-        ImGui::SetCursorPosX(sw_txtpos[i - 3]);
-        ImGui::TextUnformatted(sw_name);
-        ImGui::SameLine();
-    }
-    ImGui::PopFont();
-
-    ImGui::NewLine();
-    ImGui::NewLine();
-
-    draw_rtalign_text("See README for how these");
-    draw_rtalign_text("affect game behavior.");
-    ImGui::Spacing();
-
-    int num_ships = 0;
-    set_bit(&num_ships, 0, m_emu.get_switch(3));
-    set_bit(&num_ships, 1, m_emu.get_switch(5));
-    num_ships += 3;
-
-    ImGui::Text("Number of ships: %d", num_ships);
-    ImGui::Text("Extra ship at: %d points", m_emu.get_switch(6) ? 1000 : 1500);
-    ImGui::Text("Diagnostics at startup: %s", m_emu.get_switch(4) ? "Enabled" : "Disabled");
-    ImGui::Text("Coins displayed in demo screen: %s", m_emu.get_switch(7) ? "No" : "Yes");
-
-    ImGui::NewLine();
-
-    ImGui::PushFont(m_txt_font);
-    draw_header("Audio", SUBHDR_BGCOLOR);
-    ImGui::PopFont();
-    ImGui::NewLine();
-
-    int volume = m_emu.get_volume();
-    {
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(7, 7));
-
-        float sliderposX = wndsize.x - wndpadding.x - ImGui::CalcItemWidth();
-        float voltxtsizeX = ImGui::CalcTextSize("Volume").x;
-        ImVec2 txtpos(sliderposX - voltxtsizeX - wndpadding.x, ImGui::GetCursorPosY());
-
-        ImGui::SetCursorPosX(sliderposX);
-        ImGui::SliderInt("##volume", &volume, 0, MAX_VOLUME_UI);
         ImGui::PopStyleVar();
 
-        ImGui::SameLine();
+        ImGui::PushFont(m_txt_font);
+        for (int i = 7; i >= 3; --i)
+        {
+            char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
+            ImGui::SetCursorPosX(sw_txtpos[i - 3]);
+            ImGui::TextUnformatted(sw_name);
+            ImGui::SameLine();
+        }
+        ImGui::PopFont();
 
-        ImGui::SetCursorPos(txtpos);
-        ImGui::TextUnformatted("Volume");
+        ImGui::NewLine();
+        ImGui::NewLine();
+
+        draw_rtalign_text("See README for how DIPs affect the game.");
+        draw_rtalign_text("Note: Not all ROMs respond to all DIPs!");
+        ImGui::NewLine();
+
+        int num_ships = 0;
+        set_bit(&num_ships, 0, m_emu.get_switch(3));
+        set_bit(&num_ships, 1, m_emu.get_switch(5));
+        num_ships += 3;
+
+        ImGui::Text("Number of ships: %d", num_ships);
+        ImGui::Text("Extra ship at: %d points", m_emu.get_switch(6) ? 1000 : 1500);
+        ImGui::Text("Diagnostics at startup: %s", m_emu.get_switch(4) ? "Enabled" : "Disabled");
+        ImGui::Text("Coins in demo screen: %s", m_emu.get_switch(7) ? "No" : "Yes");
     }
-    m_emu.set_volume(volume);
 
     ImGui::NewLine();
 
-    ImGui::PushFont(m_txt_font);
-    draw_header("Controls", SUBHDR_BGCOLOR);
-    ImGui::PopFont();
+    // Controls section
+    {
+        ImGui::PushFont(m_txt_font);
+        draw_header("Controls", SUBHDR_BGCOLOR);
+        ImGui::PopFont();
+        ImGui::NewLine();
+
+        draw_inputkey("Player 1 Left ", INPUT_P1_LEFT);
+        draw_inputkey("Player 1 Right", INPUT_P1_RIGHT);
+        draw_inputkey("Player 1 Fire ", INPUT_P1_FIRE);
+        ImGui::NewLine();
+
+        draw_inputkey("Player 2 Left ", INPUT_P2_LEFT);
+        draw_inputkey("Player 2 Right", INPUT_P2_RIGHT);
+        draw_inputkey("Player 2 Fire ", INPUT_P2_FIRE);
+        ImGui::NewLine();
+
+        draw_inputkey("1P Start", INPUT_1P_START);
+        draw_inputkey("2P Start", INPUT_2P_START);
+        draw_inputkey("Insert coin", INPUT_CREDIT);
+    }
 
     ImGui::NewLine();
 
-    draw_inputkey("Player 1 Left ", INPUT_P1_LEFT);
-    draw_inputkey("Player 1 Right", INPUT_P1_RIGHT);
-    draw_inputkey("Player 1 Fire ", INPUT_P1_FIRE);
-    ImGui::NewLine();
+    // Audio section
+    {
+        ImGui::PushFont(m_txt_font);
+        draw_header("Audio", SUBHDR_BGCOLOR);
+        ImGui::PopFont();
+        ImGui::NewLine();
 
-    draw_inputkey("Player 2 Left ", INPUT_P2_LEFT);
-    draw_inputkey("Player 2 Right", INPUT_P2_RIGHT);
-    draw_inputkey("Player 2 Fire ", INPUT_P2_FIRE);
-    ImGui::NewLine();
+        int volume = m_emu.get_volume();
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(7, 7));
 
-    draw_inputkey("1P Start", INPUT_1P_START);
-    draw_inputkey("2P Start", INPUT_2P_START);
-    draw_inputkey("Insert coin", INPUT_CREDIT);
+            float sliderposX = wndsize.x - wndpadding.x - ImGui::CalcItemWidth();
+            float voltxtsizeX = ImGui::CalcTextSize("Volume").x;
+            ImVec2 txtpos(sliderposX - voltxtsizeX - wndpadding.x, ImGui::GetCursorPosY());
+
+            ImGui::SetCursorPosX(sliderposX);
+            ImGui::SliderInt("##volume", &volume, 0, VOLUME_MAX);
+            ImGui::PopStyleVar();
+
+            ImGui::SameLine();
+
+            ImGui::SetCursorPos(txtpos);
+            ImGui::TextUnformatted("Volume");
+        }
+        m_emu.set_volume(volume);
+    }
 }
 
 void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
@@ -442,9 +452,7 @@ void emu_gui::run()
         }
         ImGui::SameLine();
 
-        ImGui::Text("FPS: %d", m_fps);
-        ImGui::SameLine();
-        ImGui::Text("Delta t: %f, min: %f, max: %f", m_deltat, m_deltat_min, m_deltat_max);
+        draw_rtalign_text("FPS: %d", m_fps);
 
         ImGui::EndMainMenuBar();
     }
