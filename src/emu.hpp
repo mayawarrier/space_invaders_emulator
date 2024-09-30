@@ -18,8 +18,8 @@
 #define RES_SCALE_DEFAULT 3
 
 #define NUM_SOUNDS 10
-#define MAX_VOLUME_UI 100
-
+#define VOLUME_MAX 100
+#define VOLUME_DEFAULT 50
 
 enum inputtype
 {
@@ -81,7 +81,7 @@ struct emu_gui;
 struct emu_interface
 {
     emu_interface(emu* e) :
-        m_emu(e), m_volume(MAX_VOLUME_UI)
+        m_emu(e)
     {}
     emu_interface() :
         emu_interface(nullptr)
@@ -103,41 +103,31 @@ struct emu_interface
 
 private:
     emu* m_emu;
-    int m_volume;
 };
 
 struct emu
 {
-    // \param rom_dir directory containing invaders ROM and audio files
-    // \param enable_ui True to enable emulator UI.
-    // \param res_scale resolution scaling factor.
-    // game renders at res_scale * native resolution.
-    emu(const fs::path& rom_dir, 
-        bool enable_ui = true,
-        uint res_scale = RES_SCALE_DEFAULT);
-
+    emu(const fs::path& ini_path);
     ~emu();
 
     bool ok() const { return m_ok; }
-
-    // Set cabinet DIP switches.
-    void set_switches(uint8_t values)
-    {
-        for (int i = 3; i < 8; ++i) {
-            set_switch(i, get_bit(values, i));
-        }
-    }
 
     // Open a window and start running.
     // Returns when window is closed.
     void run();
 
+    // Help on config file parameters.
+    static void print_ini_help();
+
     friend emu_interface;
 
 private:
-    emu(uint scalefac);
+    emu() noexcept;
 
     void print_dbginfo();
+
+    int load_prefs();
+    int save_prefs();
 
     int init_graphics(bool enable_ui);
     int init_audio(const fs::path& audiodir);
@@ -145,12 +135,14 @@ private:
 
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
+    void set_volume(int volume);
 
     void emulate_cpu(uint64_t& cpucycles, uint64_t nframes);
     void draw_screen();
 
 private:
     machine m;
+    ini m_ini;
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
     std::unique_ptr<emu_gui> m_gui;
@@ -158,9 +150,11 @@ private:
     SDL_Texture* m_viewporttex;
 
     const pix_fmt* m_pixfmt;
-    const uint m_scalefac;
-    const uint m_screenresX;
-    const uint m_screenresY;
+    uint m_scalefac;
+    uint m_screenresX;
+    uint m_screenresY;
+
+    int m_volume;
 
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
     SDL_Scancode m_input2key[INPUT_NUM_INPUTS];
@@ -179,6 +173,13 @@ inline bool emu_interface::get_switch(int index) const {
 }
 inline void emu_interface::set_switch(int index, bool value) {
     m_emu->set_switch(index, value);
+}
+
+inline int emu_interface::get_volume() const { 
+    return m_emu->m_volume; 
+}
+inline void emu_interface::set_volume(int volume) { 
+    m_emu->set_volume(volume); 
 }
 
 inline SDL_Scancode* emu_interface::input2keymap() { 

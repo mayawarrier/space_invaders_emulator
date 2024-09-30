@@ -13,6 +13,7 @@ set(SOURCES
     "src/i8080/i8080_opcodes.h"
     "src/i8080/i8080.cpp" 
     "src/utils.hpp"
+    "src/utils.cpp"
     "src/emu.hpp"
     "src/emu.cpp"
     "src/gui.hpp"
@@ -56,6 +57,14 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/data
         ${CMAKE_BINARY_DIR}/data
+    VERBATIM
+)
+
+add_custom_command(
+    TARGET spaceinvaders POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
+        ${CMAKE_BINARY_DIR}/spaceinvaders.ini
     VERBATIM
 )
 

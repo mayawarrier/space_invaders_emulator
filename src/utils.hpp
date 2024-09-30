@@ -5,8 +5,13 @@
 #include <cstdio>
 #include <algorithm>
 #include <filesystem>
+#include <charconv>
 #include <chrono>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <map>
 
 #define CONCAT(x, y) x##y
 #define STR(a) #a
@@ -43,7 +48,7 @@ using clk = tim::steady_clock;
 using uint = unsigned int;
 
 
-// todo: move logging to its own file?
+// todo: move to utils.cpp
 extern std::FILE* LOGFILE;
 extern bool CONSOLE_HAS_COLORS;
 
@@ -124,5 +129,117 @@ inline bool get_bit(T word, int bit)
 {
     return (word & (0x1 << bit)) != 0;
 }
+
+template <typename = void>
+struct wslut {
+    static constexpr uint8_t lut[] = {
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+};
+
+template <typename T>
+constexpr uint8_t wslut<T>::lut[];
+
+// Fast whitespace check, C-locale
+constexpr bool is_ws(char c) {
+    return wslut<>::lut[static_cast<uint8_t>(c)];
+}
+
+template <typename T>
+bool try_parse_num(std::string_view str, T& val)
+{
+    const char* beg = str.data();
+    const char* end = str.data() + str.length();
+    // skip whitespace
+    while (beg != end && is_ws(*beg)) { beg++; }
+
+    auto res = std::from_chars(beg, end, val);
+    return res.ec == std::errc();
+}
+
+
+struct ini
+{
+    ini() = default;
+    ini(const fs::path& path) : 
+        m_path(path)
+    {}
+
+    int read();
+    int write();
+
+    const fs::path& path() const { return m_path; }
+    std::string path_str() const { return m_path.string(); }
+
+    std::string_view get_value(const char* section, const char* key)
+    {
+        auto sectitr = m_map.find(section);
+        if (sectitr != m_map.end()) {
+            auto valueitr = sectitr->second.find(key);
+            if (valueitr != sectitr->second.end()) {
+                return valueitr->second;
+            }
+        }
+        return {};
+    }
+
+    std::string_view get_value_or_dflt(
+        const char* section, const char* key, std::string_view dflt_value)
+    {
+        auto ret = get_value(section, key);
+        return ret.data() ? ret : dflt_value;
+    }
+
+    template <typename T, 
+        typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+    bool get_num_or_dflt(
+        const char* section, const char* key, T dflt_value, T& value)
+    {
+        auto str = get_value(section, key);
+        if (!str.data()) {
+            value = dflt_value;
+            return true;
+        }
+        else if (try_parse_num(str, value)) {
+            return true;
+        }
+        else return false;
+    }
+
+    void set_value(const char* section,
+        const char* key, std::string_view value)
+    {
+        set_value_internal(section, key, value);
+    }
+
+private:
+    struct hash {
+        std::size_t operator()(const std::string& s) const noexcept {
+            return std::hash<std::string_view>{}({ s.begin() + (s.find('_') + 1), s.end() });
+        }
+    };
+    struct cmp {
+        bool operator()(const std::string& a, const std::string& b) const {
+            return a.compare(a.find('_') + 1, a.npos, b, b.find('_') + 1, b.npos) == 0;
+        }
+    };
+    using section_t = std::unordered_map<std::string, std::string, hash, cmp>;
+    using map_t = std::unordered_map<std::string, section_t, hash, cmp>;
+
+    void set_value_internal(const std::string& section,
+        const std::string& key, std::string_view value);
+
+    map_t m_map;
+    fs::path m_path;
+};
 
 #endif
