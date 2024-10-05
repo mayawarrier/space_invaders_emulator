@@ -11,7 +11,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <map>
 
 #define CONCAT(x, y) x##y
 #define STR(a) #a
@@ -166,7 +165,6 @@ bool try_parse_num(std::string_view str, T& val)
     return res.ec == std::errc();
 }
 
-
 struct ini
 {
     ini() = default;
@@ -183,17 +181,19 @@ struct ini
     std::string_view get_value(const char* section, const char* key)
     {
         auto sectitr = m_map.find(section);
-        if (sectitr != m_map.end()) {
-            auto valueitr = sectitr->second.find(key);
-            if (valueitr != sectitr->second.end()) {
-                return valueitr->second;
+        if (sectitr != m_map.end()) 
+        {
+            auto& entries = sectitr->second.entries;
+            auto valueitr = entries.find(key);
+            if (valueitr != entries.end()) {
+                return valueitr->second.valuestr;
             }
         }
         return {};
     }
 
     std::string_view get_value_or_dflt(
-        const char* section, const char* key, std::string_view dflt_value)
+        const char* section, const char* key, const char* dflt_value)
     {
         auto ret = get_value(section, key);
         return ret.data() ? ret : dflt_value;
@@ -216,29 +216,31 @@ struct ini
     }
 
     void set_value(const char* section,
-        const char* key, std::string_view value)
+        const char* key, const char* value)
     {
         set_value_internal(section, key, value);
     }
 
 private:
-    struct hash {
-        std::size_t operator()(const std::string& s) const noexcept {
-            return std::hash<std::string_view>{}({ s.begin() + (s.find('_') + 1), s.end() });
-        }
-    };
-    struct cmp {
-        bool operator()(const std::string& a, const std::string& b) const {
-            return a.compare(a.find('_') + 1, a.npos, b, b.find('_') + 1, b.npos) == 0;
-        }
-    };
-    using section_t = std::unordered_map<std::string, std::string, hash, cmp>;
-    using map_t = std::unordered_map<std::string, section_t, hash, cmp>;
+    void set_value_internal(std::string_view section,
+        std::string_view key, std::string_view value);
 
-    void set_value_internal(const std::string& section,
-        const std::string& key, std::string_view value);
-
-    map_t m_map;
+private:
+    // Store indices, so data can be written back in same order
+    // This is terrible, but convenient for ini consumers
+    struct mapsection 
+    {  
+        struct value 
+        {
+            int index;
+            std::string valuestr;
+            value(int index) : index(index) {}
+        };
+        int index;
+        std::unordered_map<std::string, value> entries;
+        mapsection(int index) : index(index) {}
+    };
+    std::unordered_map<std::string, mapsection> m_map;
     fs::path m_path;
 };
 

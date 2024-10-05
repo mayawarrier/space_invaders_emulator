@@ -516,17 +516,22 @@ int emu::load_prefs()
 
 int emu::save_prefs()
 {
-    m_ini.set_value("Settings", "Volume", std::to_string(m_volume));
+    m_ini.set_value("Settings", "Volume", std::to_string(m_volume).c_str());
 
     for (int i = 3; i < 8; ++i) {
         char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
-        m_ini.set_value("Settings", sw_name, std::to_string(uint(get_switch(i))));
+        m_ini.set_value("Settings", sw_name, std::to_string(uint(get_switch(i))).c_str());
     }
     for (int i = 0; i < INPUT_NUM_INPUTS; ++i) {
         m_ini.set_value("Settings", 
             input_ininame(inputtype(i)), SDL_GetScancodeName(m_input2key[i]));
     }
-    return m_ini.write();
+    
+    int e = m_ini.write();
+    if (e == 0) {
+        logMESSAGE("Saved prefs");
+    }
+    return e;
 }
 
 emu::emu(const fs::path& ini_path) : emu()

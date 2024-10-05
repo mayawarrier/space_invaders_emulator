@@ -1,7 +1,7 @@
 
 #include "utils.hpp"
 
-static std::string_view trim_v(std::string_view str)
+static std::string_view trim(std::string_view str)
 {
     const char* beg = str.data();
     const char* end = str.data() + str.length();
@@ -21,7 +21,7 @@ static bool extract_str(std::string_view& src, TString& str, char delim)
     size_t endpos = (i != src.npos) ? i : src.size();
     size_t nread = (i != src.npos) ? i + 1 : src.size(); // skip delim
 
-    str = trim_v({ src.data(), endpos });
+    str = trim({ src.data(), endpos });
     src.remove_prefix(nread);
     return true;
 }
@@ -32,31 +32,19 @@ static bool getline_v(std::string_view& src, TString& line)
     return extract_str(src, line, '\n');
 }
 
-void ini::set_value_internal(const std::string& section,
-    const std::string& key, std::string_view value)
+void ini::set_value_internal(std::string_view section,
+    std::string_view key, std::string_view value)
 {
-    // add indexes to keys, so data can be written back in same order
+    auto sectitr = m_map.insert({ 
+        std::string(section), 
+        mapsection(m_map.size()) }).first;
 
-    auto sectitr = m_map.find(section);
-    if (sectitr != m_map.end())
-    {
-        auto keyitr = sectitr->second.find(key);
-        if (keyitr != sectitr->second.end()) {
-            keyitr->second = value;
-        }
-        else {
-            auto fullkey = std::to_string(sectitr->second.size());
-            fullkey += "_"; fullkey += key;
-            sectitr->second[std::move(fullkey)] = value;
-        }
-    }
-    else {
-        std::string fullsect = std::to_string(m_map.size());
-        fullsect += "_"; fullsect += section;
+    auto& sectentries = sectitr->second.entries;
+    auto keyitr = sectentries.insert({ 
+        std::string(key),
+        mapsection::value(sectentries.size()) }).first;
 
-        std::string fullkey = "0_"; fullkey += key;
-        m_map[std::move(fullsect)][std::move(fullkey)] = value;
-    }
+    keyitr->second.valuestr = value;
 }
 
 int ini::read()
@@ -74,8 +62,7 @@ int ini::read()
     }
 
     int lineno = 1;
-    std::string_view line;
-    std::string cur_section;
+    std::string_view line, section;
     std::string_view filedata(filebuf.get(), filesize);
 
     while (getline_v(filedata, line))
@@ -83,95 +70,67 @@ int ini::read()
         if (line.empty()) {
             continue;
         }
-        if (line.starts_with('[') && line.ends_with(']'))
-        {
-            cur_section = line.substr(1, line.length() - 2);
-            if (m_map.contains(cur_section)) {
-                return logERROR("%s: Duplicate section on line %d", m_path.string().c_str(), lineno);
-            }
-        }
+        if (line.starts_with('[') && line.ends_with(']')) {
+            section = line.substr(1, line.length() - 2);
+        } 
         else {
-            std::string key;
-            std::string_view value;
+            std::string_view key, value;
             if (!extract_str(line, key, '=') || key.empty() ||
                 !extract_str(line, value, '\n') || value.empty()) {
-                return logERROR("%s: Invalid entry on line %d", m_path.string().c_str(), lineno);
+                return logERROR("%s: Invalid entry on line %d", path_str().c_str(), lineno);
             }
-
-            set_value_internal(cur_section, key, value);
-        }
+            set_value_internal(section, key, value);
+        }            
         lineno++;
     }
 
-    logMESSAGE("Read prefs");
     return 0;
-}
-
-static std::pair<std::string_view, std::string_view> idx_and_key(const std::string& str)
-{
-    size_t off = str.find('_');
-    return { {str.begin(), str.begin() + off }, { str.begin() + off + 1, str.end() } };
 }
 
 int ini::write()
 {
-    std::string out;
-
-    struct section {
+    struct vecsection
+    {
+        using kv = std::pair<std::string_view, std::string_view>;
         std::string_view name;
-        struct kv {
-            std::string_view key, value;
-        };
         std::vector<kv> entries;
     };
-    std::vector<section> m_data;
-    m_data.resize(m_map.size());
+    std::vector<vecsection> data(m_map.size());
 
-    for (auto it = m_map.begin(); it != m_map.end(); ++it)
+    for (const auto& [sectname, sect] : m_map)
     {
-        // add section
-        auto [idxstr, section] = idx_and_key(it->first);
-        size_t sectidx = 0;
-        try_parse_num(idxstr, sectidx);
-        m_data[sectidx].name = section;
-        m_data[sectidx].entries.resize(it->second.size());
-       
-        // add section keys
-        for (auto keyit = it->second.begin(); keyit != it->second.end(); ++keyit) 
-        {
-            auto [keyidxstr, key] = idx_and_key(keyit->first);
-            size_t keyidx = 0;
-            try_parse_num(keyidxstr, keyidx);
+        auto& vecsect = data[sect.index];
+        vecsect = { .name = sectname };
+        vecsect.entries.resize(sect.entries.size());
 
-            auto& entry = m_data[sectidx].entries[keyidx];
-            entry.key = key;
-            entry.value = keyit->second;
+        for (const auto& [key, value] : sect.entries) {
+            vecsect.entries[value.index] = { key, value.valuestr };
         }
     }
 
-    for (int i = 0; i < m_data.size(); ++i)
+    std::string out;
+    for (int i = 0; i < data.size(); ++i)
     {
-        auto& cur_section = m_data[i].name;
-        out += "["; out += cur_section; out += "]\n";
+        auto& section = data[i].name;
+        out += "["; out += section; out += "]\n";
     
-        for (int j = 0; j < m_data[i].entries.size(); ++j)
+        for (int j = 0; j < data[i].entries.size(); ++j)
         {
-            auto& entry = m_data[i].entries[j];
-            out += entry.key;
+            auto& entry = data[i].entries[j];
+            out += entry.first;
             out += " = ";
-            out += entry.value;
+            out += entry.second;
             out += "\n";
         }
-
         out += "\n";
     }
 
     scopedFILE file = SAFE_FOPEN(m_path.c_str(), "wb");
     if (!file) {
-        return logERROR("Could not open file %s", m_path.string().c_str());
+        return logERROR("Could not open file %s", path_str().c_str());
     }
     if (std::fwrite(out.c_str(), 1, out.length(), file.get()) != out.length()) {
-        return logERROR("Could not write to file %s", m_path.string().c_str());
+        return logERROR("Could not write to file %s", path_str().c_str());
     }
 
     return 0;
