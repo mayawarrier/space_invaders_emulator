@@ -38,12 +38,12 @@ static const char* input_inidesc(inputtype type)
 {
     switch (type)
     {
-    case INPUT_P1_LEFT:  return "Key to use for P1 left.";
-    case INPUT_P1_RIGHT: return "Key to use for P1 right.";
-    case INPUT_P1_FIRE:  return "Key to use for P1 fire.";
-    case INPUT_P2_LEFT:  return "Key to use for P2 left.";
-    case INPUT_P2_RIGHT: return "Key to use for P2 right.";
-    case INPUT_P2_FIRE:  return "Key to use for P2 fire.";
+    case INPUT_P1_LEFT:  return "Key for P1 left.";
+    case INPUT_P1_RIGHT: return "Key for P1 right.";
+    case INPUT_P1_FIRE:  return "Key for P1 fire.";
+    case INPUT_P2_LEFT:  return "Key for P2 left.";
+    case INPUT_P2_RIGHT: return "Key for P2 right.";
+    case INPUT_P2_FIRE:  return "Key for P2 fire.";
     case INPUT_CREDIT:   return "Key to insert coin.";
     case INPUT_1P_START: return "Key to start 1 player mode.";
     case INPUT_2P_START: return "Key to start 2 player mode.";
@@ -82,7 +82,6 @@ void emu::print_ini_help()
 
     std::printf("\n Settings\n");
     std::printf(CONFIG_FMTSTR, "Volume", "(0-100)", "Set SFX volume.");
-
     std::printf(CONFIG_FMTSTR, "DIP3", "(0/1)", "Set DIP switch 3. See README.");
     std::printf(CONFIG_FMTSTR, "DIP4", "(0/1)", "Set DIP switch 4. See README.");
     std::printf(CONFIG_FMTSTR, "DIP5", "(0/1)", "Set DIP switch 5. See README.");
@@ -224,8 +223,7 @@ int emu::init_graphics(bool enable_ui)
 
     uint scalefac;
     if (!m_ini.get_num_or_dflt<uint>(
-        "General", "ResScale", RES_SCALE_DEFAULT, scalefac) ||
-        scalefac == 0) {
+        "General", "ResScale", RES_SCALE_DEFAULT, scalefac) || scalefac == 0) {
         logERROR("Invalid ResScale in %s", m_ini.path_str().c_str());
         return -1;
     }
@@ -234,9 +232,9 @@ int emu::init_graphics(bool enable_ui)
     m_screenresY = RES_NATIVE_Y * scalefac;
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-        return logERROR("SDL_Init(): %s", SDL_GetError());
+        logERROR("SDL_Init(): %s", SDL_GetError());
+        return -1;
     }
-
     // Prevents several assorted freezes and lag on Windows
 #ifdef _WIN32
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
@@ -244,16 +242,19 @@ int emu::init_graphics(bool enable_ui)
 
     m_window = SDL_CreateWindow("Space Invaders", 0, 0, 0, 0, SDL_WINDOW_HIDDEN);
     if (!m_window) {
-        return logERROR("SDL_CreateWindow(): %s", SDL_GetError());
+        logERROR("SDL_CreateWindow(): %s", SDL_GetError());
+        return -1;
     }
     m_renderer = SDL_CreateRenderer(m_window, -1, 0);
     if (!m_renderer) {
-        return logERROR("SDL_CreateRenderer(): %s", SDL_GetError());
+        logERROR("SDL_CreateRenderer(): %s", SDL_GetError());
+        return -1;
     }
 
     SDL_RendererInfo rendinfo;
     if (SDL_GetRendererInfo(m_renderer, &rendinfo) != 0) {
-        return logERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
+        logERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
+        return -1;
     }
 
     logMESSAGE("-- Render backend: %s", rendinfo.name);
@@ -305,14 +306,16 @@ pixfmt_done:
             hasfmts += pixfmt_name(rendinfo.texture_formats[i]);
         }
 
-        return logERROR("Could not find a supported texture format.\n"
+        logERROR("Could not find a supported texture format.\n"
             "Supported: %s\nAvailable: %s", suppfmts.c_str(), hasfmts.c_str());
+        return -1;
     }
     
     m_viewporttex = SDL_CreateTexture(m_renderer, 
         m_pixfmt->fmt, SDL_TEXTUREACCESS_STREAMING, m_screenresX, m_screenresY);
     if (!m_viewporttex) {
-        return logERROR("SDL_CreateTexture(): %s", SDL_GetError());
+        logERROR("SDL_CreateTexture(): %s", SDL_GetError());
+        return -1;
     }
 
     return 0;
@@ -338,10 +341,12 @@ int emu::init_audio(const fs::path& audio_dir)
 
     // chunksize is small to reduce latency
     if (Mix_OpenAudio(11025, AUDIO_U8, 1, 512) != 0) {
-        return logERROR("Mix_OpenAudio(): %s", Mix_GetError());
+        logERROR("Mix_OpenAudio(): %s", Mix_GetError());
+        return -1;
     }
     if (Mix_AllocateChannels(NUM_SOUNDS) != NUM_SOUNDS) {
-        return logERROR("Mix_AllocateChannels(): %s", Mix_GetError());
+        logERROR("Mix_AllocateChannels(): %s", Mix_GetError());
+        return -1;
     }
     // adjust volume, some tracks are too loud
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -378,7 +383,7 @@ int emu::init_audio(const fs::path& audio_dir)
             }
         }
         if (!m.sounds[i]) {
-            std::fputs("-- ", LOGFILE);
+            std::fputs("-- ", logfile());
             std::fputs("-- ", stderr);
             logWARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
@@ -395,14 +400,17 @@ static int load_file(const fs::path& path, i8080_word_t* mem, unsigned size)
 {
     scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
     if (!file) {
-        return logERROR("Could not open file %s", path.string().c_str());
+        logERROR("Could not open file %s", path.string().c_str());
+        return -1;
     }
     if (std::fread(mem, 1, size, file.get()) != size) {
-        return logERROR("Could not read %u bytes from file %s", size, path.string().c_str());
+        logERROR("Could not read %u bytes from file %s", size, path.string().c_str());
+        return -1;
     }
     std::fgetc(file.get()); // set eof
     if (!std::feof(file.get())) {
-        return logERROR("File %s is larger than %u bytes", path.string().c_str(), size);
+        logERROR("File %s is larger than %u bytes", path.string().c_str(), size);
+        return -1;
     }
     return 0;
 }
@@ -458,14 +466,14 @@ void emu::print_dbginfo()
 
 // default values in case of init failure or exception.
 emu::emu() noexcept :
-    m_window(nullptr),
-    m_renderer(nullptr),
-    m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
-    m_viewporttex(nullptr),
     m_pixfmt(nullptr),
     m_scalefac(0),
     m_screenresX(0),
     m_screenresY(0),
+    m_window(nullptr),
+    m_renderer(nullptr),
+    m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
+    m_viewporttex(nullptr), 
     m_volume(0),
     m_ok(false)
 {
@@ -482,7 +490,8 @@ int emu::load_prefs()
     int volume;
     if (!m_ini.get_num_or_dflt("Settings", "Volume", VOLUME_DEFAULT, volume) ||
         volume < 0 || volume > VOLUME_MAX) {
-        return logERROR("Invalid Volume in %s", m_ini.path_str().c_str());
+        logERROR("Invalid Volume in %s", m_ini.path_str().c_str());
+        return -1;
     }
     set_volume(volume);
 
@@ -491,7 +500,8 @@ int emu::load_prefs()
         char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0'};
         uint sw_val;
         if (!m_ini.get_num_or_dflt("Settings", sw_name, 0u, sw_val) || sw_val > 1) {
-            return logERROR("Invalid %s in %s", sw_name, m_ini.path_str().c_str());
+            logERROR("Invalid %s in %s", sw_name, m_ini.path_str().c_str());
+            return -1;
         }      
         set_switch(i, bool(sw_val));
     }
@@ -504,7 +514,8 @@ int emu::load_prefs()
         } else {
             SDL_Scancode key = SDL_GetScancodeFromName(keyname.data());
             if (key == SDL_SCANCODE_UNKNOWN) {
-                return logERROR("Invalid %s in %s", input_ininame(inputtype(i)), m_ini.path_str().c_str());
+                logERROR("Invalid %s in %s", input_ininame(inputtype(i)), m_ini.path_str().c_str());
+                return -1;
             }
             m_input2key[i] = key;
         }
@@ -852,6 +863,3 @@ void emu::run()
         nframes++;
     }
 }
-
-
-

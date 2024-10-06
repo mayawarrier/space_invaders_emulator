@@ -99,7 +99,7 @@ struct emu_interface
     int get_volume() const;
     void set_volume(int volume);
 
-    SDL_Scancode* input2keymap();
+    std::array<SDL_Scancode, INPUT_NUM_INPUTS>& input2keymap();
 
 private:
     emu* m_emu;
@@ -142,22 +142,23 @@ private:
 
 private:
     machine m;
-    ini m_ini;
-    SDL_Window* m_window;
-    SDL_Renderer* m_renderer;
-    std::unique_ptr<emu_gui> m_gui;
-    SDL_Rect m_viewportrect;
-    SDL_Texture* m_viewporttex;
-
+    
     const pix_fmt* m_pixfmt;
     uint m_scalefac;
     uint m_screenresX;
     uint m_screenresY;
 
+    SDL_Window* m_window;
+    SDL_Renderer* m_renderer;
+    SDL_Rect m_viewportrect;
+    SDL_Texture* m_viewporttex;
+    std::unique_ptr<emu_gui> m_gui;
+    ini m_ini;
+    
     int m_volume;
 
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
-    SDL_Scancode m_input2key[INPUT_NUM_INPUTS];
+    std::array<SDL_Scancode, INPUT_NUM_INPUTS> m_input2key;
 
     bool m_ok;
 };
@@ -182,7 +183,8 @@ inline void emu_interface::set_volume(int volume) {
     m_emu->set_volume(volume); 
 }
 
-inline SDL_Scancode* emu_interface::input2keymap() { 
+inline std::array<SDL_Scancode, INPUT_NUM_INPUTS>& 
+emu_interface::input2keymap() {
     return m_emu->m_input2key; 
 }
 

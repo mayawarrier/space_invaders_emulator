@@ -487,11 +487,13 @@ int demo_window()
     SDL_Window* window = SDL_CreateWindow("Dear ImGui SDL2+SDL_Renderer example",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
     if (window == nullptr) {
-        return logERROR("Demo SDL_CreateWindow(): %s", SDL_GetError());
+        logERROR("Demo SDL_CreateWindow(): %s", SDL_GetError());
+        return -1;
     }
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
     if (renderer == nullptr) {
-        return logERROR("Demo SDL_CreateRenderer(): %s", SDL_GetError());
+        logERROR("Demo SDL_CreateRenderer(): %s", SDL_GetError());
+        return -1;
     }
 
     IMGUI_CHECKVERSION();

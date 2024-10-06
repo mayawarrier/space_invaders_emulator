@@ -1,5 +1,134 @@
 
 #include "utils.hpp"
+#include <cstdarg>
+#include <SDL.h>
+
+#ifdef _WIN32
+#include "win32.hpp"
+
+#elif defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
+#include <unistd.h>
+    #if defined(_POSIX_VERSION) && _POSIX_VERSION >= 200112L
+    #define HAS_POSIX_2001 1
+    #endif
+#endif
+
+#ifdef HAS_POSIX_2001
+static bool posix_has_term_colors()
+{
+    if (!isatty(STDOUT_FILENO) || !isatty(STDERR_FILENO))
+        return false;
+
+    const char* term = getenv("TERM");
+    if (!term) {
+        return false;
+    } 
+
+    const char* color_terms[] = {
+        "xterm",
+        "xterm-color",
+        "xterm-256color",
+        "screen",
+        "linux"
+    };
+    for (int i = 0; i < SDL_arraysize(color_terms); ++i) {
+        if (std::string_view(term).find(color_terms[i]) != std::string_view::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+#endif
+
+#define LOGFILE_PATH "spaceinvaders.log"
+
+static scopedFILE LOGFILE(nullptr, nullptr);
+static bool LOG_COLOR_CONSOLE = false;
+static bool LOG_PAUSE_ON_EXIT = false;
+
+
+int log_init()
+{
+    LOGFILE = SAFE_FOPENA(LOGFILE_PATH, "w");
+    if (!LOGFILE) {
+        // can't log an error, show a message box
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, 
+            "Error", "Could not open log file " LOGFILE_PATH, NULL);
+        return -1;
+    }
+#ifdef _WIN32
+    LOG_PAUSE_ON_EXIT = win32_recreate_console();
+    LOG_COLOR_CONSOLE = win32_enable_console_colors();
+
+#elif defined(HAS_POSIX_2001)
+    LOG_COLOR_CONSOLE = posix_has_term_colors();
+#endif
+
+    return 0;
+}
+
+void log_exit()
+{
+#ifdef _WIN32
+    if (LOG_PAUSE_ON_EXIT) {
+        // allow user to read log before it quits
+        std::system("pause");
+    }
+#endif
+}
+
+std::FILE* logfile() { return LOGFILE.get(); }
+
+
+static inline void do_log(std::FILE* stream, 
+    const char* prefix, const char* fmt, va_list vlist)
+{
+PUSH_WARNINGS
+IGNORE_WFORMAT_SECURITY
+    if (prefix) {
+        std::fputs(prefix, stream);
+    }
+    std::vfprintf(stream, fmt, vlist);
+    std::fputs("\n", stream);
+POP_WARNINGS
+}
+
+#define GEN_LOG(prefix, prefix_color)          \
+do {                                           \
+    std::va_list vlist;                        \
+                                               \
+    va_start(vlist, fmt);                      \
+    do_log(LOGFILE.get(), prefix, fmt, vlist); \
+    va_end(vlist);                             \
+    std::fflush(LOGFILE.get());                \
+                                               \
+    va_start(vlist, fmt);                      \
+    do_log(stderr, LOG_COLOR_CONSOLE ?         \
+        prefix_color : prefix, fmt, vlist);    \
+    va_end(vlist);                             \
+} while(0)
+
+
+void logERROR(const char* fmt, ...)
+{
+    static const char* prefix_color = "\033[1;31mError:\033[0m ";
+    static const char* prefix = "Error: ";
+
+    GEN_LOG(prefix, prefix_color);
+}
+
+void logWARNING(const char* fmt, ...)
+{
+    static const char* prefix_color = "\033[1;33mWarning:\033[0m ";
+    static const char* prefix = "Error: ";
+
+    GEN_LOG(prefix, prefix_color);
+}
+
+void logMESSAGE(const char* fmt, ...)
+{
+    GEN_LOG(nullptr, nullptr);
+}
 
 static std::string_view trim(std::string_view str)
 {
@@ -54,11 +183,14 @@ int ini::read()
     {
         scopedFILE file = SAFE_FOPEN(m_path.c_str(), "rb");
         if (!file) {
-            return logERROR("Could not open file %s", m_path.string().c_str());
+            logERROR("Could not open file %s", path_str().c_str());
+            return -1;
         }
         if (std::fread(filebuf.get(), 1, filesize, file.get()) != filesize) {
-            return logERROR("Could not read from file %s", m_path.string().c_str());
+            logERROR("Could not read from file %s", path_str().c_str());
+            return -1;
         }
+        logMESSAGE("Read INI file");
     }
 
     int lineno = 1;
@@ -77,7 +209,8 @@ int ini::read()
             std::string_view key, value;
             if (!extract_str(line, key, '=') || key.empty() ||
                 !extract_str(line, value, '\n') || value.empty()) {
-                return logERROR("%s: Invalid entry on line %d", path_str().c_str(), lineno);
+                logERROR("%s: Invalid entry on line %d", path_str().c_str(), lineno);
+                return -1;
             }
             set_value_internal(section, key, value);
         }            
@@ -127,10 +260,12 @@ int ini::write()
 
     scopedFILE file = SAFE_FOPEN(m_path.c_str(), "wb");
     if (!file) {
-        return logERROR("Could not open file %s", path_str().c_str());
+        logERROR("Could not open file %s", path_str().c_str());
+        return -1;
     }
     if (std::fwrite(out.c_str(), 1, out.length(), file.get()) != out.length()) {
-        return logERROR("Could not write to file %s", path_str().c_str());
+        logERROR("Could not write to file %s", path_str().c_str());
+        return -1;
     }
 
     return 0;

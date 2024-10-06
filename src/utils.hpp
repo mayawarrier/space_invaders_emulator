@@ -21,6 +21,7 @@
 #define US_PER_MS 1000
 #define US_PER_S  1000000
 
+
 #ifdef __clang__
 #define PUSH_WARNINGS _Pragma("clang diagnostic push")
 #define POP_WARNINGS  _Pragma("clang diagnostic pop")
@@ -39,7 +40,6 @@ _Pragma("GCC diagnostic ignored \"-Wformat-security\"")
 #define IGNORE_WFORMAT_SECURITY
 #endif
 
-
 namespace fs = std::filesystem;
 namespace tim = std::chrono;
 
@@ -47,65 +47,14 @@ using clk = tim::steady_clock;
 using uint = unsigned int;
 
 
-// todo: move to utils.cpp
-extern std::FILE* LOGFILE;
-extern bool CONSOLE_HAS_COLORS;
+int log_init();
+void log_exit();
+std::FILE* logfile();
 
-#define ERROR_PREFIX_COLRD "\033[1;31mError:\033[0m "
-#define ERROR_PREFIX "Error: "
+void logERROR(const char* fmt, ...);
+void logWARNING(const char* fmt, ...);
+void logMESSAGE(const char* fmt, ...);
 
-#define WARNING_PREFIX_COLRD "\033[1;33mWarning:\033[0m "
-#define WARNING_PREFIX "Warning: "
-
-
-template <typename ...Args>
-void fput_msg(std::FILE* stream, const char* prefix, const char* fmt, Args... args)
-{
-PUSH_WARNINGS
-IGNORE_WFORMAT_SECURITY
-    std::fputs(prefix, stream);
-    std::fprintf(stream, fmt, args...);
-    std::fputs("\n", stream);
-POP_WARNINGS
-}
-
-template <typename ...Args>
-int logERROR(const char* fmt, Args... args) 
-{
-    if (LOGFILE) {
-        fput_msg(LOGFILE, ERROR_PREFIX, fmt, args...);
-        std::fflush(LOGFILE);
-    }
-    fput_msg(stderr, CONSOLE_HAS_COLORS ? 
-        ERROR_PREFIX_COLRD : ERROR_PREFIX, fmt, args...);    
-    return -1;
-}
-
-template <typename ...Args>
-void logWARNING(const char* fmt, Args... args) 
-{
-    if (LOGFILE) {
-        fput_msg(LOGFILE, WARNING_PREFIX, fmt, args...);
-        std::fflush(LOGFILE);
-    }
-    fput_msg(stderr, CONSOLE_HAS_COLORS ?
-        WARNING_PREFIX_COLRD : WARNING_PREFIX, fmt, args...);
-}
-
-template <typename ...Args>
-void logMESSAGE(const char* fmt, Args... args) 
-{
-PUSH_WARNINGS
-IGNORE_WFORMAT_SECURITY
-    if (LOGFILE) {
-        std::fprintf(LOGFILE, fmt, args...);
-        std::fputs("\n", LOGFILE);
-        std::fflush(LOGFILE);
-    }
-    std::printf(fmt, args...);
-    std::printf("\n");
-POP_WARNINGS
-}
 
 using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
 

@@ -35,10 +35,10 @@ static std::string err_to_str(DWORD ecode)
     return ret;
 }
 
-static int log_lasterror(const char* fn_name)
+static void log_lasterror(const char* fn_name)
 {
     DWORD err = GetLastError();
-    return logERROR("%s(), error %u: %s", 
+    logERROR("%s(), error %u: %s", 
         fn_name, (unsigned)err, err_to_str(err).c_str());
 }
 
