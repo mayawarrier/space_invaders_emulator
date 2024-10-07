@@ -1,6 +1,7 @@
 .vs/
 out/
 build/
+webbuild/
 *SDL2/
 *SDL2_mixer/
 # roms + audio

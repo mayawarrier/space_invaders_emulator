@@ -6,12 +6,16 @@
 #ifdef _WIN32
 #include "win32.hpp"
 
+#elif defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+
 #elif defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
 #include <unistd.h>
     #if defined(_POSIX_VERSION) && _POSIX_VERSION >= 200112L
     #define HAS_POSIX_2001 1
     #endif
 #endif
+
 
 #ifdef HAS_POSIX_2001
 static bool posix_has_term_colors()
@@ -47,6 +51,7 @@ static bool LOG_COLOR_CONSOLE = false;
 
 int log_init()
 {
+#ifndef __EMSCRIPTEN__
     LOGFILE = SAFE_FOPENA(LOGFILE_PATH, "w");
     if (!LOGFILE) {
         // can't log an error, show a message box
@@ -54,12 +59,13 @@ int log_init()
             "Error", "Could not open log file " LOGFILE_PATH, NULL);
         return -1;
     }
+#endif
+
 #ifdef _WIN32
     LOG_COLOR_CONSOLE = win32_enable_console_colors();
 #elif defined(HAS_POSIX_2001)
     LOG_COLOR_CONSOLE = posix_has_term_colors();
 #endif
-
     return 0;
 }
 
@@ -79,41 +85,61 @@ IGNORE_WFORMAT_SECURITY
 POP_WARNINGS
 }
 
-#define GEN_LOG(prefix, prefix_color)          \
-do {                                           \
-    std::va_list vlist;                        \
-                                               \
-    va_start(vlist, fmt);                      \
-    do_log(LOGFILE.get(), prefix, fmt, vlist); \
-    va_end(vlist);                             \
-    std::fflush(LOGFILE.get());                \
-                                               \
-    va_start(vlist, fmt);                      \
-    do_log(stderr, LOG_COLOR_CONSOLE ?         \
-        prefix_color : prefix, fmt, vlist);    \
-    va_end(vlist);                             \
+#ifdef __EMSCRIPTEN__
+#define GEN_EMCC_LOG(flags, fmt)          \
+do {                                      \
+    char buf[256];                        \
+                                          \
+    std::va_list vlist;                   \
+    va_start(vlist, fmt);                 \
+    std::vsnprintf(buf, 256, fmt, vlist); \
+    va_end(vlist);                        \
+                                          \
+    emscripten_log(flags, buf);           \
+} while(0)
+#endif
+
+#define GEN_LOG(stream, fmt, prefix, prefix_color)  \
+do {                                                \
+    std::va_list vlist;                             \
+                                                    \
+    va_start(vlist, fmt);                           \
+    do_log(LOGFILE.get(), prefix, fmt, vlist);      \
+    va_end(vlist);                                  \
+    std::fflush(LOGFILE.get());                     \
+                                                    \
+    va_start(vlist, fmt);                           \
+    do_log(stream, LOG_COLOR_CONSOLE ?              \
+        prefix_color : prefix, fmt, vlist);         \
+    va_end(vlist);                                  \
 } while(0)
 
 
 void logERROR(const char* fmt, ...)
 {
-    static const char* prefix_color = "\033[1;31mError:\033[0m ";
-    static const char* prefix = "Error: ";
-
-    GEN_LOG(prefix, prefix_color);
+#ifdef __EMSCRIPTEN__
+    GEN_EMCC_LOG(EM_LOG_ERROR, fmt);
+#else
+    GEN_LOG(stderr, fmt, "Error: ", "\033[1;31mError:\033[0m ");
+#endif
 }
 
 void logWARNING(const char* fmt, ...)
 {
-    static const char* prefix_color = "\033[1;33mWarning:\033[0m ";
-    static const char* prefix = "Error: ";
-
-    GEN_LOG(prefix, prefix_color);
+#ifdef __EMSCRIPTEN__
+    GEN_EMCC_LOG(EM_LOG_WARN, fmt);
+#else
+    GEN_LOG(stderr, fmt, "Warning: ", "\033[1;33mWarning:\033[0m ");
+#endif
 }
 
 void logMESSAGE(const char* fmt, ...)
 {
-    GEN_LOG(nullptr, nullptr);
+#ifdef __EMSCRIPTEN__
+    GEN_EMCC_LOG(EM_LOG_CONSOLE, fmt);
+#else
+    GEN_LOG(stdout, fmt, nullptr, nullptr);
+#endif
 }
 
 static std::string_view trim(std::string_view str)

@@ -15,6 +15,11 @@
 #include "win32.hpp"
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <functional>
+#endif
+
 
 static const char* input_ininame(inputtype type)
 {
@@ -777,6 +782,18 @@ static void vsync_sleep_for(T tsleep)
     }
 }
 
+// this idea from imgui
+#ifdef __EMSCRIPTEN__
+static std::function<void()> mainloop_func_emcc;
+static void mainloop_emcc() { mainloop_func_emcc(); }
+
+#define EMSCRIPTEN_MAINLOOP_BEGIN mainloop_func_emcc = [&]() { do
+#define EMSCRIPTEN_MAINLOOP_END   while (0); }; emscripten_set_main_loop(mainloop_emcc, 0, true)
+#else
+#define EMSCRIPTEN_MAINLOOP_BEGIN
+#define EMSCRIPTEN_MAINLOOP_END
+#endif
+
 void emu::run()
 {
     SDL_ShowWindow(m_window);
@@ -790,7 +807,11 @@ void emu::run()
     clk::time_point t_start = clk::now();
 
     bool running = true;
+#ifdef __EMSCRIPTEN__
+    EMSCRIPTEN_MAINLOOP_BEGIN
+#else
     while (running)
+#endif
     {
         SDL_Event e;
         while (SDL_PollEvent(&e))
@@ -839,13 +860,14 @@ void emu::run()
         }
         
         SDL_RenderPresent(m_renderer);
-
+  
+#ifndef __EMSCRIPTEN__
         // Vsync
         auto tframe = clk::now() - t_start;
         if (tframe < tframe_target) {
             vsync_sleep_for(tframe_target - tframe);
         }
-
+#endif
         auto t_laststart = t_start;
         t_start = clk::now();
         
@@ -860,4 +882,7 @@ void emu::run()
 
         nframes++;
     }
+#ifdef __EMSCRIPTEN__
+    EMSCRIPTEN_MAINLOOP_END;
+#endif
 }
