@@ -457,9 +457,7 @@ void emu::print_dbginfo()
         SDL_MIXER_MAJOR_VERSION, SDL_MIXER_MINOR_VERSION, SDL_MIXER_PATCHLEVEL,
         mix_version->major, mix_version->minor, mix_version->patch);
 
-    if (m_gui) {
-        m_gui->print_dbginfo();
-    }
+    emu_gui::print_dbginfo();
 
     logMESSAGE("");
 }

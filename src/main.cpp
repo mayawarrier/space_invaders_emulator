@@ -7,8 +7,11 @@
 
 #include "emu.hpp"
 
+#ifdef _WIN32
+#include "win32.hpp"
+#endif
 
-int main(int argc, char* argv[])
+static int do_main(int argc, char* argv[])
 {
     int e = log_init();
     if (e != 0) { return e; }
@@ -42,8 +45,21 @@ int main(int argc, char* argv[])
     // Start!
     emu.run();
 
-    logMESSAGE("Exit");
-    log_exit();
     return 0;
+}
+
+int main(int argc, char* argv[])
+{
+#ifdef _WIN32
+    bool pause_at_exit = win32_recreate_console();
+#endif
+    int e = do_main(argc, argv);
+#ifdef _WIN32
+    if (pause_at_exit) {
+        // allow user to read console before it quits
+        std::system("pause");
+    }
+#endif
+    return e;
 }
 

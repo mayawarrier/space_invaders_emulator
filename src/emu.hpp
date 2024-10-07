@@ -124,7 +124,7 @@ struct emu
 private:
     emu() noexcept;
 
-    void print_dbginfo();
+    static void print_dbginfo();
 
     int load_prefs();
     int save_prefs();

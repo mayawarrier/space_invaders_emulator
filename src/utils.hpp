@@ -48,7 +48,6 @@ using uint = unsigned int;
 
 
 int log_init();
-void log_exit();
 std::FILE* logfile();
 
 void logERROR(const char* fmt, ...);

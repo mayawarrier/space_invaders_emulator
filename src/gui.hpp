@@ -14,7 +14,7 @@ struct emu_gui
     emu_gui(emu_interface emu);
     ~emu_gui();
 
-    void print_dbginfo();
+    static void print_dbginfo();
 
     bool process_event(SDL_Event* e);
 

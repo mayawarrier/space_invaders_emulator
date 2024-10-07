@@ -44,8 +44,6 @@ static bool posix_has_term_colors()
 
 static scopedFILE LOGFILE(nullptr, nullptr);
 static bool LOG_COLOR_CONSOLE = false;
-static bool LOG_PAUSE_ON_EXIT = false;
-
 
 int log_init()
 {
@@ -57,9 +55,7 @@ int log_init()
         return -1;
     }
 #ifdef _WIN32
-    LOG_PAUSE_ON_EXIT = win32_recreate_console();
     LOG_COLOR_CONSOLE = win32_enable_console_colors();
-
 #elif defined(HAS_POSIX_2001)
     LOG_COLOR_CONSOLE = posix_has_term_colors();
 #endif
@@ -67,21 +63,11 @@ int log_init()
     return 0;
 }
 
-void log_exit()
-{
-#ifdef _WIN32
-    if (LOG_PAUSE_ON_EXIT) {
-        // allow user to read log before it quits
-        std::system("pause");
-    }
-#endif
-}
-
 std::FILE* logfile() { return LOGFILE.get(); }
 
 
 static inline void do_log(std::FILE* stream, 
-    const char* prefix, const char* fmt, va_list vlist)
+    const char* prefix, const char* fmt, std::va_list vlist)
 {
 PUSH_WARNINGS
 IGNORE_WFORMAT_SECURITY
