@@ -388,8 +388,10 @@ int emu::init_audio(const fs::path& audio_dir)
             }
         }
         if (!m.sounds[i]) {
+#ifndef __EMSCRIPTEN__
             std::fputs("-- ", logfile());
             std::fputs("-- ", stderr);
+#endif
             logWARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
     }
@@ -534,7 +536,8 @@ int emu::save_prefs()
 
     for (int i = 3; i < 8; ++i) {
         char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
-        m_ini.set_value("Settings", sw_name, std::to_string(uint(get_switch(i))).c_str());
+        char sw_val[] = { char('0' + get_switch(i)), '\0' };
+        m_ini.set_value("Settings", sw_name, sw_val);
     }
     for (int i = 0; i < INPUT_NUM_INPUTS; ++i) {
         m_ini.set_value("Settings", 
@@ -787,11 +790,11 @@ static void vsync_sleep_for(T tsleep)
 static std::function<void()> mainloop_func_emcc;
 static void mainloop_emcc() { mainloop_func_emcc(); }
 
-#define EMSCRIPTEN_MAINLOOP_BEGIN mainloop_func_emcc = [&]() { do
-#define EMSCRIPTEN_MAINLOOP_END   while (0); }; emscripten_set_main_loop(mainloop_emcc, 0, true)
+#define EMCC_MAINLOOP_BEGIN mainloop_func_emcc = [&]() { do
+#define EMCC_MAINLOOP_END   while (0); }; emscripten_set_main_loop(mainloop_emcc, 60, true)
 #else
-#define EMSCRIPTEN_MAINLOOP_BEGIN
-#define EMSCRIPTEN_MAINLOOP_END
+#define EMCC_MAINLOOP_BEGIN
+#define EMCC_MAINLOOP_END
 #endif
 
 void emu::run()
@@ -808,7 +811,7 @@ void emu::run()
 
     bool running = true;
 #ifdef __EMSCRIPTEN__
-    EMSCRIPTEN_MAINLOOP_BEGIN
+    EMCC_MAINLOOP_BEGIN
 #else
     while (running)
 #endif
@@ -883,6 +886,6 @@ void emu::run()
         nframes++;
     }
 #ifdef __EMSCRIPTEN__
-    EMSCRIPTEN_MAINLOOP_END;
+    EMCC_MAINLOOP_END;
 #endif
 }

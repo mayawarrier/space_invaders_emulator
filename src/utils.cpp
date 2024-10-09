@@ -97,8 +97,8 @@ do {                                      \
                                           \
     emscripten_log(flags, buf);           \
 } while(0)
-#endif
 
+#else
 #define GEN_LOG(stream, fmt, prefix, prefix_color)  \
 do {                                                \
     std::va_list vlist;                             \
@@ -113,12 +113,12 @@ do {                                                \
         prefix_color : prefix, fmt, vlist);         \
     va_end(vlist);                                  \
 } while(0)
-
+#endif
 
 void logERROR(const char* fmt, ...)
 {
 #ifdef __EMSCRIPTEN__
-    GEN_EMCC_LOG(EM_LOG_ERROR, fmt);
+    GEN_EMCC_LOG(EM_LOG_ERROR | EM_LOG_CONSOLE, fmt);
 #else
     GEN_LOG(stderr, fmt, "Error: ", "\033[1;31mError:\033[0m ");
 #endif
@@ -127,7 +127,7 @@ void logERROR(const char* fmt, ...)
 void logWARNING(const char* fmt, ...)
 {
 #ifdef __EMSCRIPTEN__
-    GEN_EMCC_LOG(EM_LOG_WARN, fmt);
+    GEN_EMCC_LOG(EM_LOG_WARN | EM_LOG_CONSOLE, fmt);
 #else
     GEN_LOG(stderr, fmt, "Warning: ", "\033[1;33mWarning:\033[0m ");
 #endif
