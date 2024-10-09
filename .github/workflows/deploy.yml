@@ -1,0 +1,39 @@
+name: Build and deploy space-invaders
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y python3
+          sudo apt install -y libsdl2-2.0-0
+          sudo apt install -y libsdl2-mixer-2.0-0
+          git clone https://github.com/emscripten-core/emsdk.git
+          cd emsdk
+          ./emsdk install latest
+          ./emsdk activate latest
+
+      - name: Build
+        run: |
+          source ./emsdk/emsdk_env.sh
+          mkdir build
+          cd build
+          emcmake cmake ..
+          make
+          cp src/index.html build/index.html
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
