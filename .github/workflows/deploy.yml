@@ -16,8 +16,6 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y python3
-          sudo apt install -y libsdl2-2.0-0
-          sudo apt install -y libsdl2-mixer-2.0-0
           git clone https://github.com/emscripten-core/emsdk.git
           cd emsdk
           ./emsdk install latest
@@ -30,7 +28,7 @@ jobs:
           cd build
           emcmake cmake ..
           make
-          cp src/index.html build/index.html
+          cp ../src/index.html ./index.html
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

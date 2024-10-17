@@ -53,7 +53,7 @@ elseif (WIN32)
 endif()
 
 add_custom_command(
-    TARGET spaceinvaders PRE_BUILD # pre_build for emscripten
+    TARGET spaceinvaders PRE_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/data
         ${CMAKE_BINARY_DIR}/data
@@ -63,7 +63,7 @@ add_custom_command(
 add_custom_command(
     TARGET spaceinvaders PRE_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_SOURCE_DIR}/src/spaceinvaders.ini
+        ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
         ${CMAKE_BINARY_DIR}/spaceinvaders.ini
     VERBATIM
 )

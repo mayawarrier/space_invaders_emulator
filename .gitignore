@@ -5,4 +5,4 @@ webbuild/
 *SDL2/
 *SDL2_mixer/
 # roms + audio
-data/
+# data/
