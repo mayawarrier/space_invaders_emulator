@@ -23,13 +23,23 @@ struct color
     constexpr color(uint8_t r, uint8_t g, uint8_t b, uint8_t a) :
         r(r), g(g), b(b), a(a)
     {}
-    // todo: saturate
-    constexpr color brighter(uint8_t amt) const { 
-        return color(r + amt, g + amt, b + amt, 255);
+
+    constexpr color brighter(uint8_t amt) const 
+    {
+        uint8_t rb = saturating_addu(r, amt);
+        uint8_t gb = saturating_addu(g, amt);
+        uint8_t bb = saturating_addu(b, amt);
+        return color(rb, gb, bb, 255);
     }
-    constexpr color darker(uint8_t amt) const {
-        return color(r - amt, g - amt, b - amt, 255);
+
+    constexpr color darker(uint8_t amt) const 
+    {
+        uint8_t rd = saturating_subu(r, amt);
+        uint8_t gd = saturating_subu(g, amt);
+        uint8_t bd = saturating_subu(b, amt);
+        return color(rd, gd, bd, 255);
     }
+
     constexpr ImU32 to_imcolor() const {
         return IM_COL32(r, g, b, a);
     }
@@ -269,7 +279,6 @@ void emu_gui::draw_inputkey(const char* label, inputtype inptype)
     }
 
     ImGui::SameLine();
-
     ImGui::SetCursorPos(txtpos);
     ImGui::TextUnformatted(label);
 }

@@ -48,7 +48,10 @@ using uint = unsigned int;
 
 
 int log_init();
-std::FILE* logfile();
+
+// Raw log function.
+void log_write(const char* msg, 
+    bool endline = false, std::FILE* stream = stdout);
 
 void logERROR(const char* fmt, ...);
 void logWARNING(const char* fmt, ...);
@@ -77,8 +80,28 @@ inline bool get_bit(T word, int bit)
     return (word & (0x1 << bit)) != 0;
 }
 
+template <std::unsigned_integral T>
+constexpr T saturating_addu(T lhs, T rhs)
+{
+    T res = lhs + rhs;
+    if (res < lhs) {
+        res = T(-1);
+    }
+    return res;
+}
+
+template <std::unsigned_integral T>
+constexpr T saturating_subu(T lhs, T rhs)
+{
+    T res = lhs - rhs;
+    if (res > lhs) {
+        res = 0;
+    }
+    return res;
+}
+
 template <typename = void>
-struct wslut {
+struct ws_lut {
     static constexpr uint8_t lut[] = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -94,11 +117,11 @@ struct wslut {
 };
 
 template <typename T>
-constexpr uint8_t wslut<T>::lut[];
+constexpr uint8_t ws_lut<T>::lut[];
 
 // Fast whitespace check, C-locale
 constexpr bool is_ws(char c) {
-    return wslut<>::lut[static_cast<uint8_t>(c)];
+    return ws_lut<>::lut[static_cast<uint8_t>(c)];
 }
 
 template <typename T>

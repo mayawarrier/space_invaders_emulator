@@ -20,13 +20,9 @@
 #ifdef HAS_POSIX_2001
 static bool posix_has_term_colors()
 {
-    if (!isatty(STDOUT_FILENO) || !isatty(STDERR_FILENO))
+    if (!isatty(STDOUT_FILENO) || !isatty(STDERR_FILENO)) {
         return false;
-
-    const char* term = getenv("TERM");
-    if (!term) {
-        return false;
-    } 
+    }
 
     const char* color_terms[] = {
         "xterm",
@@ -35,6 +31,10 @@ static bool posix_has_term_colors()
         "screen",
         "linux"
     };
+    const char* term = getenv("TERM");
+    if (!term) {
+        return false;
+    }
     for (int i = 0; i < SDL_arraysize(color_terms); ++i) {
         if (std::string_view(term).find(color_terms[i]) != std::string_view::npos) {
             return true;
@@ -44,14 +44,14 @@ static bool posix_has_term_colors()
 }
 #endif
 
-#define LOGFILE_PATH "spaceinvaders.log"
-
 static scopedFILE LOGFILE(nullptr, nullptr);
 static bool LOG_COLOR_CONSOLE = false;
 
 int log_init()
 {
 #ifndef __EMSCRIPTEN__
+#define LOGFILE_PATH "spaceinvaders.log"
+
     LOGFILE = SAFE_FOPENA(LOGFILE_PATH, "w");
     if (!LOGFILE) {
         // can't log an error, show a message box
@@ -59,18 +59,28 @@ int log_init()
             "Error", "Could not open log file " LOGFILE_PATH, NULL);
         return -1;
     }
-#endif
 
 #ifdef _WIN32
     LOG_COLOR_CONSOLE = win32_enable_console_colors();
 #elif defined(HAS_POSIX_2001)
     LOG_COLOR_CONSOLE = posix_has_term_colors();
 #endif
+
+#undef LOGFILE_PATH
+#endif
     return 0;
 }
 
-std::FILE* logfile() { return LOGFILE.get(); }
-
+void log_write(const char* msg, bool endline, std::FILE* stream)
+{
+    std::fprintf(stream, "%s", msg);
+    std::fprintf(LOGFILE.get(), "%s", msg);
+    if (endline) {
+        std::fputs("\n", stream);
+        std::fputs("\n", LOGFILE.get());
+    }
+    std::fflush(LOGFILE.get());
+}
 
 static inline void do_log(std::FILE* stream, 
     const char* prefix, const char* fmt, std::va_list vlist)
@@ -118,7 +128,7 @@ do {                                                \
 void logERROR(const char* fmt, ...)
 {
 #ifdef __EMSCRIPTEN__
-    GEN_EMCC_LOG(EM_LOG_ERROR | EM_LOG_CONSOLE, fmt);
+    GEN_EMCC_LOG(EM_LOG_CONSOLE | EM_LOG_ERROR | EM_LOG_C_STACK, fmt);
 #else
     GEN_LOG(stderr, fmt, "Error: ", "\033[1;31mError:\033[0m ");
 #endif
@@ -127,7 +137,7 @@ void logERROR(const char* fmt, ...)
 void logWARNING(const char* fmt, ...)
 {
 #ifdef __EMSCRIPTEN__
-    GEN_EMCC_LOG(EM_LOG_WARN | EM_LOG_CONSOLE, fmt);
+    GEN_EMCC_LOG(EM_LOG_CONSOLE | EM_LOG_WARN, fmt);
 #else
     GEN_LOG(stderr, fmt, "Warning: ", "\033[1;33mWarning:\033[0m ");
 #endif
@@ -177,13 +187,11 @@ void ini::set_value_internal(std::string_view section,
     std::string_view key, std::string_view value)
 {
     auto sectitr = m_map.insert({ 
-        std::string(section), 
-        mapsection(m_map.size()) }).first;
+        std::string(section), mapsection(m_map.size()) }).first;
 
     auto& sectentries = sectitr->second.entries;
     auto keyitr = sectentries.insert({ 
-        std::string(key),
-        mapsection::value(sectentries.size()) }).first;
+        std::string(key), mapsection::value(sectentries.size()) }).first;
 
     keyitr->second.valuestr = value;
 }

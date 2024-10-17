@@ -240,7 +240,7 @@ int emu::init_graphics(bool enable_ui)
         logERROR("SDL_Init(): %s", SDL_GetError());
         return -1;
     }
-    // Prevents several assorted freezes and lag on Windows
+    // prevents freezes and lag on Windows
 #ifdef _WIN32
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
 #endif
@@ -389,8 +389,7 @@ int emu::init_audio(const fs::path& audio_dir)
         }
         if (!m.sounds[i]) {
 #ifndef __EMSCRIPTEN__
-            std::fputs("-- ", logfile());
-            std::fputs("-- ", stderr);
+            log_write("-- ", stderr);
 #endif
             logWARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
@@ -722,7 +721,7 @@ void emu::draw_screen()
 
                 uint st_idx = m_scalefac * (texpitch * (RES_NATIVE_Y - y - bit - 1) + x);
 
-                // Draw a square instead of a pixel if resolution is higher than native
+                // Draw a square when resolution is higher than native
                 for (uint xsqr = 0; xsqr < m_scalefac; ++xsqr) {
                     for (uint ysqr = 0; ysqr < m_scalefac; ++ysqr)
                     {
@@ -775,7 +774,8 @@ static void vsync_sleep_for(T tsleep)
         else {
             auto trem_us = tim::round<tim::microseconds>(trem);
             uint64_t cur_ctr = SDL_GetPerformanceCounter();
-            uint64_t target_ctr = cur_ctr + trem_us.count() * perfctr_freq / US_PER_S;
+            uint64_t target_ctr = cur_ctr + 
+                uint64_t(trem_us.count() * (double(perfctr_freq) / US_PER_S));
 
             while (cur_ctr < target_ctr) {
                 cur_ctr = SDL_GetPerformanceCounter();
