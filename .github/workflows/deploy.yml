@@ -12,7 +12,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y python3
@@ -24,14 +24,14 @@ jobs:
       - name: Build
         run: |
           source ./emsdk/emsdk_env.sh
-          mkdir build
+          mkdir build install
           cd build
-          emcmake cmake ..
+          emcmake cmake .. -DCMAKE_INSTALL_PREFIX="../install"
           make
-          cp ../src/index.html ./index.html
+          cmake --install .
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build
+          publish_dir: ./install
