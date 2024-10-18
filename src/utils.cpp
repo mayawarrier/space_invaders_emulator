@@ -71,7 +71,7 @@ int log_init()
     return 0;
 }
 
-void log_write(const char* msg, bool endline, std::FILE* stream)
+void log_write(std::FILE* stream, const char* msg, bool endline)
 {
     std::fprintf(stream, "%s", msg);
     std::fprintf(LOGFILE.get(), "%s", msg);
@@ -198,14 +198,17 @@ void ini::set_value_internal(std::string_view section,
 
 int ini::read()
 {
-    auto filesize = size_t(fs::file_size(m_path));
-    auto filebuf = std::make_unique<char[]>(filesize);
+    size_t filesize;
+    std::unique_ptr<char[]> filebuf;
     {
         scopedFILE file = SAFE_FOPEN(m_path.c_str(), "rb");
         if (!file) {
             logERROR("Could not open file %s", path_str().c_str());
             return -1;
         }
+        filesize = size_t(fs::file_size(m_path));
+        filebuf = std::make_unique<char[]>(filesize);
+
         if (std::fread(filebuf.get(), 1, filesize, file.get()) != filesize) {
             logERROR("Could not read from file %s", path_str().c_str());
             return -1;

@@ -1,11 +1,16 @@
 cmake_minimum_required(VERSION 3.15)
-project(spaceinvaders)
+project(space-invaders-emu)
 
 include(FetchContent)
 
 # Fix DOWNLOAD_EXTRACT_TIMESTAMP warning in CMake >= 3.24
 if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
     cmake_policy(SET CMP0135 NEW)
+endif()
+
+if (NOT CMAKE_BUILD_TYPE)
+    message(STATUS "No build type selected, default to Release")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
 set(SOURCES 
@@ -52,26 +57,18 @@ elseif (WIN32)
     target_link_options(spaceinvaders PRIVATE "/SUBSYSTEM:WINDOWS")
 endif()
 
+
 add_custom_command(
-    TARGET spaceinvaders PRE_BUILD
+    TARGET spaceinvaders 
+    PRE_BUILD # emscripten needs this pre_build
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/data
         ${CMAKE_BINARY_DIR}/data
-    VERBATIM
-)
-
-add_custom_command(
-    TARGET spaceinvaders PRE_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy
         ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
         ${CMAKE_BINARY_DIR}/spaceinvaders.ini
     VERBATIM
 )
-
-if (NOT CMAKE_BUILD_TYPE)
-    message(STATUS "No build type selected, default to Release")
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
-endif()
 
 # -------------------------------- cxxopts --------------------------------
 FetchContent_Declare(cxxopts
@@ -83,18 +80,16 @@ target_link_libraries(spaceinvaders PRIVATE cxxopts)
 
 # ---------------------------------- SDL ----------------------------------
 
-# Nightmare to get working. Here are some resources:
+# Setting up SDL in CMake is a nightmare. See:
 # https://wiki.libsdl.org/SDL2/README/cmake
 # https://discourse.libsdl.org/t/how-is-sdl2-supposed-to-be-used-with-cmake/31275
 # https://stackoverflow.com/questions/29191855
 # https://emscripten.org/docs/compiling/Building-Projects.html
 
 if (EMSCRIPTEN)
-    # --use-port or target_compile_options() do not appear to work
+    # --use-port and target_compile_options() do not work?
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_SDL=2 -s USE_SDL_MIXER=2")
 
-    # todo: remove this later
-    set_target_properties(spaceinvaders PROPERTIES SUFFIX ".html")
     # todo: more reasonable memory limit?
     set_target_properties(spaceinvaders PROPERTIES LINK_FLAGS "\
         -s ASSERTIONS=1\
@@ -102,17 +97,30 @@ if (EMSCRIPTEN)
         -s MAXIMUM_MEMORY=4GB\
         --preload-file data/\
         --preload-file spaceinvaders.ini")
+
 else()
+    set(ALLOW_SDL2_SRCBUILD_HELP 
+        "If existing SDL2 or SDL2_Mixer installations \
+        cannot be found, allow building SDL2 libraries from source.")
 
-    # Allow user to provide their own SDL2 builds to avoid
-    # installing or building from source
-    list(APPEND CMAKE_PREFIX_PATH "./")
+    if (WIN32)
+        option(ALLOW_SDL2_SRCBUILD ${ALLOW_SDL2_SRCBUILD_HELP}, ON)
+    else()
+        option(ALLOW_SDL2_SRCBUILD ${ALLOW_SDL2_SRCBUILD_HELP}, OFF)
+    endif()
 
+    if (WIN32)
+        # SDL2 doesn't have a standard install location for Windows, so
+        # allow user to provide their own SDL (with SDL2-devel-VC.zip).
+        list(APPEND CMAKE_PREFIX_PATH "./")
+    endif()
+
+    # Try the usual way.
     find_package(SDL2 CONFIG COMPONENTS SDL2)
     find_package(SDL2 CONFIG COMPONENTS SDL2main)
     find_package(SDL2_mixer CONFIG COMPONENTS SDL2_mixer)
 
-    # if the first try above fails, try again using pkg-config
+    # If the usual way fails, try again with pkg-config.
     if (NOT TARGET SDL2::SDL2 OR NOT TARGET SDL2_mixer::SDL2_mixer)
         find_package(PkgConfig)
         if (PKG_CONFIG_FOUND)
@@ -129,9 +137,15 @@ else()
         message(STATUS "Found SDL2 via PkgConfig")
     endif()
 
+    # If both ways fail or if user hasn't installed SDL, build from source.
     if (NOT FOUND_SDL2_CMAKE_CONFIG AND NOT FOUND_SDL2_PKGCONFIG)
-        message(WARNING "Could not find SDL2 DLLs and/or SDL2 CMake config files.\
-                        Downloading SDL2 source...")
+
+        message(WARNING "Could not find SDL2 or SDL2_Mixer libraries and/or config files.")
+        if (ALLOW_SDL2_SRCBUILD)
+            message(WARNING "SDL2 libraries will be built from source.")
+        else()
+            message(FATAL_ERROR "Set ALLOW_SDL2_SRCBUILD to allow building SDL2 libraries from source.")
+        endif()
 
         if (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             # clang-cl
@@ -163,36 +177,36 @@ else()
         FetchContent_MakeAvailable(SDL2_mixer)
 
         set(FOUND_SDL2_CMAKE_CONFIG ON)
+        set(FETCHED_SDL2_SRC ON)
+    endif()
+
+    if (NOT FOUND_SDL2_CMAKE_CONFIG AND NOT FOUND_SDL2_PKGCONFIG)
+        message(FATAL_ERROR "Config var not set?")
     endif()
 
     if (FOUND_SDL2_CMAKE_CONFIG)
-        if(TARGET SDL2::SDL2main)
-            target_link_libraries(spaceinvaders PRIVATE SDL2::SDL2main)
-        endif()
-        target_link_libraries(spaceinvaders PRIVATE SDL2::SDL2)
-        target_link_libraries(spaceinvaders PRIVATE SDL2_mixer::SDL2_mixer)
-
         set(TARGET_NAME_SDL2 "SDL2::SDL2")
         set(TARGET_NAME_SDL2_MIXER "SDL2_mixer::SDL2_mixer")
     else()
-        target_link_libraries(spaceinvaders PRIVATE PkgConfig::SDL2)
-        target_link_libraries(spaceinvaders PRIVATE PkgConfig::SDL2_Mixer)
-
         set(TARGET_NAME_SDL2 "PkgConfig::SDL2")
         set(TARGET_NAME_SDL2_MIXER "PkgConfig::SDL2_Mixer")
     endif()
 
+    if (FOUND_SDL2_CMAKE_CONFIG AND TARGET SDL2::SDL2main)
+        target_link_libraries(spaceinvaders PRIVATE SDL2::SDL2main)
+    endif()
+
+    target_link_libraries(spaceinvaders PRIVATE 
+        ${TARGET_NAME_SDL2} ${TARGET_NAME_SDL2_MIXER})
+
     # https://stackoverflow.com/questions/20433308/
     if (WIN32)
         add_custom_command(
-            TARGET spaceinvaders POST_BUILD
+            TARGET spaceinvaders 
+            POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different 
                 "$<TARGET_FILE:${TARGET_NAME_SDL2}>" 
                 "$<TARGET_FILE_DIR:spaceinvaders>"
-            VERBATIM
-        )
-        add_custom_command(
-            TARGET spaceinvaders POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different 
                 "$<TARGET_FILE:${TARGET_NAME_SDL2_MIXER}>" 
                 "$<TARGET_FILE_DIR:spaceinvaders>"
@@ -240,17 +254,72 @@ target_include_directories(imgui PUBLIC
     ${imgui_ext_SOURCE_DIR}/backends
     ${imgui_ext_SOURCE_DIR}/misc/cpp
 )
-if (NOT EMSCRIPTEN)
-    target_link_libraries(imgui PUBLIC ${TARGET_NAME_SDL2} ${TARGET_NAME_SDL2_MIXER})
-endif()
 
 target_compile_definitions(imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
+
 if (NOT CMAKE_BUILD_TYPE MATCHES "Debug")
     target_compile_definitions(imgui PUBLIC 
         IMGUI_DISABLE_DEMO_WINDOWS 
         IMGUI_DISABLE_DEBUG_TOOLS)
 endif()
 
+if (NOT EMSCRIPTEN)
+    target_link_libraries(imgui PUBLIC ${TARGET_NAME_SDL2})
+endif()
+
 target_link_libraries(spaceinvaders PRIVATE imgui)
 
-# -----------------------------------------------------------------------
+
+# ---------------------------- Install ----------------------------------
+
+if (WIN32)
+    install(TARGETS spaceinvaders
+        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
+
+    install(FILES 
+        "$<TARGET_FILE:${TARGET_NAME_SDL2}>"
+        "$<TARGET_FILE:${TARGET_NAME_SDL2_MIXER}>"
+        ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
+        ${CMAKE_SOURCE_DIR}/LICENSE
+        DESTINATION 
+        ${CMAKE_INSTALL_PREFIX})
+
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/data
+        DESTINATION ${CMAKE_INSTALL_PREFIX})
+
+elseif (EMSCRIPTEN)
+    install(TARGETS spaceinvaders
+        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
+
+    install(FILES
+        "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.js"
+        "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.wasm"
+        "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.data"
+        ${CMAKE_SOURCE_DIR}/src/index.html
+        DESTINATION ${CMAKE_INSTALL_PREFIX})
+
+else()
+    include(GNUInstallDirs)
+
+    if (FETCHED_SDL2_SRC)
+        set(PRIV_LIBDIR ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}/lib)
+        set_target_properties(spaceinvaders PROPERTIES
+            INSTALL_RPATH ${PRIV_LIBDIR})
+    endif()
+
+    install(TARGETS spaceinvaders 
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+    if (FETCHED_SDL2_SRC)
+        install(FILES 
+            "$<TARGET_FILE:${TARGET_NAME_SDL2}>"
+            "$<TARGET_FILE:${TARGET_NAME_SDL2_MIXER}>"
+            DESTINATION ${PRIV_LIBDIR})
+    endif()
+
+    install(FILES ${CMAKE_SOURCE_DIR}/LICENSE 
+        DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+    install(FILES ${CMAKE_SOURCE_DIR}/spaceinvaders.ini 
+        DESTINATION ${CMAKE_INSTALL_DATADIR})
+endif()

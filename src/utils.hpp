@@ -50,8 +50,8 @@ using uint = unsigned int;
 int log_init();
 
 // Raw log function.
-void log_write(const char* msg, 
-    bool endline = false, std::FILE* stream = stdout);
+void log_write(std::FILE* stream, 
+    const char* msg, bool endline = false);
 
 void logERROR(const char* fmt, ...);
 void logWARNING(const char* fmt, ...);

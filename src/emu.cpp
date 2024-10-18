@@ -389,7 +389,7 @@ int emu::init_audio(const fs::path& audio_dir)
         }
         if (!m.sounds[i]) {
 #ifndef __EMSCRIPTEN__
-            log_write("-- ", stderr);
+            log_write(stderr, "-- ");
 #endif
             logWARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
@@ -556,6 +556,8 @@ emu::emu(const fs::path& ini_path) : emu()
 
     m_ini = ini(ini_path);
     if (m_ini.read() != 0) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+            "Error", "Could not open ini file", NULL);
         return;
     }
     
