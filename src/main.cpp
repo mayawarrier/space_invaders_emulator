@@ -13,14 +13,15 @@
 
 static int do_main(int argc, char* argv[])
 {
-    int e = log_init();
-    if (e != 0) { return e; }
-
     cxxopts::Options opts("spaceinvaders", "1978 Space Invaders arcade cabinet emulator.");
     opts.add_options()
         ("h,help", "Show usage.")
-        ("ini", "Config file path.", cxxopts::value<std::string>()->default_value("spaceinvaders.ini"), "<file>");
-
+        ("i,ini", "Path to config file.",
+            cxxopts::value<std::string>()->default_value("./spaceinvaders.ini"), "<file>")
+        ("r,romdir", "Directory containing ROM and audio files.",
+            cxxopts::value<std::string>()->default_value("./data"), "<dir>")     
+        ("no-ui", "Disable emulator UI (settings/help panels etc.)");
+        
     cxxopts::ParseResult args;
     try {
         args = opts.parse(argc, argv);
@@ -37,7 +38,11 @@ static int do_main(int argc, char* argv[])
         return 0;
     }
 
-    emu emu(args["ini"].as<std::string>());
+    emu emu(
+        args["ini"].as<std::string>(),
+        args["romdir"].as<std::string>(),
+        !args["no-ui"].as<bool>()
+    );
     if (!emu.ok()) {
         return -1;
     }
@@ -50,10 +55,14 @@ static int do_main(int argc, char* argv[])
 
 int main(int argc, char* argv[])
 {
+    int e = log_init();
+    if (e != 0) { return e; }
+
 #ifdef _WIN32
     bool pause_at_exit = win32_recreate_console();
 #endif
-    int e = do_main(argc, argv);
+    e = do_main(argc, argv);
+
 #ifdef _WIN32
     if (pause_at_exit) {
         // allow user to read console before it quits
@@ -62,4 +71,3 @@ int main(int argc, char* argv[])
 #endif
     return e;
 }
-

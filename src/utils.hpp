@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <optional>
 
 #define CONCAT(x, y) x##y
 #define STR(a) #a
@@ -66,6 +67,10 @@ using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
 #else
 #define SAFE_FOPEN(fname, mode) SAFE_FOPENA(fname, mode)
 #endif
+
+// Read entire file.
+bool read_file(const fs::path& path, std::unique_ptr<char[]>& filedata, size_t& filesize);
+
 
 // this has good codegen
 template <typename T>
@@ -125,7 +130,7 @@ constexpr bool is_ws(char c) {
 }
 
 template <typename T>
-bool try_parse_num(std::string_view str, T& val)
+bool parse_num(std::string_view str, T& val)
 {
     const char* beg = str.data();
     const char* end = str.data() + str.length();
@@ -136,83 +141,85 @@ bool try_parse_num(std::string_view str, T& val)
     return res.ec == std::errc();
 }
 
-struct ini
+struct inireader
 {
-    ini() = default;
-    ini(const fs::path& path) : 
-        m_path(path)
-    {}
+    inireader(const fs::path& path);
 
-    int read();
-    int write();
+    bool ok() const { return m_ok; }
 
-    const fs::path& path() const { return m_path; }
-    std::string path_str() const { return m_path.string(); }
+    const char* path_cstr() const { return m_pathstr.c_str(); }
 
-    std::string_view get_value(const char* section, const char* key)
+    // not null-terminated!
+    std::string_view get_value(std::string_view section, std::string_view key);
+
+    template <typename T> requires std::is_arithmetic_v<T>
+    std::optional<T> get_num(std::string_view section, std::string_view key)
     {
-        auto sectitr = m_map.find(section);
-        if (sectitr != m_map.end()) 
-        {
-            auto& entries = sectitr->second.entries;
-            auto valueitr = entries.find(key);
-            if (valueitr != entries.end()) {
-                return valueitr->second.valuestr;
-            }
-        }
-        return {};
-    }
-
-    std::string_view get_value_or_dflt(
-        const char* section, const char* key, const char* dflt_value)
-    {
-        auto ret = get_value(section, key);
-        return ret.data() ? ret : dflt_value;
-    }
-
-    template <typename T, 
-        typename = std::enable_if_t<std::is_arithmetic_v<T>>>
-    bool get_num_or_dflt(
-        const char* section, const char* key, T dflt_value, T& value)
-    {
+        T value;
         auto str = get_value(section, key);
-        if (!str.data()) {
-            value = dflt_value;
-            return true;
+        if (!str.data() || !parse_num(str, value)) {
+            return {};
         }
-        else if (try_parse_num(str, value)) {
-            return true;
-        }
-        else return false;
+        return value;
     }
 
-    void set_value(const char* section,
-        const char* key, const char* value)
+private:
+    using section_t = std::unordered_map<std::string_view, std::string_view>;
+    using map_t = std::unordered_map<std::string_view, section_t>;
+
+    map_t m_map;
+    std::string m_pathstr;
+    std::unique_ptr<char[]> m_filebuf;
+    bool m_ok;
+};
+
+struct iniwriter
+{
+    iniwriter(const fs::path& path) :
+        m_file(SAFE_FOPEN(path.c_str(), "wb")),
+        m_pathstr(path.string()),
+        m_ok(false)
     {
-        set_value_internal(section, key, value);
+        if (!m_file) {
+            logERROR("Could not open file %s", m_pathstr.c_str());
+            return;
+        }
+        m_ok = true;
+    }
+
+    bool ok() const { return m_ok; }
+
+    bool write_section(std::string_view name)
+    {
+        std::string str;
+        str += "["; str += name; str += "]\n";
+        return write_str(str);
+    }
+
+    bool write_keyvalue(std::string_view key, std::string_view value)
+    {
+        std::string str;
+        str += key; str += " = "; str += value;
+        str += "\n";
+        return write_str(str);
+    }
+
+    bool flush() { return std::fflush(m_file.get()) == 0; }
+
+private:
+    bool write_str(const std::string& str)
+    {
+        if (std::fwrite(str.c_str(), 1, str.length(), m_file.get()) != str.length()) {
+            logERROR("Could not write to file %s", m_pathstr.c_str());
+            return false;
+        }
+        return true;
     }
 
 private:
-    void set_value_internal(std::string_view section,
-        std::string_view key, std::string_view value);
-
-private:
-    // Store indices, so data can be written back in same order
-    // This is terrible, but convenient for ini consumers
-    struct mapsection 
-    {  
-        struct value 
-        {
-            int index;
-            std::string valuestr;
-            value(int index) : index(index) {}
-        };
-        int index;
-        std::unordered_map<std::string, value> entries;
-        mapsection(int index) : index(index) {}
-    };
-    std::unordered_map<std::string, mapsection> m_map;
-    fs::path m_path;
+    scopedFILE m_file;
+    std::string m_pathstr;
+    bool m_ok;
 };
 
 #endif

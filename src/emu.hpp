@@ -107,7 +107,9 @@ private:
 
 struct emu
 {
-    emu(const fs::path& ini_path);
+    emu(const fs::path& ini_file, 
+        const fs::path& rom_dir, 
+        bool enable_ui = true);
     ~emu();
 
     bool ok() const { return m_ok; }
@@ -122,12 +124,12 @@ struct emu
     friend emu_interface;
 
 private:
-    emu() noexcept;
+    emu(const fs::path& inipath);
 
     static void print_dbginfo();
 
-    int load_prefs();
-    int save_prefs();
+    bool load_prefs();
+    bool save_prefs();
 
     int init_graphics(bool enable_ui);
     int init_audio(const fs::path& audiodir);
@@ -147,15 +149,14 @@ private:
     uint m_scalefac;
     uint m_screenresX;
     uint m_screenresY;
+    int m_volume;
 
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
     SDL_Rect m_viewportrect;
     SDL_Texture* m_viewporttex;
     std::unique_ptr<emu_gui> m_gui;
-    ini m_ini;
-    
-    int m_volume;
+    fs::path m_inipath;
 
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
     std::array<SDL_Scancode, INPUT_NUM_INPUTS> m_input2key;

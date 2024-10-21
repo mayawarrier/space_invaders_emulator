@@ -152,6 +152,23 @@ void logMESSAGE(const char* fmt, ...)
 #endif
 }
 
+bool read_file(const fs::path& path, std::unique_ptr<char[]>& filedata, size_t& filesize)
+{
+    scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
+    if (!file) {
+        logERROR("Could not open file %s", path.string().c_str());
+        return false;
+    }
+    filesize = size_t(fs::file_size(path));
+    filedata = std::make_unique<char[]>(filesize);
+
+    if (std::fread(filedata.get(), 1, filesize, file.get()) != filesize) {
+        logERROR("Could not read from file %s", path.string().c_str());
+        return false;
+    }
+    return true;
+}
+
 static std::string_view trim(std::string_view str)
 {
     const char* beg = str.data();
@@ -159,12 +176,11 @@ static std::string_view trim(std::string_view str)
 
     while (beg != end && is_ws(*beg)) { ++beg; }
     while (end != beg && is_ws(*(end - 1))) { --end; }
-  
+
     return { beg, end };
 }
 
-template <typename TString>
-static bool extract_str(std::string_view& src, TString& str, char delim)
+static bool extract_str(std::string_view& src, std::string_view& str, char delim)
 {
     if (src.size() == 0) { return false; }
 
@@ -177,48 +193,22 @@ static bool extract_str(std::string_view& src, TString& str, char delim)
     return true;
 }
 
-template <typename TString>
-static bool getline_v(std::string_view& src, TString& line)
+static bool getline_v(std::string_view& src, std::string_view& line)
 {
     return extract_str(src, line, '\n');
 }
 
-void ini::set_value_internal(std::string_view section,
-    std::string_view key, std::string_view value)
-{
-    auto sectitr = m_map.insert({ 
-        std::string(section), mapsection(m_map.size()) }).first;
-
-    auto& sectentries = sectitr->second.entries;
-    auto keyitr = sectentries.insert({ 
-        std::string(key), mapsection::value(sectentries.size()) }).first;
-
-    keyitr->second.valuestr = value;
-}
-
-int ini::read()
+inireader::inireader(const fs::path& path) :
+    m_pathstr(path.string()), m_ok(false)
 {
     size_t filesize;
-    std::unique_ptr<char[]> filebuf;
-    {
-        scopedFILE file = SAFE_FOPEN(m_path.c_str(), "rb");
-        if (!file) {
-            logERROR("Could not open file %s", path_str().c_str());
-            return -1;
-        }
-        filesize = size_t(fs::file_size(m_path));
-        filebuf = std::make_unique<char[]>(filesize);
-
-        if (std::fread(filebuf.get(), 1, filesize, file.get()) != filesize) {
-            logERROR("Could not read from file %s", path_str().c_str());
-            return -1;
-        }
-        logMESSAGE("Read INI file");
+    if (!read_file(path, m_filebuf, filesize)) {
+        return;
     }
 
     int lineno = 1;
     std::string_view line, section;
-    std::string_view filedata(filebuf.get(), filesize);
+    std::string_view filedata(m_filebuf.get(), filesize);
 
     while (getline_v(filedata, line))
     {
@@ -227,69 +217,33 @@ int ini::read()
         }
         if (line.starts_with('[') && line.ends_with(']')) {
             section = line.substr(1, line.length() - 2);
-        } 
+        }
         else {
             std::string_view key, value;
             if (!extract_str(line, key, '=') || key.empty() ||
                 !extract_str(line, value, '\n') || value.empty()) {
-                logERROR("%s: Invalid entry on line %d", path_str().c_str(), lineno);
-                return -1;
+                logERROR("%s: Invalid entry on line %d", path_cstr(), lineno);
+                return;
             }
-            set_value_internal(section, key, value);
-        }            
+
+            m_map[section][key] = value;
+        }
         lineno++;
     }
 
-    return 0;
+    m_ok = true;
 }
 
-int ini::write()
+std::string_view inireader::get_value(std::string_view section, std::string_view key)
 {
-    struct vecsection
+    auto sectitr = m_map.find(section);
+    if (sectitr != m_map.end())
     {
-        using kv = std::pair<std::string_view, std::string_view>;
-        std::string_view name;
-        std::vector<kv> entries;
-    };
-    std::vector<vecsection> data(m_map.size());
-
-    for (const auto& [sectname, sect] : m_map)
-    {
-        auto& vecsect = data[sect.index];
-        vecsect = { .name = sectname };
-        vecsect.entries.resize(sect.entries.size());
-
-        for (const auto& [key, value] : sect.entries) {
-            vecsect.entries[value.index] = { key, value.valuestr };
+        auto& entries = sectitr->second;
+        auto valueitr = entries.find(key);
+        if (valueitr != entries.end()) {
+            return valueitr->second;
         }
     }
-
-    std::string out;
-    for (int i = 0; i < data.size(); ++i)
-    {
-        auto& section = data[i].name;
-        out += "["; out += section; out += "]\n";
-    
-        for (int j = 0; j < data[i].entries.size(); ++j)
-        {
-            auto& entry = data[i].entries[j];
-            out += entry.first;
-            out += " = ";
-            out += entry.second;
-            out += "\n";
-        }
-        out += "\n";
-    }
-
-    scopedFILE file = SAFE_FOPEN(m_path.c_str(), "wb");
-    if (!file) {
-        logERROR("Could not open file %s", path_str().c_str());
-        return -1;
-    }
-    if (std::fwrite(out.c_str(), 1, out.length(), file.get()) != out.length()) {
-        logERROR("Could not write to file %s", path_str().c_str());
-        return -1;
-    }
-
-    return 0;
+    return {};
 }

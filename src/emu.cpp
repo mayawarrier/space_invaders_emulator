@@ -80,12 +80,6 @@ void emu::print_ini_help()
     static constexpr char CONFIG_FMTSTR[] = "  %-18s%-9s%s\n";
     std::printf(" Config file parameters\n");
 
-    std::printf("\n General\n");
-    std::printf(CONFIG_FMTSTR, "RomDir", "(<dir>)", "Directory containing ROM and audio files.");
-    std::printf(CONFIG_FMTSTR, "EnableUI", "(yes/no)", "Enable emulator UI (settings / help panels etc.)");
-    std::printf(CONFIG_FMTSTR, "ResScale", "<int>", "Resolution scaling factor.");
-
-    std::printf("\n Settings\n");
     std::printf(CONFIG_FMTSTR, "Volume", "(0-100)", "Set SFX volume.");
     std::printf(CONFIG_FMTSTR, "DIP3", "(0/1)", "Set DIP switch 3. See README.");
     std::printf(CONFIG_FMTSTR, "DIP4", "(0/1)", "Set DIP switch 4. See README.");
@@ -226,15 +220,10 @@ int emu::init_graphics(bool enable_ui)
 {
     logMESSAGE("Initializing graphics");
 
-    uint scalefac;
-    if (!m_ini.get_num_or_dflt<uint>(
-        "General", "ResScale", RES_SCALE_DEFAULT, scalefac) || scalefac == 0) {
-        logERROR("Invalid ResScale in %s", m_ini.path_str().c_str());
-        return -1;
-    }
-    m_scalefac = scalefac;
-    m_screenresX = RES_NATIVE_X * scalefac;
-    m_screenresY = RES_NATIVE_Y * scalefac;
+    // todo: determine automatically or have SDL scale the texture?
+    m_scalefac = RES_SCALE_DEFAULT; 
+    m_screenresX = RES_NATIVE_X * m_scalefac;
+    m_screenresY = RES_NATIVE_Y * m_scalefac;
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         logERROR("SDL_Init(): %s", SDL_GetError());
@@ -353,10 +342,6 @@ int emu::init_audio(const fs::path& audio_dir)
         logERROR("Mix_AllocateChannels(): %s", Mix_GetError());
         return -1;
     }
-    // adjust volume, some tracks are too loud
-    for (int i = 0; i < NUM_SOUNDS; ++i) {
-        Mix_Volume(i, MAX_VOLUMES[i]);
-    }
 
     static const char* AUDIO_FILENAMES[NUM_SOUNDS][2] =
     {
@@ -399,6 +384,8 @@ int emu::init_audio(const fs::path& audio_dir)
     } else {
         logMESSAGE("Loaded %d/%d audio files", num_loaded, NUM_SOUNDS);
     }
+
+    set_volume(VOLUME_DEFAULT);
     return 0;
 }
 
@@ -469,107 +456,116 @@ void emu::print_dbginfo()
 }
 
 // default values in case of init failure or exception.
-emu::emu() noexcept :
+emu::emu(const fs::path& inipath) :
     m_pixfmt(nullptr),
     m_scalefac(0),
     m_screenresX(0),
     m_screenresY(0),
+    m_volume(0),
     m_window(nullptr),
     m_renderer(nullptr),
     m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
     m_viewporttex(nullptr), 
-    m_volume(0),
+    m_inipath(inipath),
     m_ok(false)
 {
     for (int i = 0; i < NUM_SOUNDS; ++i) {
         m.sounds[i] = nullptr;
     }
     for (int i = 0; i < INPUT_NUM_INPUTS; ++i) {
-        m_input2key[i] = SDL_SCANCODE_UNKNOWN;
+        m_input2key[i] = input_dflt_key(inputtype(i));
     }
 }
 
-int emu::load_prefs()
+bool emu::load_prefs()
 {
-    int volume;
-    if (!m_ini.get_num_or_dflt("Settings", "Volume", VOLUME_DEFAULT, volume) ||
-        volume < 0 || volume > VOLUME_MAX) {
-        logERROR("Invalid Volume in %s", m_ini.path_str().c_str());
-        return -1;
+    inireader ini(m_inipath);
+    if (!ini.ok()) {
+        return false;
     }
-    set_volume(volume);
+
+    auto volume = ini.get_num<int>("Settings", "Volume");
+    if (volume.has_value())
+    {
+        if (volume < 0 || volume > VOLUME_MAX) {
+            logERROR("%s: Invalid Volume", ini.path_cstr());
+            return false;
+        }
+        set_volume(volume.value());
+    }
 
     for (int i = 3; i < 8; ++i) 
     {
         char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0'};
-        uint sw_val;
-        if (!m_ini.get_num_or_dflt("Settings", sw_name, 0u, sw_val) || sw_val > 1) {
-            logERROR("Invalid %s in %s", sw_name, m_ini.path_str().c_str());
-            return -1;
-        }      
-        set_switch(i, bool(sw_val));
+        auto sw = ini.get_num<uint>("Settings", sw_name);
+        if (sw.has_value())
+        {
+            if (sw.value() > 1) {
+                logERROR("%s: Invalid %s", ini.path_cstr(), sw_name);
+                return false;
+            }
+            set_switch(i, bool(sw.value()));
+        }
     }
-
     for (int i = 0; i < INPUT_NUM_INPUTS; ++i)
     {
-        auto keyname = m_ini.get_value("Settings", input_ininame(inputtype(i)));
-        if (!keyname.data()) {
-            m_input2key[i] = input_dflt_key(inputtype(i));
-        } else {
-            SDL_Scancode key = SDL_GetScancodeFromName(keyname.data());
+        auto keyname = ini.get_value("Settings", input_ininame(inputtype(i)));
+        if (keyname.data())
+        {
+            SDL_Scancode key = SDL_GetScancodeFromName(std::string(keyname).c_str());
             if (key == SDL_SCANCODE_UNKNOWN) {
-                logERROR("Invalid %s in %s", input_ininame(inputtype(i)), m_ini.path_str().c_str());
-                return -1;
+                logERROR("%s: Invalid %s", ini.path_cstr(), input_ininame(inputtype(i)));
+                return false;
             }
             m_input2key[i] = key;
         }
     }
 
     logMESSAGE("Loaded prefs");
-    return 0;
+    return true;
 }
 
-int emu::save_prefs()
+bool emu::save_prefs()
 {
-    m_ini.set_value("Settings", "Volume", std::to_string(m_volume).c_str());
+    iniwriter ini(m_inipath);
+    if (!ini.ok()) {
+        return false;
+    }
 
-    for (int i = 3; i < 8; ++i) {
+    ini.write_section("Settings");
+
+    ini.write_keyvalue("Volume", std::to_string(m_volume));
+
+    for (int i = 3; i < 8; ++i) 
+    {
         char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
         char sw_val[] = { char('0' + get_switch(i)), '\0' };
-        m_ini.set_value("Settings", sw_name, sw_val);
+        ini.write_keyvalue(sw_name, sw_val);
     }
-    for (int i = 0; i < INPUT_NUM_INPUTS; ++i) {
-        m_ini.set_value("Settings", 
-            input_ininame(inputtype(i)), SDL_GetScancodeName(m_input2key[i]));
+    for (int i = 0; i < INPUT_NUM_INPUTS; ++i) 
+    {
+        ini.write_keyvalue(input_ininame(inputtype(i)), 
+            SDL_GetScancodeName(m_input2key[i]));
     }
-    
-    int e = m_ini.write();
-    if (e == 0) {
+
+    bool ret = ini.flush();
+    if (ret) {
         logMESSAGE("Saved prefs");
     }
-    return e;
+    return ret;
 }
 
-emu::emu(const fs::path& ini_path) : emu()
+emu::emu(const fs::path& inipath, const fs::path& romdir, bool enable_ui) : 
+    emu(inipath)
 {
     print_dbginfo();
 
-    m_ini = ini(ini_path);
-    if (m_ini.read() != 0) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-            "Error", "Could not open ini file", NULL);
-        return;
-    }
-    
-    fs::path rom_dir = m_ini.get_value_or_dflt("General", "RomDir", "data");
-    bool enable_ui = m_ini.get_value_or_dflt("General", "EnableUI", "yes") == "yes";
-
     if (init_graphics(enable_ui) != 0 || 
-        init_audio(rom_dir) != 0) {
+        init_audio(romdir) != 0) {
         return;
     }
     m.mem = std::make_unique<i8080_word_t[]>(65536);
-    if (load_rom(rom_dir) != 0) {
+    if (load_rom(romdir) != 0) {
         return;
     }
 
@@ -588,7 +584,7 @@ emu::emu(const fs::path& ini_path) : emu()
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
 
-    if (load_prefs() != 0) {
+    if (!load_prefs()) {
         return;
     }
 
