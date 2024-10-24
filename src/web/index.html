@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en-us">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Loading...</title>
+    <style>
+
+        body {
+            font-family: arial;
+            margin: 0;
+            padding: none;
+            background-image: url('background.jpg')
+        }
+
+        .emscripten {
+            padding-right: 0;
+            margin-left: auto;
+            margin-right: auto;
+            display: block;
+        }
+
+        #status {
+            display: inline-block;
+            vertical-align: top;
+            margin: 30px auto 30px 20px;
+            text-align: center;
+            font-weight: bold;
+            color: rgb(120, 120, 120);
+        }
+
+        #statusBar {
+            display: block;
+            margin: 0 auto;
+            text-align: center;
+            background-color: lightgray;
+        }
+
+        div.emscripten {
+            text-align: center;
+        }
+
+        /* mouse coords will be wrong if there is any border/padding */
+        canvas.emscripten {
+            border: 0px none;
+            background-color: black;
+        }
+
+        .spinner {
+            height: 30px;
+            width: 30px;
+            margin: 0;
+            margin-top: 20px;
+            margin-left: 20px;
+            display: inline-block;
+            vertical-align: top;
+            -webkit-animation: rotation .8s linear infinite;
+            -moz-animation: rotation .8s linear infinite;
+            -o-animation: rotation .8s linear infinite;
+            animation: rotation 0.8s linear infinite;
+            border-left: 5px solid rgb(235, 235, 235);
+            border-right: 5px solid rgb(235, 235, 235);
+            border-bottom: 5px solid rgb(235, 235, 235);
+            border-top: 5px solid rgb(120, 120, 120);
+            border-radius: 100%;
+        }
+
+        @-webkit-keyframes rotation {
+            from { -webkit-transform: rotate(0deg); }
+            to { -webkit-transform: rotate(360deg); }
+        }
+
+        @-moz-keyframes rotation {
+            from { -moz-transform: rotate(0deg); }
+            to {  -moz-transform: rotate(360deg); }
+        }
+
+        @-o-keyframes rotation {
+            from { -o-transform: rotate(0deg); }
+            to { -o-transform: rotate(360deg); }
+        }
+
+        @keyframes rotation {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body >
+    <div id="statusBar">
+        <div class="spinner" id='spinner'></div>
+        <div class="emscripten" id="status">Loading...</div>
+    </div>
+    
+    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+
+    <script type='text/javascript'>
+        var statusElement = document.getElementById('status');
+        var spinnerElement = document.getElementById('spinner');
+
+        var bugReportLink = 'https://github.com/mayawarrier/space_invaders_emulator/issues'
+        var criticalError = false;
+
+        var Module = {
+            print: (...args) => console.log(args.join(' ')),
+
+            canvas: (() => {
+                var canvas = document.getElementById('canvas');
+
+                canvas.addEventListener("webglcontextlost", (e) => {
+                    module.setErrorStatus('WebGL context lost!\n' +
+                        'This can occur if GPU load is very high or if there\'s an issue in the GPU driver.\n' +
+                        'Try closing some tabs and reload the page.\n' +
+                        'If the issue is persistent, <a href="' + bugReportLink + '">please file a bug report.</a>')
+
+                    e.preventDefault();
+                    criticalError = true;
+                }, false);
+
+                return canvas;
+            })(),
+
+            setErrorStatus: (text) =>
+            {
+                if (statusElement.style.height == '0px') {
+                    statusElement.style.display = 'inline-block'
+                    statusElement.style.height = '30px';
+                    statusElement.innerHTML = text;
+                }
+            },
+
+            setStatus: (text) =>
+            {
+                if (text) {
+                    statusElement.innerHTML = text;
+                } else {
+                    spinnerElement.remove();
+                    statusElement.style.height = 0;
+                    statusElement.style.display = 'none';
+                }
+            },
+        };
+
+        Module.setStatus('Loading...');
+        window.onerror = (event) =>
+        {
+            // TODO: do not warn on ok events like simulating an infinite loop or exitStatus
+            Module.setErrorStatus('Internal error. <a href="' + bugReportLink + '">Please file a bug report.</a>');
+            Module.setStatus = (text) => {
+                if (text) console.error('[post-exception status] ' + text);
+            };
+            criticalError = true;
+        };
+
+        // Called when user leaves page
+        window.addEventListener('beforeunload', () => {
+            if (criticalError) {
+                localStorage.setItem('reloadNeeded', true)
+            }
+        });
+
+        // Called when user visits page
+        window.addEventListener('pageshow', (event) =>
+        {
+            const reloadNeeded = localStorage.getItem('reloadNeeded');
+            if (reloadNeeded == 'true') {
+                localStorage.removeItem('reloadNeeded')
+                if (event.persisted) {
+                    window.location.reload();
+                }
+            }
+        });
+    </script>
+
+    <script async type="text/javascript" src="spaceinvaders.js"></script>
+</body>
+</html>

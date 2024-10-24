@@ -191,6 +191,44 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
     }
 }
 
+static int get_viewport_bounds(SDL_Window* window, 
+    SDL_Rect& out_viewport, uint offsetX = 0, uint offsetY = 0)
+{
+    int disp_idx = SDL_GetWindowDisplayIndex(window);
+    if (disp_idx < 0) {
+        logERROR("SDL_GetWindowDisplayIndex(): %s", SDL_GetError());
+        return -1;
+    }
+    SDL_Rect disp_bounds;
+    if (SDL_GetDisplayUsableBounds(disp_idx, &disp_bounds) != 0) {
+        logERROR("SDL_GetDesktopDisplayMode(): %s", SDL_GetError());
+        return -1;
+    }
+
+    uint maxX = disp_bounds.w - offsetX;
+    uint maxY = disp_bounds.h - offsetY;
+
+#ifdef __EMSCRIPTEN__
+    (void)maxX;
+    // todo: maxX can be the limiter instead if display is vertical
+    out_viewport.w = uint(maxY * float(RES_NATIVE_X) / RES_NATIVE_Y);
+    out_viewport.h = maxY;
+#else
+    for (int i = 1; i <= 10; ++i)
+    {
+        uint desiredX = RES_NATIVE_X * i, desiredY = RES_NATIVE_Y * i;
+        if (desiredX > maxX || desiredY > maxY) {
+            break;
+        }
+        out_viewport.w = desiredX;
+        out_viewport.h = desiredY;
+    }
+#endif
+    out_viewport.x = offsetX;
+    out_viewport.y = offsetY;
+    return 0;
+}
+
 // like a palette, same order as PIXFMTS
 enum colr_idx : uint8_t
 {
@@ -216,14 +254,44 @@ static const char* pixfmt_name(uint32_t fmt)
     return str.data();
 }
 
+// use first supported texture format
+// see https://stackoverflow.com/questions/56143991/
+static int get_pixfmt(SDL_RendererInfo& rendinfo, const pix_fmt*& out_pixfmt)
+{
+    for (auto& pixfmt : PIXFMTS) {
+        for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
+        {
+            if (rendinfo.texture_formats[i] == pixfmt.fmt) {
+                logMESSAGE("-- Texture format: %s", pixfmt_name(pixfmt.fmt));
+                out_pixfmt = &pixfmt;
+                goto done;
+            }
+        }
+    }
+done:
+    if (!out_pixfmt)
+    {
+        std::string suppfmts;
+        for (auto& pixfmt : PIXFMTS) {
+            if (!suppfmts.empty()) { suppfmts += ", "; }
+            suppfmts += pixfmt_name(pixfmt.fmt);
+        }
+        std::string hasfmts;
+        for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i) {
+            if (!hasfmts.empty()) { hasfmts += ", "; }
+            hasfmts += pixfmt_name(rendinfo.texture_formats[i]);
+        }
+
+        logERROR("Could not find a supported texture format.\n"
+            "Supported: %s\nAvailable: %s", suppfmts.c_str(), hasfmts.c_str());
+        return -1;
+    }
+    return 0;
+}
+
 int emu::init_graphics(bool enable_ui)
 {
     logMESSAGE("Initializing graphics");
-
-    // todo: determine automatically or have SDL scale the texture?
-    m_scalefac = RES_SCALE_DEFAULT; 
-    m_screenresX = RES_NATIVE_X * m_scalefac;
-    m_screenresY = RES_NATIVE_Y * m_scalefac;
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
         logERROR("SDL_Init(): %s", SDL_GetError());
@@ -244,69 +312,33 @@ int emu::init_graphics(bool enable_ui)
         logERROR("SDL_CreateRenderer(): %s", SDL_GetError());
         return -1;
     }
-
     SDL_RendererInfo rendinfo;
     if (SDL_GetRendererInfo(m_renderer, &rendinfo) != 0) {
         logERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
         return -1;
     }
-
     logMESSAGE("-- Render backend: %s", rendinfo.name);
 
     if (enable_ui) {
         m_gui = std::make_unique<emu_gui>(this);
         if (!m_gui->ok()) { return -1; }
-        m_viewportrect = m_gui->viewport_rect();
     }
-    else {
-        m_viewportrect = {
-            .x = 0,
-            .y = 0,
-            .w = int(m_screenresX),
-            .h = int(m_screenresY)
-        };
-    }
+    
+    uint view_offsetY = enable_ui ? m_gui->menubar_height() : 0;
+    int e = get_viewport_bounds(m_window, m_viewportrect, 0, view_offsetY);
+    if (e) { return e; }
 
-    SDL_SetWindowSize(m_window, m_screenresX, m_screenresY + m_viewportrect.y);
+    SDL_SetWindowSize(m_window, m_viewportrect.w, m_viewportrect.h + m_viewportrect.y);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
     logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d",
         m_viewportrect.x, m_viewportrect.y, m_viewportrect.w, m_viewportrect.h);
 
-    // use first supported texture format
-    // see https://stackoverflow.com/questions/56143991/
-    m_pixfmt = nullptr;
-    for (auto& pixfmt : PIXFMTS) {
-        for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
-        {
-            if (rendinfo.texture_formats[i] == pixfmt.fmt) {
-                logMESSAGE("-- Texture format: %s", pixfmt_name(pixfmt.fmt));
-                m_pixfmt = &pixfmt;
-                goto pixfmt_done;
-            }
-        }
-    }
-pixfmt_done:
-    if (!m_pixfmt) 
-    {
-        std::string suppfmts;
-        for (auto& pixfmt : PIXFMTS) {
-            if (!suppfmts.empty()) { suppfmts += ", "; }
-            suppfmts += pixfmt_name(pixfmt.fmt);
-        }
-        std::string hasfmts;
-        for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i) {
-            if (!hasfmts.empty()) { hasfmts += ", "; }
-            hasfmts += pixfmt_name(rendinfo.texture_formats[i]);
-        }
-
-        logERROR("Could not find a supported texture format.\n"
-            "Supported: %s\nAvailable: %s", suppfmts.c_str(), hasfmts.c_str());
-        return -1;
-    }
+    e = get_pixfmt(rendinfo, m_pixfmt);
+    if (e) { return e; }
     
-    m_viewporttex = SDL_CreateTexture(m_renderer, 
-        m_pixfmt->fmt, SDL_TEXTUREACCESS_STREAMING, m_screenresX, m_screenresY);
+    m_viewporttex = SDL_CreateTexture(m_renderer, m_pixfmt->fmt, 
+        SDL_TEXTUREACCESS_STREAMING, RES_NATIVE_X, RES_NATIVE_Y);
     if (!m_viewporttex) {
         logERROR("SDL_CreateTexture(): %s", SDL_GetError());
         return -1;
@@ -455,17 +487,15 @@ void emu::print_dbginfo()
     logMESSAGE("");
 }
 
+
 // default values in case of init failure or exception.
 emu::emu(const fs::path& inipath) :
-    m_pixfmt(nullptr),
-    m_scalefac(0),
-    m_screenresX(0),
-    m_screenresY(0),
-    m_volume(0),
     m_window(nullptr),
     m_renderer(nullptr),
+    m_pixfmt(nullptr),
     m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
     m_viewporttex(nullptr), 
+    m_volume(0),
     m_inipath(inipath),
     m_ok(false)
 {
@@ -477,11 +507,11 @@ emu::emu(const fs::path& inipath) :
     }
 }
 
-bool emu::load_prefs()
+int emu::load_prefs()
 {
     inireader ini(m_inipath);
     if (!ini.ok()) {
-        return false;
+        return -1;
     }
 
     auto volume = ini.get_num<int>("Settings", "Volume");
@@ -489,7 +519,7 @@ bool emu::load_prefs()
     {
         if (volume < 0 || volume > VOLUME_MAX) {
             logERROR("%s: Invalid Volume", ini.path_cstr());
-            return false;
+            return -1;
         }
         set_volume(volume.value());
     }
@@ -500,9 +530,9 @@ bool emu::load_prefs()
         auto sw = ini.get_num<uint>("Settings", sw_name);
         if (sw.has_value())
         {
-            if (sw.value() > 1) {
+            if (sw > 1u) {
                 logERROR("%s: Invalid %s", ini.path_cstr(), sw_name);
-                return false;
+                return -1;
             }
             set_switch(i, bool(sw.value()));
         }
@@ -515,21 +545,21 @@ bool emu::load_prefs()
             SDL_Scancode key = SDL_GetScancodeFromName(std::string(keyname).c_str());
             if (key == SDL_SCANCODE_UNKNOWN) {
                 logERROR("%s: Invalid %s", ini.path_cstr(), input_ininame(inputtype(i)));
-                return false;
+                return -1;
             }
             m_input2key[i] = key;
         }
     }
 
     logMESSAGE("Loaded prefs");
-    return true;
+    return 0;
 }
 
-bool emu::save_prefs()
+int emu::save_prefs()
 {
     iniwriter ini(m_inipath);
     if (!ini.ok()) {
-        return false;
+        return -1;
     }
 
     ini.write_section("Settings");
@@ -547,12 +577,12 @@ bool emu::save_prefs()
         ini.write_keyvalue(input_ininame(inputtype(i)), 
             SDL_GetScancodeName(m_input2key[i]));
     }
-
-    bool ret = ini.flush();
-    if (ret) {
-        logMESSAGE("Saved prefs");
-    }
-    return ret;
+ 
+    if (!ini.flush()) {
+        return -1;
+    }  
+    logMESSAGE("Saved prefs");
+    return 0;
 }
 
 emu::emu(const fs::path& inipath, const fs::path& romdir, bool enable_ui) : 
@@ -584,18 +614,11 @@ emu::emu(const fs::path& inipath, const fs::path& romdir, bool enable_ui) :
     m.shiftreg_off = 0;
     m.intr_opcode = i8080_NOP;
 
-    if (!load_prefs()) {
-        return;
-    }
-
-    logMESSAGE("Ready!");
     m_ok = true;
 }
 
 emu::~emu()
 {
-    save_prefs();
-
     for (int i = 0; i < NUM_SOUNDS; ++i) {
         Mix_FreeChunk(m.sounds[i]);
     }
@@ -703,11 +726,11 @@ void emu::draw_screen()
 
     uint VRAM_idx = 0;
     i8080_word_t* VRAM_start = &m.mem[0x2400];
-    // may not be equal to screenresX!
-    const uint texpitch = pitch / m_pixfmt->bypp;
+    const uint texpitch = pitch / m_pixfmt->bypp; // not eq to original width!
 
     // Unpack (8 on/off pixels per byte) and rotate counter-clockwise
-    for (uint x = 0; x < RES_NATIVE_X; ++x) {
+    for (uint x = 0; x < RES_NATIVE_X; ++x) 
+    {
         for (uint y = 0; y < RES_NATIVE_Y; y += 8)
         {
             i8080_word_t word = VRAM_start[VRAM_idx++];
@@ -717,20 +740,11 @@ void emu::draw_screen()
                 colr_idx colridx = get_bit(word, bit) ? pixel_color(x, y) : COLRIDX_BLACK;
                 uint32_t color = m_pixfmt->colors[colridx];
 
-                uint st_idx = m_scalefac * (texpitch * (RES_NATIVE_Y - y - bit - 1) + x);
-
-                // Draw a square when resolution is higher than native
-                for (uint xsqr = 0; xsqr < m_scalefac; ++xsqr) {
-                    for (uint ysqr = 0; ysqr < m_scalefac; ++ysqr)
-                    {
-                        uint idx = st_idx + texpitch * ysqr + xsqr;
-
-                        switch (m_pixfmt->bpp)
-                        {
-                        case 16: static_cast<uint16_t*>(pixels)[idx] = uint16_t(color); break;
-                        case 32: static_cast<uint32_t*>(pixels)[idx] = color;           break;
-                        }
-                    }
+                uint idx = texpitch * (RES_NATIVE_Y - y - bit - 1) + x;
+                switch (m_pixfmt->bpp)
+                {
+                case 16: static_cast<uint16_t*>(pixels)[idx] = uint16_t(color); break;
+                case 32: static_cast<uint32_t*>(pixels)[idx] = color;           break;
                 }
             }
         }
@@ -766,8 +780,8 @@ static void vsync_sleep_for(T tsleep)
 #else
             SDL_Delay(wake_interval_us.count() / US_PER_MS);
 #endif  
-            // adjust for stdlib + call overhead
-            tend -= tim::microseconds(2);
+            // adjust for call overhead
+            tend -= tim::microseconds(5);
         }
         else {
             auto trem_us = tim::round<tim::microseconds>(trem);
@@ -795,19 +809,23 @@ static void mainloop_emcc() { mainloop_func_emcc(); }
 #define EMCC_MAINLOOP_END
 #endif
 
-void emu::run()
+int emu::run()
 {
+    int err = load_prefs();
+    if (err) { return err; }
+
+    logMESSAGE("Ready!");
+
     SDL_ShowWindow(m_window);
-        
+
     // 60 Hz CRT refresh rate
-    static constexpr auto tframe_target = tim::microseconds(16667);
-
-    uint64_t nframes = 0;
-    uint64_t cpucycles = 0; 
-
+    static constexpr tim::microseconds tframe_target(16667);
     clk::time_point t_start = clk::now();
 
+    uint64_t nframes = 0;
+    uint64_t cpucycles = 0;
     bool running = true;
+    
 #ifdef __EMSCRIPTEN__
     EMCC_MAINLOOP_BEGIN
 #else
@@ -825,7 +843,8 @@ void emu::run()
 
             switch (e.type)
             {
-            case SDL_QUIT:
+            case SDL_QUIT:             
+                save_prefs(); // needs to be inside emscripten mainloop
                 running = false;
                 break;
 
@@ -886,4 +905,6 @@ void emu::run()
 #ifdef __EMSCRIPTEN__
     EMCC_MAINLOOP_END;
 #endif
+
+    return 0;
 }

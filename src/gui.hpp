@@ -14,6 +14,8 @@ struct emu_gui
     emu_gui(emu_interface emu);
     ~emu_gui();
 
+    bool ok() const { return m_ok; }
+
     static void print_dbginfo();
 
     bool process_event(SDL_Event* e);
@@ -23,17 +25,10 @@ struct emu_gui
     // True if GUI wants mouse inputs.
     bool want_mouse();
 
+    // Run the GUI for one frame.
     void run();
 
-    SDL_Rect viewport_rect() const
-    {
-        return {
-            .x = 0,
-            .y = m_menubar_height,
-            .w = int(m_emu.screenresX()),
-            .h = int(m_emu.screenresY())
-        };
-    }
+    int menubar_height() const { return m_menubar_height; }
 
     void set_fps(int fps) { m_fps = fps; }
 
@@ -43,8 +38,6 @@ struct emu_gui
         m_deltat_min = std::min(m_deltat_min, delta_t);
         m_deltat_max = std::max(m_deltat_max, delta_t);
     }
-
-    bool ok() const { return m_ok; }
 
 private: 
     void draw_help_content();

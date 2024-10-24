@@ -70,6 +70,25 @@ add_custom_command(
     VERBATIM
 )
 
+if (EMSCRIPTEN)
+    set_target_properties(spaceinvaders PROPERTIES LINK_FLAGS "\
+        -s ALLOW_MEMORY_GROWTH=1\
+        --preload-file data/\
+        --preload-file spaceinvaders.ini")
+
+    add_custom_command(
+        TARGET spaceinvaders
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_SOURCE_DIR}/src/web/index.html
+            ${CMAKE_BINARY_DIR}/index.html
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_SOURCE_DIR}/src/web/background.jpg
+            ${CMAKE_BINARY_DIR}/background.jpg
+        VERBATIM
+    )
+endif()
+
 # -------------------------------- cxxopts --------------------------------
 FetchContent_Declare(cxxopts
     GIT_REPOSITORY  https://github.com/jarro2783/cxxopts
@@ -90,28 +109,20 @@ if (EMSCRIPTEN)
     # --use-port and target_compile_options() do not work?
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_SDL=2 -s USE_SDL_MIXER=2")
 
-    # todo: more reasonable memory limit?
-    set_target_properties(spaceinvaders PROPERTIES LINK_FLAGS "\
-        -s ASSERTIONS=1\
-        -s ALLOW_MEMORY_GROWTH=1\
-        -s MAXIMUM_MEMORY=4GB\
-        --preload-file data/\
-        --preload-file spaceinvaders.ini")
-
 else()
     set(ALLOW_SDL2_SRCBUILD_HELP 
         "If existing SDL2 or SDL2_Mixer installations \
         cannot be found, allow building SDL2 libraries from source.")
 
     if (WIN32)
-        option(ALLOW_SDL2_SRCBUILD ${ALLOW_SDL2_SRCBUILD_HELP}, ON)
+        option(ALLOW_SDL2_SRCBUILD ${ALLOW_SDL2_SRCBUILD_HELP} ON)
     else()
-        option(ALLOW_SDL2_SRCBUILD ${ALLOW_SDL2_SRCBUILD_HELP}, OFF)
+        option(ALLOW_SDL2_SRCBUILD ${ALLOW_SDL2_SRCBUILD_HELP} OFF)
     endif()
 
     if (WIN32)
-        # SDL2 doesn't have a standard install location for Windows, so
-        # allow user to provide their own SDL (with SDL2-devel-VC.zip).
+        # Allow user to provide their own SDL (via SDL2-devel-VC.zip)
+        # to avoid building from source.
         list(APPEND CMAKE_PREFIX_PATH "./")
     endif()
 
@@ -139,7 +150,6 @@ else()
 
     # If both ways fail or if user hasn't installed SDL, build from source.
     if (NOT FOUND_SDL2_CMAKE_CONFIG AND NOT FOUND_SDL2_PKGCONFIG)
-
         message(WARNING "Could not find SDL2 or SDL2_Mixer libraries and/or config files.")
         if (ALLOW_SDL2_SRCBUILD)
             message(WARNING "SDL2 libraries will be built from source.")
@@ -279,23 +289,20 @@ if (WIN32)
     install(FILES 
         "$<TARGET_FILE:${TARGET_NAME_SDL2}>"
         "$<TARGET_FILE:${TARGET_NAME_SDL2_MIXER}>"
-        ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
+        ${CMAKE_BINARY_DIR}/spaceinvaders.ini
         ${CMAKE_SOURCE_DIR}/LICENSE
-        DESTINATION 
-        ${CMAKE_INSTALL_PREFIX})
+        DESTINATION ${CMAKE_INSTALL_PREFIX})
 
-    install(DIRECTORY ${CMAKE_SOURCE_DIR}/data
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/data
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 elseif (EMSCRIPTEN)
-    install(TARGETS spaceinvaders
-        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
-
     install(FILES
         "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.js"
         "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.wasm"
         "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.data"
-        ${CMAKE_SOURCE_DIR}/src/index.html
+        ${CMAKE_BINARY_DIR}/index.html
+        ${CMAKE_BINARY_DIR}/background.jpg
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 else()
@@ -320,6 +327,6 @@ else()
     install(FILES ${CMAKE_SOURCE_DIR}/LICENSE 
         DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
-    install(FILES ${CMAKE_SOURCE_DIR}/spaceinvaders.ini 
+    install(FILES ${CMAKE_BINARY_DIR}/spaceinvaders.ini 
         DESTINATION ${CMAKE_INSTALL_DATADIR})
 endif()

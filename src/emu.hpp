@@ -115,8 +115,9 @@ struct emu
     bool ok() const { return m_ok; }
 
     // Open a window and start running.
-    // Returns when window is closed.
-    void run();
+    // Returns 0 when window is closed or -1 if failed to start.
+    // On emscripten, this will never return unless there's an error.
+    int run();
 
     // Help on config file parameters.
     static void print_ini_help();
@@ -128,8 +129,8 @@ private:
 
     static void print_dbginfo();
 
-    bool load_prefs();
-    bool save_prefs();
+    int load_prefs();
+    int save_prefs();
 
     int init_graphics(bool enable_ui);
     int init_audio(const fs::path& audiodir);
@@ -144,22 +145,19 @@ private:
 
 private:
     machine m;
-    
-    const pix_fmt* m_pixfmt;
-    uint m_scalefac;
-    uint m_screenresX;
-    uint m_screenresY;
-    int m_volume;
-
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
+    
+    const pix_fmt* m_pixfmt;
     SDL_Rect m_viewportrect;
     SDL_Texture* m_viewporttex;
     std::unique_ptr<emu_gui> m_gui;
-    fs::path m_inipath;
-
+    
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
     std::array<SDL_Scancode, INPUT_NUM_INPUTS> m_input2key;
+
+    int m_volume;
+    fs::path m_inipath;
 
     bool m_ok;
 };
@@ -167,8 +165,8 @@ private:
 inline SDL_Window* emu_interface::window() { return m_emu->m_window; }
 inline SDL_Renderer* emu_interface::renderer() { return m_emu->m_renderer; }
 
-inline uint emu_interface::screenresX() const { return m_emu->m_screenresX; }
-inline uint emu_interface::screenresY() const { return m_emu->m_screenresY; }
+inline uint emu_interface::screenresX() const { return m_emu->m_viewportrect.w; }
+inline uint emu_interface::screenresY() const { return m_emu->m_viewportrect.h; }
 
 inline bool emu_interface::get_switch(int index) const {
     return m_emu->get_switch(index);

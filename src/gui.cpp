@@ -73,6 +73,8 @@ emu_gui::emu_gui(emu_interface emu) :
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
+    SDL_assert(emu.window() && emu.renderer());
+
     if (!ImGui_ImplSDL2_InitForSDLRenderer(emu.window(), emu.renderer()) ||
         !ImGui_ImplSDLRenderer2_Init(emu.renderer())) {
         logERROR("Failed to initialize ImGui with SDL backend");
