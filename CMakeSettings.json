@@ -45,6 +45,48 @@
       "inheritEnvironments": [ "clang_cl_x64_x64" ]
     },
     {
+      "name": "Emscripten-Debug",
+      "generator": "Ninja",
+      "configurationType": "Debug",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "-DCMAKE_TOOLCHAIN_FILE=${env.EMSDK}\\upstream\\emscripten\\cmake\\Modules\\Platform\\Emscripten.cmake",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "emscripten" ],
+      "environments": [
+        {
+          "EMSDK": "E:\\src\\emsdk",
+          "EMSDK_NODE": "${env.EMSDK}\\node\\18.20.3_64bit\\bin\\node.exe",
+          "EMSDK_PYTHON": "${env.EMSDK}\\python\\3.9.2-nuget_64bit\\python.exe",
+          "JAVA_HOME": "${env.EMSDK}\\java\\8.152_64bit",
+          "PATH": "${env.EMSDK};${env.EMSDK}\\upstream\\emscripten;${env.PATH}",
+          "environment": "emscripten"
+        }
+      ]
+    },
+    {
+      "name": "Emscripten-Release",
+      "generator": "Ninja",
+      "configurationType": "Release",
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "-DCMAKE_TOOLCHAIN_FILE=${env.EMSDK}\\upstream\\emscripten\\cmake\\Modules\\Platform\\Emscripten.cmake",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "inheritEnvironments": [ "emscripten" ],
+      "environments": [
+        {
+          "EMSDK": "E:\\src\\emsdk",
+          "EMSDK_NODE": "${env.EMSDK}\\node\\18.20.3_64bit\\bin\\node.exe",
+          "EMSDK_PYTHON": "${env.EMSDK}\\python\\3.9.2-nuget_64bit\\python.exe",
+          "JAVA_HOME": "${env.EMSDK}\\java\\8.152_64bit",
+          "PATH": "${env.EMSDK};${env.EMSDK}\\upstream\\emscripten;${env.PATH}",
+          "environment": "emscripten"
+        }
+      ]
+    },
+    {
       "name": "Mingw64-Debug",
       "generator": "Ninja",
       "configurationType": "Debug",
