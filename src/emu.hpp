@@ -6,12 +6,16 @@
 #include <memory>
 #include <bitset>
 
-#include <SDL.h>
-#include <SDL_mixer.h>
-
 #include "i8080/i8080.hpp"
 #include "utils.hpp"
 
+#include <SDL.h>
+#include <SDL_mixer.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#endif
 
 #define RES_NATIVE_X 224
 #define RES_NATIVE_Y 256
@@ -20,6 +24,7 @@
 #define NUM_SOUNDS 10
 #define VOLUME_MAX 100
 #define VOLUME_DEFAULT 50
+
 
 enum inputtype
 {
@@ -90,8 +95,7 @@ struct emu_interface
     SDL_Window* window();
     SDL_Renderer* renderer();
 
-    uint screenresX() const; // excluding UI
-    uint screenresY() const;
+    const SDL_Rect& viewport() const;
 
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
@@ -107,35 +111,41 @@ private:
 
 struct emu
 {
-    emu(const fs::path& ini_file, 
-        const fs::path& rom_dir, 
-        bool enable_ui = true);
+    emu(const fs::path& ini_file,
+        const fs::path& rom_dir,
+        bool enable_ui = true,
+        bool windowed = false);
     ~emu();
 
     bool ok() const { return m_ok; }
 
-    // Open a window and start running.
-    // Returns 0 when window is closed or -1 if failed to start.
-    // On emscripten, this will never return unless there's an error.
+    // Start running.
+    // Returns <0 on error, otherwise 0 when window is closed.
+    // On emscripten, this only returns on error.
     int run();
 
     // Help on config file parameters.
     static void print_ini_help();
 
+    
+#ifdef __EMSCRIPTEN__
+    friend bool emcc_on_window_resize(
+        int ev_type, const EmscriptenUiEvent* ui_event, void* udata);
+#endif
     friend emu_interface;
 
 private:
     emu(const fs::path& inipath);
 
-    static void print_dbginfo();
+    static void log_dbginfo();
 
     int load_prefs();
     int save_prefs();
 
-    int init_graphics(bool enable_ui);
+    int init_graphics(bool enable_ui, bool windowed);
     int init_audio(const fs::path& audiodir);
     int load_rom(const fs::path& dir);
-
+    
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
     void set_volume(int volume);
@@ -143,6 +153,8 @@ private:
     void emulate_cpu(uint64_t& cpucycles, uint64_t nframes);
     void draw_screen();
 
+    int resize_window();
+    
 private:
     machine m;
     SDL_Window* m_window;
@@ -165,8 +177,9 @@ private:
 inline SDL_Window* emu_interface::window() { return m_emu->m_window; }
 inline SDL_Renderer* emu_interface::renderer() { return m_emu->m_renderer; }
 
-inline uint emu_interface::screenresX() const { return m_emu->m_viewportrect.w; }
-inline uint emu_interface::screenresY() const { return m_emu->m_viewportrect.h; }
+inline const SDL_Rect& emu_interface::viewport() const { 
+    return m_emu->m_viewportrect; 
+}
 
 inline bool emu_interface::get_switch(int index) const {
     return m_emu->get_switch(index);
@@ -182,8 +195,7 @@ inline void emu_interface::set_volume(int volume) {
     m_emu->set_volume(volume); 
 }
 
-inline std::array<SDL_Scancode, INPUT_NUM_INPUTS>& 
-emu_interface::input2keymap() {
+inline std::array<SDL_Scancode, INPUT_NUM_INPUTS>& emu_interface::input2keymap() {
     return m_emu->m_input2key; 
 }
 

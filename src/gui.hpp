@@ -16,7 +16,7 @@ struct emu_gui
 
     bool ok() const { return m_ok; }
 
-    static void print_dbginfo();
+    static void log_dbginfo();
 
     bool process_event(SDL_Event* e);
 

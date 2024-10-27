@@ -48,6 +48,15 @@ using clk = tim::steady_clock;
 using uint = unsigned int;
 
 
+constexpr bool is_emscripten()
+{
+#ifdef __EMSCRIPTEN__
+    return true;
+#else
+    return false;
+#endif
+}
+
 int log_init();
 
 // Raw log function.

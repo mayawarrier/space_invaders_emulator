@@ -121,7 +121,7 @@ emu_gui::~emu_gui()
     ImGui::DestroyContext();
 }
 
-void emu_gui::print_dbginfo()
+void emu_gui::log_dbginfo()
 {
     logMESSAGE("ImGui version: %s", ImGui::GetVersion());
 }
@@ -415,8 +415,8 @@ void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
         ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoNavInputs;
 
-    const ImVec2 wndpos(m_emu.screenresX(), m_menubar_height);
-    const ImVec2 wndsize(PANEL_SIZE, m_emu.screenresY());
+    const ImVec2 wndpos(m_emu.viewport().w, m_menubar_height);
+    const ImVec2 wndsize(PANEL_SIZE, m_emu.viewport().h);
 
     ImGui::SetNextWindowPos(wndpos);
     ImGui::SetNextWindowSize(wndsize);
@@ -471,10 +471,10 @@ void emu_gui::run()
     if (new_panel != m_cur_panel)
     {
         if (m_cur_panel == PANEL_NONE) {
-            set_window_width(m_emu.window(), m_emu.screenresX() + PANEL_SIZE);
+            set_window_width(m_emu.window(), m_emu.viewport().w + PANEL_SIZE);
         }
         else if (new_panel == PANEL_NONE) {
-            set_window_width(m_emu.window(), m_emu.screenresX());
+            set_window_width(m_emu.window(), m_emu.viewport().w);
         }
     }
     m_cur_panel = new_panel;

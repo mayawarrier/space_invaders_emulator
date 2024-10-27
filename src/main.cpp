@@ -16,11 +16,12 @@ static int do_main(int argc, char* argv[])
     cxxopts::Options opts("spaceinvaders", "1978 Space Invaders arcade cabinet emulator.");
     opts.add_options()
         ("h,help", "Show usage.")
-        ("i,ini", "Path to config file.",
+        ("i,inifile", "Path to config file.",
             cxxopts::value<std::string>()->default_value("./spaceinvaders.ini"), "<file>")
-        ("r,romdir", "Directory containing ROM and audio files.",
-            cxxopts::value<std::string>()->default_value("./data"), "<dir>")     
-        ("no-ui", "Disable emulator UI (settings/help panels etc.)");
+        ("r,romdir", "Path to directory containing ROM/audio files.",
+            cxxopts::value<std::string>()->default_value("./data"), "<dir>")
+        ("no-ui", "Disable emulator UI (menu/settings/help panels etc.)")
+        ("w,windowed", "Launch in windowed mode.");
         
     cxxopts::ParseResult args;
     try {
@@ -39,9 +40,10 @@ static int do_main(int argc, char* argv[])
     }
 
     emu emu(
-        args["ini"].as<std::string>(),
+        args["inifile"].as<std::string>(),
         args["romdir"].as<std::string>(),
-        !args["no-ui"].as<bool>()
+        !args["no-ui"].as<bool>(),
+        args["windowed"].as<bool>()
     );
     if (!emu.ok()) {
         return -1;

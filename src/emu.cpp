@@ -1,7 +1,9 @@
 //
 // See https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html
-// for documentation on the hardware inside the Space Invaders arcade machine.
-// It provides context for a lot of what is emulated here.
+// to learn about the hardware inside the Space Invaders arcade machine,
+// and to gain some context for what is emulated here.
+// 
+// See i8080/ for the bulk of the emulation.
 //
 
 #include <cmath>
@@ -16,7 +18,6 @@
 #endif
 
 #ifdef __EMSCRIPTEN__
-#include <emscripten.h>
 #include <functional>
 #endif
 
@@ -92,109 +93,11 @@ void emu::print_ini_help()
     }
 }
 
-static inline machine* MACHINE(i8080* cpu) { 
-    return static_cast<machine*>(cpu->udata);
-}
-
-static i8080_word_t cpu_mem_read(i8080* cpu, i8080_addr_t addr) {
-    return MACHINE(cpu)->mem[addr];
-}
-
-static void cpu_mem_write(i8080* cpu, i8080_addr_t addr, i8080_word_t word) {
-    MACHINE(cpu)->mem[addr] = word;
-}
-
-static i8080_word_t cpu_intr_read(i8080* cpu) {
-    return MACHINE(cpu)->intr_opcode;
-}
-
-static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
+// Recompute window/GUI/viewport sizes.
+// Window and GUI must be set up first.
+int emu::resize_window()
 {
-    machine* m = MACHINE(cpu);
-    switch (port)
-    {
-    case 0: return m->in_port0;
-    case 1: return m->in_port1;
-    case 2: return m->in_port2;
-
-    case 3: // offset from MSB
-        return i8080_word_t(m->shiftreg >> (8 - m->shiftreg_off));
-
-    default: 
-        logWARNING("IO read from unmapped port %d", int(port));
-        return 0;
-    }
-}
-
-static bool snd_is_looping(int idx)
-{
-    return idx == 0 || idx == 9;
-}
-
-// looping: repeat sound while pin is on.
-// non-looping: restart sound every positive edge (off->on)
-static void handle_sound(machine* m, int idx, bool pin_on)
-{
-    if (!m->sounds[idx]) {
-        return;
-    }
-    if (pin_on) {
-        if (!m->sndpin_lastvals[idx]) {
-            int loops = snd_is_looping(idx) ? -1 : 0;
-            Mix_PlayChannel(idx, m->sounds[idx], loops);
-            m->sndpin_lastvals[idx] = true;
-        }
-    } 
-    else {
-        if (snd_is_looping(idx)) {
-            Mix_HaltChannel(idx);
-        }
-        m->sndpin_lastvals[idx] = false; 
-    }
-}
-
-static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
-{
-    machine* m = MACHINE(cpu);
-    switch (port)
-    {
-    case 2:
-        m->shiftreg_off = (word & 0x7);
-        break;
-
-    case 4: 
-        // shift from MSB
-        m->shiftreg >>= 8;
-        m->shiftreg |= (i8080_dword_t(word) << 8);
-        break;
-
-    case 3: 
-        for (int i = 0; i < 4; ++i) {
-            handle_sound(m, i, get_bit(word, i));
-        }
-        handle_sound(m, 9, get_bit(word, 4));
-        break;
-
-    case 5:
-        for (int i = 0; i < 5; ++i) {
-            handle_sound(m, i + 4, get_bit(word, i));
-        }
-        break;
-
-        // Watchdog port. Resets machine if unresponsive, 
-        // not required for an emulator
-    case 6: break;
-
-    default:
-        logWARNING("IO write to unmapped port %d", int(port));
-        break;
-    }
-}
-
-static int get_viewport_bounds(SDL_Window* window, 
-    SDL_Rect& out_viewport, uint offsetX = 0, uint offsetY = 0)
-{
-    int disp_idx = SDL_GetWindowDisplayIndex(window);
+    int disp_idx = SDL_GetWindowDisplayIndex(m_window);
     if (disp_idx < 0) {
         logERROR("SDL_GetWindowDisplayIndex(): %s", SDL_GetError());
         return -1;
@@ -205,29 +108,55 @@ static int get_viewport_bounds(SDL_Window* window,
         return -1;
     }
 
-    uint maxX = disp_bounds.w - offsetX;
-    uint maxY = disp_bounds.h - offsetY;
-
-#ifdef __EMSCRIPTEN__
-    (void)maxX;
-    // todo: maxX can be the limiter instead if display is vertical
-    out_viewport.w = uint(maxY * float(RES_NATIVE_X) / RES_NATIVE_Y);
-    out_viewport.h = maxY;
-#else
-    for (int i = 1; i <= 10; ++i)
+    // Resize viewport
+    auto& vp = m_viewportrect;
+    uint vp_offsetY = m_gui ? m_gui->menubar_height() : 0;
     {
-        uint desiredX = RES_NATIVE_X * i, desiredY = RES_NATIVE_Y * i;
-        if (desiredX > maxX || desiredY > maxY) {
-            break;
+        uint maxX = disp_bounds.w;
+        uint maxY = uint((is_emscripten() ? 0.95 : 0.9) * disp_bounds.h) - vp_offsetY;
+
+        if (is_emscripten() ||
+            (SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN))
+        {
+            // max resolution maintaining aspect ratio
+            uint scaledX = uint(maxY * float(RES_NATIVE_X) / RES_NATIVE_Y);
+            if (scaledX <= maxX) {
+                vp.w = scaledX;
+                vp.h = maxY;
+            } else {
+                vp.w = maxX;
+                vp.h = uint(maxX * float(RES_NATIVE_Y) / RES_NATIVE_X);
+            }
         }
-        out_viewport.w = desiredX;
-        out_viewport.h = desiredY;
+        else {
+            // max discrete multiple of native resolution
+            uint max_factorX = maxX / RES_NATIVE_X;
+            uint max_factorY = maxY / RES_NATIVE_Y;
+            uint factor = std::min(max_factorX, max_factorY);
+            vp.w = RES_NATIVE_X * factor;
+            vp.h = RES_NATIVE_Y * factor;
+        }
+        vp.x = 0;
+        vp.y = vp_offsetY;
     }
+
+    SDL_SetWindowSize(m_window, vp.w, vp.h + vp_offsetY);
+    SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+
+#ifndef __EMSCRIPTEN__ // too frequent on emscripten
+    logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d", vp.x, vp.y, vp.w, vp.h);
 #endif
-    out_viewport.x = offsetX;
-    out_viewport.y = offsetY;
     return 0;
 }
+
+#ifdef __EMSCRIPTEN__
+bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
+{
+    emu* e = static_cast<emu*>(udata);
+    int err = e->resize_window();
+    return !err;
+}
+#endif
 
 // like a palette, same order as PIXFMTS
 enum colr_idx : uint8_t
@@ -254,7 +183,7 @@ static const char* pixfmt_name(uint32_t fmt)
     return str.data();
 }
 
-// use first supported texture format
+// Get first supported texture format
 // see https://stackoverflow.com/questions/56143991/
 static int get_pixfmt(SDL_RendererInfo& rendinfo, const pix_fmt*& out_pixfmt)
 {
@@ -289,7 +218,7 @@ done:
     return 0;
 }
 
-int emu::init_graphics(bool enable_ui)
+int emu::init_graphics(bool enable_ui, bool windowed)
 {
     logMESSAGE("Initializing graphics");
 
@@ -297,6 +226,7 @@ int emu::init_graphics(bool enable_ui)
         logERROR("SDL_Init(): %s", SDL_GetError());
         return -1;
     }
+
     // prevents freezes and lag on Windows
 #ifdef _WIN32
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
@@ -312,6 +242,30 @@ int emu::init_graphics(bool enable_ui)
         logERROR("SDL_CreateRenderer(): %s", SDL_GetError());
         return -1;
     }
+
+    if (enable_ui) {
+        m_gui = std::make_unique<emu_gui>(this);
+        if (!m_gui->ok()) { return -1; }
+    }
+
+    if (!windowed) {
+        //todo. doesn't currently work properly
+        //SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN);
+    }
+
+    // Set viewport and window size etc.
+    int err = resize_window();
+    if (err) { return err; }
+
+#ifdef __EMSCRIPTEN__
+    EMSCRIPTEN_RESULT res = emscripten_set_resize_callback(
+        EMSCRIPTEN_EVENT_TARGET_WINDOW, this, false, emcc_on_window_resize);
+    if (res != EMSCRIPTEN_RESULT_SUCCESS) {
+        logERROR("Failed to set window resize callback");
+        return -1;
+    }
+#endif
+
     SDL_RendererInfo rendinfo;
     if (SDL_GetRendererInfo(m_renderer, &rendinfo) != 0) {
         logERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
@@ -319,23 +273,8 @@ int emu::init_graphics(bool enable_ui)
     }
     logMESSAGE("-- Render backend: %s", rendinfo.name);
 
-    if (enable_ui) {
-        m_gui = std::make_unique<emu_gui>(this);
-        if (!m_gui->ok()) { return -1; }
-    }
-    
-    uint view_offsetY = enable_ui ? m_gui->menubar_height() : 0;
-    int e = get_viewport_bounds(m_window, m_viewportrect, 0, view_offsetY);
-    if (e) { return e; }
-
-    SDL_SetWindowSize(m_window, m_viewportrect.w, m_viewportrect.h + m_viewportrect.y);
-    SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-
-    logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d",
-        m_viewportrect.x, m_viewportrect.y, m_viewportrect.w, m_viewportrect.h);
-
-    e = get_pixfmt(rendinfo, m_pixfmt);
-    if (e) { return e; }
+    err = get_pixfmt(rendinfo, m_pixfmt);
+    if (err) { return err; }
     
     m_viewporttex = SDL_CreateTexture(m_renderer, m_pixfmt->fmt, 
         SDL_TEXTUREACCESS_STREAMING, RES_NATIVE_X, RES_NATIVE_Y);
@@ -459,8 +398,109 @@ int emu::load_rom(const fs::path& dir)
     return 0;
 }
 
+static inline machine* MACHINE(i8080* cpu) {
+    return static_cast<machine*>(cpu->udata);
+}
+
+// CPU emulation callbacks
+
+static i8080_word_t cpu_mem_read(i8080* cpu, i8080_addr_t addr) {
+    return MACHINE(cpu)->mem[addr];
+}
+
+static void cpu_mem_write(i8080* cpu, i8080_addr_t addr, i8080_word_t word) {
+    MACHINE(cpu)->mem[addr] = word;
+}
+
+static i8080_word_t cpu_intr_read(i8080* cpu) {
+    return MACHINE(cpu)->intr_opcode;
+}
+
+static i8080_word_t cpu_io_read(i8080* cpu, i8080_word_t port)
+{
+    machine* m = MACHINE(cpu);
+    switch (port)
+    {
+    case 0: return m->in_port0;
+    case 1: return m->in_port1;
+    case 2: return m->in_port2;
+
+    case 3: // offset from MSB
+        return i8080_word_t(m->shiftreg >> (8 - m->shiftreg_off));
+
+    default:
+        logWARNING("IO read from unmapped port %d", int(port));
+        return 0;
+    }
+}
+
+static bool snd_is_looping(int idx)
+{
+    return idx == 0 || idx == 9;
+}
+
+// looping: repeat sound while pin is on.
+// non-looping: restart sound every positive edge (off->on)
+static void handle_sound(machine* m, int idx, bool pin_on)
+{
+    if (!m->sounds[idx]) {
+        return;
+    }
+    if (pin_on) {
+        if (!m->sndpin_lastvals[idx]) {
+            int loops = snd_is_looping(idx) ? -1 : 0;
+            Mix_PlayChannel(idx, m->sounds[idx], loops);
+            m->sndpin_lastvals[idx] = true;
+        }
+    }
+    else {
+        if (snd_is_looping(idx)) {
+            Mix_HaltChannel(idx);
+        }
+        m->sndpin_lastvals[idx] = false;
+    }
+}
+
+static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
+{
+    machine* m = MACHINE(cpu);
+    switch (port)
+    {
+    case 2:
+        m->shiftreg_off = (word & 0x7);
+        break;
+
+    case 4:
+        // shift from MSB
+        m->shiftreg >>= 8;
+        m->shiftreg |= (i8080_dword_t(word) << 8);
+        break;
+
+    case 3:
+        for (int i = 0; i < 4; ++i) {
+            handle_sound(m, i, get_bit(word, i));
+        }
+        handle_sound(m, 9, get_bit(word, 4));
+        break;
+
+    case 5:
+        for (int i = 0; i < 5; ++i) {
+            handle_sound(m, i + 4, get_bit(word, i));
+        }
+        break;
+
+        // Watchdog port. Resets machine if unresponsive, 
+        // not required for an emulator
+    case 6: break;
+
+    default:
+        logWARNING("IO write to unmapped port %d", int(port));
+        break;
+    }
+}
+
 // helpful for debugging
-void emu::print_dbginfo()
+void emu::log_dbginfo()
 {
     logMESSAGE("Platform: "
         XSTR(COMPILER_NAME) " " XSTR(COMPILER_VERSION)
@@ -482,11 +522,8 @@ void emu::print_dbginfo()
         SDL_MIXER_MAJOR_VERSION, SDL_MIXER_MINOR_VERSION, SDL_MIXER_PATCHLEVEL,
         mix_version->major, mix_version->minor, mix_version->patch);
 
-    emu_gui::print_dbginfo();
-
-    logMESSAGE("");
+    emu_gui::log_dbginfo();
 }
-
 
 // default values in case of init failure or exception.
 emu::emu(const fs::path& inipath) :
@@ -494,7 +531,7 @@ emu::emu(const fs::path& inipath) :
     m_renderer(nullptr),
     m_pixfmt(nullptr),
     m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
-    m_viewporttex(nullptr), 
+    m_viewporttex(nullptr),
     m_volume(0),
     m_inipath(inipath),
     m_ok(false)
@@ -507,90 +544,13 @@ emu::emu(const fs::path& inipath) :
     }
 }
 
-int emu::load_prefs()
-{
-    inireader ini(m_inipath);
-    if (!ini.ok()) {
-        return -1;
-    }
-
-    auto volume = ini.get_num<int>("Settings", "Volume");
-    if (volume.has_value())
-    {
-        if (volume < 0 || volume > VOLUME_MAX) {
-            logERROR("%s: Invalid Volume", ini.path_cstr());
-            return -1;
-        }
-        set_volume(volume.value());
-    }
-
-    for (int i = 3; i < 8; ++i) 
-    {
-        char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0'};
-        auto sw = ini.get_num<uint>("Settings", sw_name);
-        if (sw.has_value())
-        {
-            if (sw > 1u) {
-                logERROR("%s: Invalid %s", ini.path_cstr(), sw_name);
-                return -1;
-            }
-            set_switch(i, bool(sw.value()));
-        }
-    }
-    for (int i = 0; i < INPUT_NUM_INPUTS; ++i)
-    {
-        auto keyname = ini.get_value("Settings", input_ininame(inputtype(i)));
-        if (keyname.data())
-        {
-            SDL_Scancode key = SDL_GetScancodeFromName(std::string(keyname).c_str());
-            if (key == SDL_SCANCODE_UNKNOWN) {
-                logERROR("%s: Invalid %s", ini.path_cstr(), input_ininame(inputtype(i)));
-                return -1;
-            }
-            m_input2key[i] = key;
-        }
-    }
-
-    logMESSAGE("Loaded prefs");
-    return 0;
-}
-
-int emu::save_prefs()
-{
-    iniwriter ini(m_inipath);
-    if (!ini.ok()) {
-        return -1;
-    }
-
-    ini.write_section("Settings");
-
-    ini.write_keyvalue("Volume", std::to_string(m_volume));
-
-    for (int i = 3; i < 8; ++i) 
-    {
-        char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
-        char sw_val[] = { char('0' + get_switch(i)), '\0' };
-        ini.write_keyvalue(sw_name, sw_val);
-    }
-    for (int i = 0; i < INPUT_NUM_INPUTS; ++i) 
-    {
-        ini.write_keyvalue(input_ininame(inputtype(i)), 
-            SDL_GetScancodeName(m_input2key[i]));
-    }
- 
-    if (!ini.flush()) {
-        return -1;
-    }  
-    logMESSAGE("Saved prefs");
-    return 0;
-}
-
-emu::emu(const fs::path& inipath, const fs::path& romdir, bool enable_ui) : 
+emu::emu(const fs::path& inipath, 
+    const fs::path& romdir, bool enable_ui, bool windowed) : 
     emu(inipath)
 {
-    print_dbginfo();
+    log_dbginfo();
 
-    if (init_graphics(enable_ui) != 0 || 
+    if (init_graphics(enable_ui, windowed) != 0 || 
         init_audio(romdir) != 0) {
         return;
     }
@@ -726,7 +686,7 @@ void emu::draw_screen()
 
     uint VRAM_idx = 0;
     i8080_word_t* VRAM_start = &m.mem[0x2400];
-    const uint texpitch = pitch / m_pixfmt->bypp; // not eq to original width!
+    const uint texpitch = pitch / m_pixfmt->bypp; // not always eq to original width!
 
     // Unpack (8 on/off pixels per byte) and rotate counter-clockwise
     for (uint x = 0; x < RES_NATIVE_X; ++x) 
@@ -751,6 +711,84 @@ void emu::draw_screen()
     }
     SDL_UnlockTexture(m_viewporttex);
     SDL_RenderCopy(m_renderer, m_viewporttex, NULL, &m_viewportrect);
+}
+
+int emu::load_prefs()
+{
+    inireader ini(m_inipath);
+    if (!ini.ok()) {
+        return -1;
+    }
+
+    auto volume = ini.get_num<int>("Settings", "Volume");
+    if (volume.has_value())
+    {
+        if (volume < 0 || volume > VOLUME_MAX) {
+            logERROR("%s: Invalid Volume", ini.path_cstr());
+            return -1;
+        }
+        set_volume(volume.value());
+    }
+
+    for (int i = 3; i < 8; ++i)
+    {
+        char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
+        auto sw = ini.get_num<uint>("Settings", sw_name);
+        if (sw.has_value())
+        {
+            if (sw > 1u) {
+                logERROR("%s: Invalid %s", ini.path_cstr(), sw_name);
+                return -1;
+            }
+            set_switch(i, bool(sw.value()));
+        }
+    }
+    for (int i = 0; i < INPUT_NUM_INPUTS; ++i)
+    {
+        auto keyname = ini.get_value("Settings", input_ininame(inputtype(i)));
+        if (keyname.data())
+        {
+            SDL_Scancode key = SDL_GetScancodeFromName(std::string(keyname).c_str());
+            if (key == SDL_SCANCODE_UNKNOWN) {
+                logERROR("%s: Invalid %s", ini.path_cstr(), input_ininame(inputtype(i)));
+                return -1;
+            }
+            m_input2key[i] = key;
+        }
+    }
+
+    logMESSAGE("Loaded prefs");
+    return 0;
+}
+
+int emu::save_prefs()
+{
+    iniwriter ini(m_inipath);
+    if (!ini.ok()) {
+        return -1;
+    }
+
+    ini.write_section("Settings");
+
+    ini.write_keyvalue("Volume", std::to_string(m_volume));
+
+    for (int i = 3; i < 8; ++i)
+    {
+        char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
+        char sw_val[] = { char('0' + get_switch(i)), '\0' };
+        ini.write_keyvalue(sw_name, sw_val);
+    }
+    for (int i = 0; i < INPUT_NUM_INPUTS; ++i)
+    {
+        ini.write_keyvalue(input_ininame(inputtype(i)),
+            SDL_GetScancodeName(m_input2key[i]));
+    }
+
+    if (!ini.flush()) {
+        return -1;
+    }
+    logMESSAGE("Saved prefs");
+    return 0;
 }
 
 // Much more accurate than std::sleep_for() or PRESENT_VSYNC.
@@ -786,7 +824,7 @@ static void vsync_sleep_for(T tsleep)
         else {
             auto trem_us = tim::round<tim::microseconds>(trem);
             uint64_t cur_ctr = SDL_GetPerformanceCounter();
-            uint64_t target_ctr = cur_ctr + 
+            uint64_t target_ctr = cur_ctr +
                 uint64_t(trem_us.count() * (double(perfctr_freq) / US_PER_S));
 
             while (cur_ctr < target_ctr) {
@@ -897,7 +935,7 @@ int emu::run()
         {
             float delta_t = tim::duration<float>(t_start - t_laststart).count();
             m_gui->set_delta_t(delta_t);
-            m_gui->set_fps(1.f / delta_t);
+            m_gui->set_fps(int(std::lroundf(1.f / delta_t)));
         }
 
         nframes++;
