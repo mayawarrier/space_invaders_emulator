@@ -14,7 +14,6 @@
         }
 
         .emscripten {
-            padding-right: 0;
             margin-left: auto;
             margin-right: auto;
             display: block;
@@ -42,8 +41,10 @@
 
         /* mouse coords will be wrong if there is any border/padding */
         canvas.emscripten {
+            padding: 0px;
             border: 0px none;
             background-color: black;
+            transform: translateY(2.5%)
         }
 
         .spinner {
