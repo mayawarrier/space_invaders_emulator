@@ -49,37 +49,39 @@ static bool LOG_COLOR_CONSOLE = false;
 
 int log_init()
 {
-#ifndef __EMSCRIPTEN__
-#define LOGFILE_PATH "spaceinvaders.log"
-
-    LOGFILE = SAFE_FOPENA(LOGFILE_PATH, "w");
-    if (!LOGFILE) {
-        // can't log an error, show a message box
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, 
-            "Error", "Could not open log file " LOGFILE_PATH, NULL);
-        return -1;
-    }
+    if constexpr (!is_emscripten())
+    {
+        LOGFILE = SAFE_FOPENA("spaceinvaders.log", "w");
+        if (!LOGFILE) {
+            // can't log an error, show a message box
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                "Error", "Could not open log file spaceinvaders.log", NULL);
+            return -1;
+        }
 
 #ifdef _WIN32
-    LOG_COLOR_CONSOLE = win32_enable_console_colors();
+        LOG_COLOR_CONSOLE = win32_enable_console_colors();
 #elif defined(HAS_POSIX_2001)
-    LOG_COLOR_CONSOLE = posix_has_term_colors();
+        LOG_COLOR_CONSOLE = posix_has_term_colors();
 #endif
-
-#undef LOGFILE_PATH
-#endif
+    }
     return 0;
 }
 
 void log_write(std::FILE* stream, const char* msg, bool endline)
 {
     std::fprintf(stream, "%s", msg);
-    std::fprintf(LOGFILE.get(), "%s", msg);
     if (endline) {
         std::fputs("\n", stream);
-        std::fputs("\n", LOGFILE.get());
     }
-    std::fflush(LOGFILE.get());
+    if constexpr (!is_emscripten())
+    {
+        std::fprintf(LOGFILE.get(), "%s", msg);
+        if (endline) {
+            std::fputs("\n", LOGFILE.get());
+        }
+        std::fflush(LOGFILE.get());
+    }
 }
 
 static inline void do_log(std::FILE* stream, 
@@ -169,6 +171,8 @@ bool read_file(const fs::path& path, std::unique_ptr<char[]>& filedata, size_t& 
     return true;
 }
 
+#ifndef __EMSCRIPTEN__
+
 static std::string_view trim(std::string_view str)
 {
     const char* beg = str.data();
@@ -234,7 +238,7 @@ inireader::inireader(const fs::path& path) :
     m_ok = true;
 }
 
-std::string_view inireader::get_value(std::string_view section, std::string_view key)
+std::string_view inireader::get_value_sv(std::string_view section, std::string_view key)
 {
     auto sectitr = m_map.find(section);
     if (sectitr != m_map.end())
@@ -247,3 +251,5 @@ std::string_view inireader::get_value(std::string_view section, std::string_view
     }
     return {};
 }
+
+#endif

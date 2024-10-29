@@ -18,6 +18,9 @@
 #endif
 
 #ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#include <emscripten/val.h>
 #include <functional>
 #endif
 
@@ -108,44 +111,44 @@ int emu::resize_window()
         return -1;
     }
 
-    // Resize viewport
     auto& vp = m_viewportrect;
-    uint vp_offsetY = m_gui ? m_gui->menubar_height() : 0;
-    {
-        uint maxX = disp_bounds.w;
-        uint maxY = uint((is_emscripten() ? 0.95 : 0.9) * disp_bounds.h) - vp_offsetY;
 
-        if (is_emscripten() ||
-            (SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN))
-        {
-            // max resolution maintaining aspect ratio
-            uint scaledX = uint(maxY * float(RES_NATIVE_X) / RES_NATIVE_Y);
-            if (scaledX <= maxX) {
-                vp.w = scaledX;
-                vp.h = maxY;
-            } else {
-                vp.w = maxX;
-                vp.h = uint(maxX * float(RES_NATIVE_Y) / RES_NATIVE_X);
-            }
+    uint vp_offsetY = m_gui ? m_gui->menubar_height() : 0;
+    uint vp_maxX = disp_bounds.w;
+    uint vp_maxY = uint((is_emscripten() ? 0.95 : 0.9) * disp_bounds.h) - vp_offsetY;
+
+    // Resize viewport
+    if (is_emscripten() ||
+        (SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN))
+    {
+        // max resolution maintaining aspect ratio
+        uint scaledX = uint(vp_maxY * float(RES_NATIVE_X) / RES_NATIVE_Y);
+        if (scaledX <= vp_maxX) {
+            vp.w = scaledX;
+            vp.h = vp_maxY;
+        } else {
+            vp.w = vp_maxX;
+            vp.h = uint(vp_maxX * float(RES_NATIVE_Y) / RES_NATIVE_X);
         }
-        else {
-            // max discrete multiple of native resolution
-            uint max_factorX = maxX / RES_NATIVE_X;
-            uint max_factorY = maxY / RES_NATIVE_Y;
-            uint factor = std::min(max_factorX, max_factorY);
-            vp.w = RES_NATIVE_X * factor;
-            vp.h = RES_NATIVE_Y * factor;
-        }
-        vp.x = 0;
-        vp.y = vp_offsetY;
     }
+    else {
+        // max discrete multiple of native resolution
+        uint max_factorX = vp_maxX / RES_NATIVE_X;
+        uint max_factorY = vp_maxY / RES_NATIVE_Y;
+        uint factor = std::min(max_factorX, max_factorY);
+        vp.w = RES_NATIVE_X * factor;
+        vp.h = RES_NATIVE_Y * factor;
+    }
+    vp.x = 0;
+    vp.y = vp_offsetY;
 
     SDL_SetWindowSize(m_window, vp.w, vp.h + vp_offsetY);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
-#ifndef __EMSCRIPTEN__ // too frequent on emscripten
-    logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d", vp.x, vp.y, vp.w, vp.h);
-#endif
+    if constexpr (!is_emscripten()) { // too frequent on emscripten
+        logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d", vp.x, vp.y, vp.w, vp.h);
+        logMESSAGE("-- Window size: x: %d, y: %u", vp.w, vp.w + vp_offsetY);
+    }
     return 0;
 }
 
@@ -344,9 +347,9 @@ int emu::init_audio(const fs::path& audio_dir)
             }
         }
         if (!m.sounds[i]) {
-#ifndef __EMSCRIPTEN__
-            log_write(stderr, "-- ");
-#endif
+            if constexpr (!is_emscripten()) {
+                log_write(stderr, "-- ");
+            }
             logWARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
     }
@@ -544,8 +547,14 @@ emu::emu(const fs::path& inipath) :
     }
 }
 
+#ifdef __EMSCRIPTEN__
+emu::emu(const fs::path& romdir, bool enable_ui) :
+    emu("", romdir, false, enable_ui)
+{}
+#endif
+
 emu::emu(const fs::path& inipath, 
-    const fs::path& romdir, bool enable_ui, bool windowed) : 
+    const fs::path& romdir, bool windowed, bool enable_ui) : 
     emu(inipath)
 {
     log_dbginfo();
@@ -715,26 +724,33 @@ void emu::draw_screen()
 
 int emu::load_prefs()
 {
+#ifdef __EMSCRIPTEN__
+    inireader ini;
+#else
+    if (!fs::exists(m_inipath)) {
+        // okay, inifile will be created on exit
+        return 0;
+    }
     inireader ini(m_inipath);
     if (!ini.ok()) {
         return -1;
     }
+#endif
 
     auto volume = ini.get_num<int>("Settings", "Volume");
     if (volume.has_value())
     {
         if (volume < 0 || volume > VOLUME_MAX) {
-            logERROR("%s: Invalid Volume", ini.path_cstr());
+            logERROR("%s: Invalid volume", ini.path_cstr());
             return -1;
         }
         set_volume(volume.value());
     }
-
     for (int i = 3; i < 8; ++i)
     {
         char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
         auto sw = ini.get_num<uint>("Settings", sw_name);
-        if (sw.has_value())
+        if (sw.has_value()) 
         {
             if (sw > 1u) {
                 logERROR("%s: Invalid %s", ini.path_cstr(), sw_name);
@@ -746,9 +762,9 @@ int emu::load_prefs()
     for (int i = 0; i < INPUT_NUM_INPUTS; ++i)
     {
         auto keyname = ini.get_value("Settings", input_ininame(inputtype(i)));
-        if (keyname.data())
+        if (keyname.has_value()) 
         {
-            SDL_Scancode key = SDL_GetScancodeFromName(std::string(keyname).c_str());
+            SDL_Scancode key = SDL_GetScancodeFromName(keyname.value().c_str());
             if (key == SDL_SCANCODE_UNKNOWN) {
                 logERROR("%s: Invalid %s", ini.path_cstr(), input_ininame(inputtype(i)));
                 return -1;
@@ -763,10 +779,14 @@ int emu::load_prefs()
 
 int emu::save_prefs()
 {
+#ifdef __EMSCRIPTEN__
+    iniwriter ini;
+#else
     iniwriter ini(m_inipath);
     if (!ini.ok()) {
         return -1;
     }
+#endif
 
     ini.write_section("Settings");
 
@@ -787,9 +807,14 @@ int emu::save_prefs()
     if (!ini.flush()) {
         return -1;
     }
+
     logMESSAGE("Saved prefs");
     return 0;
 }
+
+#ifdef __EMSCRIPTEN__
+extern "C" void emcc_save_prefs(emu* e) { e->save_prefs(); }
+#endif
 
 // Much more accurate than std::sleep_for() or PRESENT_VSYNC.
 template <typename T>
@@ -842,9 +867,6 @@ static void mainloop_emcc() { mainloop_func_emcc(); }
 
 #define EMCC_MAINLOOP_BEGIN mainloop_func_emcc = [&]() { do
 #define EMCC_MAINLOOP_END   while (0); }; emscripten_set_main_loop(mainloop_emcc, 60, true)
-#else
-#define EMCC_MAINLOOP_BEGIN
-#define EMCC_MAINLOOP_END
 #endif
 
 int emu::run()
@@ -852,18 +874,26 @@ int emu::run()
     int err = load_prefs();
     if (err) { return err; }
 
-    logMESSAGE("Ready!");
+#ifdef __EMSCRIPTEN__
+    // SDL_QUIT is delivered in the unload() event,
+    // which doesn't allow any code to run.
+    EM_ASM({
+        window.addEventListener("beforeunload", function(event) {
+            ccall('emcc_save_prefs', null, ['number'], [$0]);
+        });
+    }, this);
+#endif
 
     SDL_ShowWindow(m_window);
 
-    // 60 Hz CRT refresh rate
-    static constexpr tim::microseconds tframe_target(16667);
-    clk::time_point t_start = clk::now();
-
     uint64_t nframes = 0;
     uint64_t cpucycles = 0;
+    clk::time_point t_start = clk::now();   
+
     bool running = true;
-    
+
+    logMESSAGE("Start!");
+
 #ifdef __EMSCRIPTEN__
     EMCC_MAINLOOP_BEGIN
 #else
@@ -881,8 +911,7 @@ int emu::run()
 
             switch (e.type)
             {
-            case SDL_QUIT:             
-                save_prefs(); // needs to be inside emscripten mainloop
+            case SDL_QUIT:
                 running = false;
                 break;
 
@@ -916,16 +945,20 @@ int emu::run()
         if (m_gui) { 
             m_gui->run();
         }
-        
+
         SDL_RenderPresent(m_renderer);
-  
-#ifndef __EMSCRIPTEN__
-        // Vsync
-        auto tframe = clk::now() - t_start;
-        if (tframe < tframe_target) {
-            vsync_sleep_for(tframe_target - tframe);
+        
+        if constexpr (!is_emscripten()) 
+        {
+            // 60 Hz CRT refresh rate
+            static constexpr tim::microseconds tframe_target(16667);
+
+            auto tframe = clk::now() - t_start;
+            if (tframe < tframe_target) {
+                vsync_sleep_for(tframe_target - tframe);
+            }
         }
-#endif
+
         auto t_laststart = t_start;
         t_start = clk::now();
         
@@ -943,6 +976,12 @@ int emu::run()
 #ifdef __EMSCRIPTEN__
     EMCC_MAINLOOP_END;
 #endif
+
+    // prefs are saved in beforeunload() event on emcc
+    if constexpr (!is_emscripten()) {
+        int err = save_prefs();
+        if (err) { return err; }
+    }
 
     return 0;
 }

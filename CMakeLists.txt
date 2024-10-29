@@ -57,24 +57,33 @@ elseif (WIN32)
     target_link_options(spaceinvaders PRIVATE "/SUBSYSTEM:WINDOWS")
 endif()
 
-
 add_custom_command(
     TARGET spaceinvaders 
     PRE_BUILD # emscripten needs this pre_build
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/data
         ${CMAKE_BINARY_DIR}/data
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
-        ${CMAKE_BINARY_DIR}/spaceinvaders.ini
     VERBATIM
 )
+
+if (NOT EMSCRIPTEN)
+    add_custom_command(
+        TARGET spaceinvaders 
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
+            ${CMAKE_BINARY_DIR}/spaceinvaders.ini
+        VERBATIM
+    )
+endif()
 
 if (EMSCRIPTEN)
     set_target_properties(spaceinvaders PROPERTIES LINK_FLAGS "\
         -s ALLOW_MEMORY_GROWTH=1\
-        --preload-file data/\
-        --preload-file spaceinvaders.ini")
+        -s DEFAULT_LIBRARY_FUNCS_TO_INCLUDE='$ccall'\
+        -s EXPORTED_FUNCTIONS=_main,_emcc_save_prefs\
+        -lembind\
+        --preload-file data/")
 
     add_custom_command(
         TARGET spaceinvaders
@@ -262,8 +271,7 @@ add_library(imgui ${IMGUI_SOURCES} ${IMGUI_BACKEND_SOURCES})
 target_include_directories(imgui PUBLIC 
     ${imgui_ext_SOURCE_DIR} 
     ${imgui_ext_SOURCE_DIR}/backends
-    ${imgui_ext_SOURCE_DIR}/misc/cpp
-)
+    ${imgui_ext_SOURCE_DIR}/misc/cpp)
 
 target_compile_definitions(imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
 
@@ -278,7 +286,6 @@ if (NOT EMSCRIPTEN)
 endif()
 
 target_link_libraries(spaceinvaders PRIVATE imgui)
-
 
 # ---------------------------- Install ----------------------------------
 
@@ -310,8 +317,7 @@ else()
 
     if (FETCHED_SDL2_SRC)
         set(PRIV_LIBDIR ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}/lib)
-        set_target_properties(spaceinvaders PROPERTIES
-            INSTALL_RPATH ${PRIV_LIBDIR})
+        set_target_properties(spaceinvaders PROPERTIES INSTALL_RPATH ${PRIV_LIBDIR})
     endif()
 
     install(TARGETS spaceinvaders 

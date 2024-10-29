@@ -13,7 +13,6 @@
 #include <SDL_mixer.h>
 
 #ifdef __EMSCRIPTEN__
-#include <emscripten.h>
 #include <emscripten/html5.h>
 #endif
 
@@ -109,12 +108,20 @@ private:
     emu* m_emu;
 };
 
+#ifdef __EMSCRIPTEN__
+extern "C" void emcc_save_prefs(emu* e);
+#endif
+
 struct emu
 {
+#ifdef __EMSCRIPTEN__
+    emu(const fs::path& rom_dir, bool enable_ui);
+#endif
     emu(const fs::path& ini_file,
         const fs::path& rom_dir,
-        bool enable_ui = true,
-        bool windowed = false);
+        bool windowed = false,
+        bool enable_ui = true);
+
     ~emu();
 
     bool ok() const { return m_ok; }
@@ -131,6 +138,8 @@ struct emu
 #ifdef __EMSCRIPTEN__
     friend bool emcc_on_window_resize(
         int ev_type, const EmscriptenUiEvent* ui_event, void* udata);
+
+    friend void emcc_save_prefs(emu* e);
 #endif
     friend emu_interface;
 

@@ -12,6 +12,12 @@
 #include <string_view>
 #include <unordered_map>
 #include <optional>
+#include <initializer_list>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/val.h>
+#endif
 
 #define CONCAT(x, y) x##y
 #define STR(a) #a
@@ -150,6 +156,82 @@ bool parse_num(std::string_view str, T& val)
     return res.ec == std::errc();
 }
 
+// sorta replacement for C++26 operator+(string, string_view) 
+inline std::string concat_sv_to_str(
+    std::initializer_list<std::string_view> list)
+{
+    std::string ret;
+    for (auto elem : list) {
+        ret += elem;
+    }
+    return ret;
+}
+
+#ifdef __EMSCRIPTEN__
+
+struct inireader
+{
+    inireader() {
+        m_storage = emscripten::val::global("localStorage");
+    }
+
+    const char* path_cstr() const { return "inireader"; }
+
+    std::optional<std::string> get_value(std::string_view section, std::string_view key)
+    {
+        emscripten::val value = get_emcc_value(section, key);
+        if (value.isNull()) {
+            return {};
+        }
+        return value.as<std::string>();
+    }
+
+    template <typename T> requires std::is_arithmetic_v<T>
+    std::optional<T> get_num(std::string_view section, std::string_view key)
+    {
+        T ret;
+        emscripten::val value = get_emcc_value(section, key);
+        if (value.isNull() || !parse_num(value.as<std::string>(), ret)) {
+            return {};
+        }
+        return ret;
+    }
+private:
+    emscripten::val get_emcc_value(std::string_view section, std::string_view key)
+    {
+        return m_storage.call<emscripten::val>("getItem", 
+            concat_sv_to_str({ section, "_", key}));
+    }
+private:
+    emscripten::val m_storage;
+};
+
+struct iniwriter
+{
+    iniwriter() {
+        m_storage = emscripten::val::global("localStorage");
+    }
+
+    bool flush() { return true; }
+
+    bool write_section(std::string_view name) { 
+        m_section = name; 
+        return true; 
+    }
+
+    bool write_keyvalue(std::string_view key, std::string_view value)
+    {
+        m_storage.call<void>("setItem",
+            concat_sv_to_str({ m_section, "_", key }), std::string(value));
+        return true;
+    }
+private:
+    emscripten::val m_storage;
+    std::string m_section;
+};
+
+#else
+
 struct inireader
 {
     inireader(const fs::path& path);
@@ -158,19 +240,28 @@ struct inireader
 
     const char* path_cstr() const { return m_pathstr.c_str(); }
 
-    // not null-terminated!
-    std::string_view get_value(std::string_view section, std::string_view key);
+    std::optional<std::string> get_value(std::string_view section, std::string_view key)
+    {
+        auto str = get_value_sv(section, key);
+        if (str.data()) {
+            return {};
+        }
+        return std::string(str);
+    }
 
     template <typename T> requires std::is_arithmetic_v<T>
     std::optional<T> get_num(std::string_view section, std::string_view key)
     {
         T value;
-        auto str = get_value(section, key);
+        auto str = get_value_sv(section, key);
         if (!str.data() || !parse_num(str, value)) {
             return {};
         }
         return value;
     }
+private:
+    // not null-terminated!
+    std::string_view get_value_sv(std::string_view section, std::string_view key);
 
 private:
     using section_t = std::unordered_map<std::string_view, std::string_view>;
@@ -200,17 +291,12 @@ struct iniwriter
 
     bool write_section(std::string_view name)
     {
-        std::string str;
-        str += "["; str += name; str += "]\n";
-        return write_str(str);
+        return write_str(concat_sv_to_str({ "[", name, "]\n" }));
     }
 
     bool write_keyvalue(std::string_view key, std::string_view value)
     {
-        std::string str;
-        str += key; str += " = "; str += value;
-        str += "\n";
-        return write_str(str);
+        return write_str(concat_sv_to_str({ key, " = ", value, "\n" }));
     }
 
     bool flush() { return std::fflush(m_file.get()) == 0; }
@@ -230,5 +316,7 @@ private:
     std::string m_pathstr;
     bool m_ok;
 };
+
+#endif
 
 #endif
