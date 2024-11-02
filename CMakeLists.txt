@@ -57,26 +57,6 @@ elseif (WIN32)
     target_link_options(spaceinvaders PRIVATE "/SUBSYSTEM:WINDOWS")
 endif()
 
-add_custom_command(
-    TARGET spaceinvaders 
-    PRE_BUILD # emscripten needs this pre_build
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/data
-        ${CMAKE_BINARY_DIR}/data
-    VERBATIM
-)
-
-if (NOT EMSCRIPTEN)
-    add_custom_command(
-        TARGET spaceinvaders 
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
-            ${CMAKE_BINARY_DIR}/spaceinvaders.ini
-        VERBATIM
-    )
-endif()
-
 if (EMSCRIPTEN)
     set_target_properties(spaceinvaders PROPERTIES LINK_FLAGS "\
         -s ALLOW_MEMORY_GROWTH=1\
@@ -84,7 +64,17 @@ if (EMSCRIPTEN)
         -s EXPORTED_FUNCTIONS=_main,_emcc_save_prefs\
         -lembind\
         --preload-file data/")
+endif()
 
+add_custom_command(
+    TARGET spaceinvaders 
+    PRE_BUILD # emscripten needs this pre_build
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/data
+        ${CMAKE_BINARY_DIR}/data
+    VERBATIM)
+
+if (EMSCRIPTEN)
     add_custom_command(
         TARGET spaceinvaders
         POST_BUILD
@@ -94,8 +84,15 @@ if (EMSCRIPTEN)
         COMMAND ${CMAKE_COMMAND} -E copy
             ${CMAKE_SOURCE_DIR}/src/web/background.jpg
             ${CMAKE_BINARY_DIR}/background.jpg
-        VERBATIM
-    )
+        VERBATIM)
+else()
+    add_custom_command(
+        TARGET spaceinvaders 
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
+            ${CMAKE_BINARY_DIR}/spaceinvaders.ini
+        VERBATIM)
 endif()
 
 # -------------------------------- cxxopts --------------------------------
@@ -229,8 +226,7 @@ else()
             COMMAND ${CMAKE_COMMAND} -E copy_if_different 
                 "$<TARGET_FILE:${TARGET_NAME_SDL2_MIXER}>" 
                 "$<TARGET_FILE_DIR:spaceinvaders>"
-            VERBATIM
-        )
+            VERBATIM)
     endif()
 endif()
 
