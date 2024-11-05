@@ -294,6 +294,9 @@ elseif (EMSCRIPTEN)
         ${CMAKE_BINARY_DIR}/background.jpg
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/favicon
+        DESTINATION ${CMAKE_INSTALL_PREFIX})
+
 else()
     include(GNUInstallDirs)
 
