@@ -1,14 +1,20 @@
-#!/bin/bash
+#!/bin/sh
 
-configuration="Release" # "Debug" or "Release"
-install=false # Run cmake --install after building
+set -e
+
+config="Release"        # "Debug" or "Release"
+install=false           # Run cmake --install after building
 emsdkPath="$HOME/emsdk"
 
 # Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -c|--configuration)
-            configuration="$2"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -c|--config)
+            if [ -z "$2" ]; then
+                echo "Error: --config requires a value."
+                exit 1
+            fi
+            config="$2"
             shift 2
             ;;
         -i|--install)
@@ -16,23 +22,34 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -e|--emsdk-path)
+            if [ -z "$2" ]; then
+                echo "Error: --emsdk-path requires a value."
+                exit 1
+            fi
             emsdkPath="$2"
             shift 2
             ;;
         *)
-            shift
+            echo "Error: Unrecognized option $1"
+            exit 1
             ;;
     esac
 done
 
-if [[ $configuration == "Debug" ]]; then
-    buildPath="build/Emscripten-Debug/"
-    installPath="install/Emscripten-Debug/"
-elif [[ $configuration == "Release" ]]; then
-    buildPath="build/Emscripten-Release/"
-    installPath="install/Emscripten-Release/"
+if [ ! -d "$emsdkPath" ]; then
+    echo "Could not find emsdk at $emsdkPath."
+    echo "Install emsdk or set emsdk-path appropriately."
+    exit 1
+fi
+
+if [ "$config" = "Debug" ]; then
+    buildPath="out/build/Emscripten-Debug/"
+    installPath="out/install/Emscripten-Debug/"
+elif [ "$config" = "Release" ]; then
+    buildPath="out/build/Emscripten-Release/"
+    installPath="out/install/Emscripten-Release/"
 else
-    echo "Invalid configuration. Use 'Debug' or 'Release'."
+    echo "Invalid config. Use 'Debug' or 'Release'."
     exit 1
 fi
 
@@ -40,13 +57,14 @@ mkdir -p "$buildPath"
 
 echo "Building..."
 export EMSDK_QUIET="1"
-source "$emsdkPath/emsdk_env.sh"
+. "$emsdkPath/emsdk_env.sh"
 emcmake cmake . -B "$buildPath" \
-    -DCMAKE_BUILD_TYPE="$configuration" -DCMAKE_INSTALL_PREFIX="$installPath"
+    -DCMAKE_BUILD_TYPE="$config" -DCMAKE_INSTALL_PREFIX="$installPath"
 
 make -C "$buildPath"
 
-if $install; then
+if [ "$install" = "true" ]; then
     echo "Installing..."
+    mkdir -p "$installPath"
     cmake --install "$buildPath"
 fi

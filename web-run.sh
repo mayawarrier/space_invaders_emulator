@@ -1,53 +1,83 @@
-#!/bin/bash
+#!/bin/sh
 
-configuration="Release" # "Debug" or "Release"
+set -e
+
+config="Release"        # "Debug" or "Release"
 browser="chrome"
-fromInstall=false # Run from install folder instead of build
 emsdkPath="$HOME/emsdk"
+build=false             # Build before running
+install=false           # Install before running
 
 # Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -c|--configuration)
-            configuration="$2"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -c|--config)
+            if [ -z "$2" ]; then
+                echo "Error: --config requires a value."
+                exit 1
+            fi
+            config="$2"
             shift 2
             ;;
-        -b|--browser)
+        -r|--browser)
+            if [ -z "$2" ]; then
+                echo "Error: --browser requires a value."
+                exit 1
+            fi
             browser="$2"
             shift 2
             ;;
-        -f|--from-install)
-            fromInstall=true
+        -i|--install)
+            install=true
+            shift
+            ;;
+        -b|--build)
+            build=true
             shift
             ;;
         -e|--emsdk-path)
+            if [ -z "$2" ]; then
+                echo "Error: --emsdk-path requires a value."
+                exit 1
+            fi
             emsdkPath="$2"
             shift 2
             ;;
         *)
-            shift
+            echo "Error: Unrecognized option $1"
+            exit 1
             ;;
     esac
 done
 
-runDir=$([[ $fromInstall == true ]] && echo "install" || echo "build")
-
-if [[ $configuration == "Debug" ]]; then
-    runPath="out/$runDir/Emscripten-Debug/"
-elif [[ $configuration == "Release" ]]; then
-    runPath="out/$runDir/Emscripten-Release/"
-else
-    echo "Invalid configuration. Use 'Debug' or 'Release'."
+if [ ! -d "$emsdkPath" ]; then
+    echo "Could not find emsdk at $emsdkPath."
+    echo "Install emsdk or set emsdk-path appropriately."
     exit 1
 fi
 
-indexPath="$runPath/index.html"
-if [[ ! -f $indexPath ]]; then
-    echo "Building..."
-    ./web-build.sh --configuration "$configuration" --emsdk-path "$emsdkPath" ${fromInstall:+--install}
+if [ "$install" = "true" ]; then 
+    runDir="install"
+else 
+    runDir="build"
+fi
+
+if [ "$config" = "Debug" ]; then
+    runPath="out/$runDir/Emscripten-Debug/"
+elif [ "$config" = "Release" ]; then
+    runPath="out/$runDir/Emscripten-Release/"
+else
+    echo "Invalid config. Use 'Debug' or 'Release'."
+    exit 1
+fi
+
+if [ "$install" = "true" ]; then
+    ./web-build.sh --config "$config" --emsdk-path "$emsdkPath" --install
+elif [ "$build" = "true" ]; then
+    ./web-build.sh --config "$config" --emsdk-path "$emsdkPath"
 fi
 
 echo "Running..."
 export EMSDK_QUIET="1"
-source "$emsdkPath/emsdk_env.sh"
+. "$emsdkPath/emsdk_env.sh"
 emrun --browser "$browser" "$runPath"
