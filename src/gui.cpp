@@ -45,13 +45,6 @@ struct color
     }
 };
 
-enum panel_type
-{
-    PANEL_NONE,
-    PANEL_HELP,
-    PANEL_SETTINGS
-};
-
 emu_gui::emu_gui(emu_interface emu) :
     m_emu(emu),
     m_hdr_font(nullptr),
@@ -60,9 +53,6 @@ emu_gui::emu_gui(emu_interface emu) :
     m_cur_panel(PANEL_NONE),
     m_lastkeypress(SDL_SCANCODE_UNKNOWN), 
     m_fps(-1),
-    m_deltat(0),
-    m_deltat_min(FLT_MAX),
-    m_deltat_max(FLT_MIN),
     m_ok(false)
 {
     //demo_window();
@@ -134,11 +124,11 @@ bool emu_gui::process_event(SDL_Event* e)
     return ImGui_ImplSDL2_ProcessEvent(e); 
 }
 
-bool emu_gui::want_keyboard()  {
+bool emu_gui::want_keyboard() const {
     return ImGui::GetIO().WantCaptureKeyboard; 
 }
 
-bool emu_gui::want_mouse() { 
+bool emu_gui::want_mouse() const { 
     return ImGui::GetIO().WantCaptureMouse; 
 }
 
@@ -290,9 +280,15 @@ static constexpr color PANEL_BGCOLOR(36, 36, 36, 255);
 static constexpr color HEADER_BGCOLOR(48, 82, 121, 255);
 static constexpr color SUBHDR_BGCOLOR = HEADER_BGCOLOR.brighter(50);
 
+int emu_gui::panel_size() const
+{
+    return m_cur_panel == PANEL_NONE ? 0 : PANEL_SIZE;
+}
 
 void emu_gui::draw_help_content()
-{}
+{
+
+}
 
 void emu_gui::draw_settings_content()
 {
@@ -302,7 +298,7 @@ void emu_gui::draw_settings_content()
     // DIP Switches section
     {
         ImGui::PushFont(m_txt_font);
-        draw_header("DIP switches", SUBHDR_BGCOLOR);
+        draw_header("DIP Switches", SUBHDR_BGCOLOR);
         ImGui::PopFont();
         ImGui::NewLine();
 
@@ -337,8 +333,7 @@ void emu_gui::draw_settings_content()
         ImGui::NewLine();
         ImGui::NewLine();
 
-        draw_rtalign_text("See README for how DIPs affect the game.");
-        draw_rtalign_text("Note: Not all ROMs respond to all DIPs!");
+        draw_rtalign_text("See README to learn how this works.");
         ImGui::NewLine();
 
         int num_ships = 0;
@@ -441,13 +436,13 @@ void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
     }
 }
 
-void emu_gui::run()
+void emu_gui::run_frame()
 {
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    int new_panel = m_cur_panel;
+    gui_panel_t new_panel = m_cur_panel;
 
     if (ImGui::BeginMainMenuBar())
     {
@@ -481,8 +476,9 @@ void emu_gui::run()
 
     switch (m_cur_panel)
     {
-    case PANEL_HELP:     draw_panel("Help!",    &emu_gui::draw_help_content); break;
-    case PANEL_SETTINGS: draw_panel("Settings", &emu_gui::draw_settings_content); break;
+    case PANEL_SETTINGS: draw_panel("Settings",  &emu_gui::draw_settings_content); break;
+    case PANEL_HELP:     draw_panel("Help/Info", &emu_gui::draw_help_content); break;
+    default: break;
     }
 
     m_lastkeypress = SDL_SCANCODE_UNKNOWN;

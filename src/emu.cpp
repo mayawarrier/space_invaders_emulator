@@ -142,12 +142,15 @@ int emu::resize_window()
     vp.x = 0;
     vp.y = vp_offsetY;
 
-    SDL_SetWindowSize(m_window, vp.w, vp.h + vp_offsetY);
+    int sizeX = vp.w + (m_gui ? m_gui->panel_size() : 0);
+    int sizeY = vp.h + vp_offsetY;
+
+    SDL_SetWindowSize(m_window, sizeX, sizeY);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
     if constexpr (!is_emscripten()) { // too frequent on emscripten
         logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d", vp.x, vp.y, vp.w, vp.h);
-        logMESSAGE("-- Window size: x: %d, y: %u", vp.w, vp.w + vp_offsetY);
+        logMESSAGE("-- Window size: x: %d, y: %u", vp.w, vp.h + vp_offsetY);
     }
     return 0;
 }
@@ -155,8 +158,7 @@ int emu::resize_window()
 #ifdef __EMSCRIPTEN__
 bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
 {
-    emu* e = static_cast<emu*>(udata);
-    int err = e->resize_window();
+    int err = static_cast<emu*>(udata)->resize_window();
     return !err;
 }
 #endif
@@ -252,7 +254,7 @@ int emu::init_graphics(bool enable_ui, bool windowed)
     }
 
     if (!windowed) {
-        //todo. doesn't currently work properly
+        //todo. doesn't currently work
         //SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN);
     }
 
@@ -536,7 +538,9 @@ emu::emu(const fs::path& inipath) :
     m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
     m_viewporttex(nullptr),
     m_volume(0),
+#ifndef __EMSCRIPTEN__
     m_inipath(inipath),
+#endif
     m_ok(false)
 {
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -764,7 +768,7 @@ int emu::load_prefs()
         auto keyname = ini.get_value("Settings", input_ininame(inputtype(i)));
         if (keyname.has_value()) 
         {
-            SDL_Scancode key = SDL_GetScancodeFromName(keyname.value().c_str());
+            SDL_Scancode key = SDL_GetScancodeFromName(keyname->c_str());
             if (key == SDL_SCANCODE_UNKNOWN) {
                 logERROR("%s: Invalid %s", ini.path_cstr(), input_ininame(inputtype(i)));
                 return -1;
@@ -813,16 +817,43 @@ int emu::save_prefs()
 }
 
 #ifdef __EMSCRIPTEN__
-extern "C" void emcc_save_prefs(emu* e) { e->save_prefs(); }
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1826224
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1881627
+// https://github.com/emscripten-core/emscripten/issues/20628
+// emscripten_sleep() aka setTimeout() is broken on Windows Firefox.
+// Min sleep time is ~30ms (~30fps) which makes the game very slow on high refresh-rate 
+// displays where requestAnimationFrame() cannot be used directly.
+// Resort to busy-wait in this case, which results in higher CPU usage.
+//
+// The proper way to solve this is to make the application independent of FPS,
+// but that is not possible without a patched ROM.
+//
+EM_JS(int, fix_firefox_sleep, (), {
+    return navigator.userAgent.includes("Windows") &&
+        navigator.userAgent.includes("Firefox");
+    });
+static const bool FIX_FIREFOX_SLEEP = fix_firefox_sleep() != 0;
+
+// this idea from imgui
+static std::function<void()> mainloop_func_emcc;
+static void mainloop_emcc() { mainloop_func_emcc(); }
+
+#define EMCC_MAINLOOP_BEGIN mainloop_func_emcc = [&]() { do
+#define EMCC_MAINLOOP_END \
+    while (0); }; emscripten_set_main_loop(mainloop_emcc, FIX_FIREFOX_SLEEP ? -1 : 60, true)
+
+#else
+static const bool FIX_FIREFOX_SLEEP = false;
 #endif
 
-// Much more accurate than std::sleep_for() or PRESENT_VSYNC.
+// More accurate than std::sleep_for() or PRESENT_VSYNC.
 template <typename T>
-static void vsync_sleep_for(T tsleep)
+static void wait_for(T tsleep)
 {
     static constexpr auto wake_interval_us = tim::microseconds(3000);
     static constexpr auto wake_tolerance = tim::microseconds(500);
     static const uint64_t perfctr_freq = SDL_GetPerformanceFrequency();
+    #define BUSY_LOOP_ONLY FIX_FIREFOX_SLEEP
 
     if (perfctr_freq < US_PER_S) [[unlikely]] {
         SDL_Delay(uint32_t(tim::round<tim::milliseconds>(tsleep).count()));
@@ -837,7 +868,7 @@ static void vsync_sleep_for(T tsleep)
     {
         trem = tend - tcur;
 
-        if (trem > wake_interval_us + wake_tolerance) {
+        if (!BUSY_LOOP_ONLY && trem > wake_interval_us + wake_tolerance) {
 #ifdef _WIN32
             win32_sleep_ns(wake_interval_us.count() * NS_PER_US);
 #else
@@ -860,13 +891,12 @@ static void vsync_sleep_for(T tsleep)
     }
 }
 
-// this idea from imgui
 #ifdef __EMSCRIPTEN__
-static std::function<void()> mainloop_func_emcc;
-static void mainloop_emcc() { mainloop_func_emcc(); }
-
-#define EMCC_MAINLOOP_BEGIN mainloop_func_emcc = [&]() { do
-#define EMCC_MAINLOOP_END   while (0); }; emscripten_set_main_loop(mainloop_emcc, 60, true)
+const char* emcc_beforeunload(int, const void*, void* udata)
+{
+    static_cast<emu*>(udata)->save_prefs();
+    return nullptr;
+}
 #endif
 
 int emu::run()
@@ -875,13 +905,15 @@ int emu::run()
     if (err) { return err; }
 
 #ifdef __EMSCRIPTEN__
-    // SDL_QUIT is delivered in the unload() event,
-    // which doesn't allow any code to run.
-    EM_ASM({
-        window.addEventListener("beforeunload", function(event) {
-            ccall('emcc_save_prefs', null, ['number'], [$0]);
-        });
-    }, this);
+    // Save prefs before exit.
+    // This can't run after emscripten_set_main_loop (because infinite loop),
+    // nor can it run in SDL_QUIT (browser unload event is very limited).
+    // Callback must also be synchronous.
+    EMSCRIPTEN_RESULT res = emscripten_set_beforeunload_callback(this, emcc_beforeunload);
+    if (res != EMSCRIPTEN_RESULT_SUCCESS) {
+        logERROR("Failed to set beforeunload callback");
+        return -1;
+    }
 #endif
 
     SDL_ShowWindow(m_window);
@@ -891,6 +923,10 @@ int emu::run()
     clk::time_point t_start = clk::now();   
 
     bool running = true;
+
+    if (FIX_FIREFOX_SLEEP) {
+        logMESSAGE("Enabled Firefox sleep fix");
+    }
 
     logMESSAGE("Start!");
 
@@ -929,11 +965,10 @@ int emu::run()
             default: break;
             }
         }
-        // Pause when minimized
+        // "pause" when minimized
         if (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED)
         {
             SDL_Delay(10);
-            t_start = clk::now();
             continue;
         }
 
@@ -943,31 +978,28 @@ int emu::run()
         draw_screen();
 
         if (m_gui) { 
-            m_gui->run();
+            m_gui->run_frame();
         }
 
         SDL_RenderPresent(m_renderer);
         
-        if constexpr (!is_emscripten()) 
+        if (!is_emscripten() || FIX_FIREFOX_SLEEP)
         {
             // 60 Hz CRT refresh rate
             static constexpr tim::microseconds tframe_target(16667);
 
             auto tframe = clk::now() - t_start;
             if (tframe < tframe_target) {
-                vsync_sleep_for(tframe_target - tframe);
+                wait_for(tframe_target - tframe);
             }
         }
 
         auto t_laststart = t_start;
         t_start = clk::now();
         
-        // exclude first frame, first one is always
-        // slower due to lazy initialization
-        if (m_gui && nframes != 0) 
+        if (m_gui) 
         {
             float delta_t = tim::duration<float>(t_start - t_laststart).count();
-            m_gui->set_delta_t(delta_t);
             m_gui->set_fps(int(std::lroundf(1.f / delta_t)));
         }
 
@@ -977,7 +1009,7 @@ int emu::run()
     EMCC_MAINLOOP_END;
 #endif
 
-    // prefs are saved in beforeunload() event on emcc
+    // see emcc_beforeunload()
     if constexpr (!is_emscripten()) {
         int err = save_prefs();
         if (err) { return err; }

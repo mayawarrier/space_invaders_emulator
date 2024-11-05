@@ -60,8 +60,6 @@ endif()
 if (EMSCRIPTEN)
     set_target_properties(spaceinvaders PROPERTIES LINK_FLAGS "\
         -s ALLOW_MEMORY_GROWTH=1\
-        -s DEFAULT_LIBRARY_FUNCS_TO_INCLUDE='$ccall'\
-        -s EXPORTED_FUNCTIONS=_main,_emcc_save_prefs\
         -lembind\
         --preload-file data/")
 endif()
@@ -78,20 +76,9 @@ if (EMSCRIPTEN)
     add_custom_command(
         TARGET spaceinvaders
         POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_SOURCE_DIR}/src/web/index.html
-            ${CMAKE_BINARY_DIR}/index.html
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_SOURCE_DIR}/src/web/background.jpg
-            ${CMAKE_BINARY_DIR}/background.jpg
-        VERBATIM)
-else()
-    add_custom_command(
-        TARGET spaceinvaders 
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${CMAKE_SOURCE_DIR}/spaceinvaders.ini
-            ${CMAKE_BINARY_DIR}/spaceinvaders.ini
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/src/web
+            ${CMAKE_BINARY_DIR}
         VERBATIM)
 endif()
 
@@ -292,7 +279,6 @@ if (WIN32)
     install(FILES 
         "$<TARGET_FILE:${TARGET_NAME_SDL2}>"
         "$<TARGET_FILE:${TARGET_NAME_SDL2_MIXER}>"
-        ${CMAKE_BINARY_DIR}/spaceinvaders.ini
         ${CMAKE_SOURCE_DIR}/LICENSE
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 
@@ -328,7 +314,4 @@ else()
 
     install(FILES ${CMAKE_SOURCE_DIR}/LICENSE 
         DESTINATION ${CMAKE_INSTALL_DOCDIR})
-
-    install(FILES ${CMAKE_BINARY_DIR}/spaceinvaders.ini 
-        DESTINATION ${CMAKE_INSTALL_DATADIR})
 endif()

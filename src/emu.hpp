@@ -108,10 +108,6 @@ private:
     emu* m_emu;
 };
 
-#ifdef __EMSCRIPTEN__
-extern "C" void emcc_save_prefs(emu* e);
-#endif
-
 struct emu
 {
 #ifdef __EMSCRIPTEN__
@@ -136,10 +132,8 @@ struct emu
 
     
 #ifdef __EMSCRIPTEN__
-    friend bool emcc_on_window_resize(
-        int ev_type, const EmscriptenUiEvent* ui_event, void* udata);
-
-    friend void emcc_save_prefs(emu* e);
+    friend bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata);
+    friend const char* emcc_beforeunload(int, const void*, void* udata);
 #endif
     friend emu_interface;
 
@@ -178,8 +172,9 @@ private:
     std::array<SDL_Scancode, INPUT_NUM_INPUTS> m_input2key;
 
     int m_volume;
+#ifndef __EMSCRIPTEN__
     fs::path m_inipath;
-
+#endif
     bool m_ok;
 };
 

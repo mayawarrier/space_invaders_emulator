@@ -1,8 +1,7 @@
 .vs/
+.vscode/
 out/
 build/
-webbuild/
+install/
 *SDL2/
 *SDL2_mixer/
-# roms + audio
-# data/

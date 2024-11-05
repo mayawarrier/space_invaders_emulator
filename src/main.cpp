@@ -56,9 +56,7 @@ static int do_main(int argc, char* argv[])
     }
 
     // Start!
-    emu.run();
-
-    return 0;
+    return emu.run();
 }
 
 int main(int argc, char* argv[])

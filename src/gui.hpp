@@ -9,6 +9,13 @@
 #include "emu.hpp"
 
 
+enum gui_panel_t
+{
+    PANEL_NONE,
+    PANEL_SETTINGS,
+    PANEL_HELP
+};
+
 struct emu_gui
 {
     emu_gui(emu_interface emu);
@@ -16,28 +23,23 @@ struct emu_gui
 
     bool ok() const { return m_ok; }
 
-    static void log_dbginfo();
-
     bool process_event(SDL_Event* e);
 
     // True if GUI wants keyboard inputs.
-    bool want_keyboard();
+    bool want_keyboard() const;
     // True if GUI wants mouse inputs.
-    bool want_mouse();
+    bool want_mouse() const;
 
     // Run the GUI for one frame.
-    void run();
+    void run_frame();
 
     int menubar_height() const { return m_menubar_height; }
 
+    int panel_size() const;
+
     void set_fps(int fps) { m_fps = fps; }
 
-    void set_delta_t(float delta_t)
-    {
-        m_deltat = delta_t;
-        m_deltat_min = std::min(m_deltat_min, delta_t);
-        m_deltat_max = std::max(m_deltat_max, delta_t);
-    }
+    static void log_dbginfo();
 
 private: 
     void draw_help_content();
@@ -50,15 +52,10 @@ private:
     ImFont* m_hdr_font;
     ImFont* m_txt_font;
     int m_menubar_height;
-    int m_cur_panel;
-    // in current frame
-    SDL_Scancode m_lastkeypress;
-
+    gui_panel_t m_cur_panel;
     int m_fps;
-    float m_deltat;
-    float m_deltat_min;
-    float m_deltat_max;
 
+    SDL_Scancode m_lastkeypress; // cur frame
     bool m_inputkey_focused[INPUT_NUM_INPUTS];
 
     bool m_ok;
