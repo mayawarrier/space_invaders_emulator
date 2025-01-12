@@ -114,9 +114,9 @@
                 var canvas = document.getElementById('canvas');
 
                 canvas.addEventListener("webglcontextlost", (e) => {
-                    module.setErrorStatus('WebGL context lost!\n' +
-                        'This can occur if GPU load is very high or if there\'s an issue in the GPU driver.\n' +
-                        'Try closing some tabs and reload the page.\n' +
+                    Module.setErrorStatus('WebGL context lost!<br/>' +
+                        'This can occur if GPU load is very high or if there\'s an issue in the GPU driver.<br/>' +
+                        'Try closing some tabs and reload the page.<br/>' +
                         'If the issue is persistent, <a href="' + bugReportLink + '">please file a bug report.</a>')
 
                     e.preventDefault();
@@ -130,7 +130,7 @@
             {
                 if (statusElement.style.height == '0px') {
                     statusElement.style.display = 'inline-block'
-                    statusElement.style.height = '30px';
+                    statusElement.style.height = 'auto';
                     statusElement.innerHTML = text;
                 }
             },

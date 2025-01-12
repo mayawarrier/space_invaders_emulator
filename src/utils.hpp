@@ -14,6 +14,8 @@
 #include <optional>
 #include <initializer_list>
 
+#include <imgui.h>
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/val.h>
@@ -60,6 +62,16 @@ constexpr bool is_emscripten()
     return true;
 #else
     return false;
+#endif
+}
+
+// this works only if built using the cmake script
+constexpr bool is_debug()
+{
+#ifdef NDEBUG
+    return false;
+#else
+    return true;
 #endif
 }
 
@@ -120,6 +132,37 @@ constexpr T saturating_subu(T lhs, T rhs)
     return res;
 }
 
+struct color
+{
+    uint8_t r, g, b, a;
+
+    color() = default;
+
+    constexpr color(uint8_t r, uint8_t g, uint8_t b, uint8_t a) :
+        r(r), g(g), b(b), a(a)
+    {}
+
+    constexpr color brighter(uint8_t amt) const
+    {
+        uint8_t rb = saturating_addu(r, amt);
+        uint8_t gb = saturating_addu(g, amt);
+        uint8_t bb = saturating_addu(b, amt);
+        return color(rb, gb, bb, 255);
+    }
+
+    constexpr color darker(uint8_t amt) const
+    {
+        uint8_t rd = saturating_subu(r, amt);
+        uint8_t gd = saturating_subu(g, amt);
+        uint8_t bd = saturating_subu(b, amt);
+        return color(rd, gd, bd, 255);
+    }
+
+    constexpr ImU32 to_imcolor() const {
+        return IM_COL32(r, g, b, a);
+    }
+};
+
 template <typename = void>
 struct ws_lut {
     static constexpr uint8_t lut[] = {
@@ -177,7 +220,7 @@ struct inireader
 
     const char* path_cstr() const { return "inireader"; }
 
-    std::optional<std::string> get_value(std::string_view section, std::string_view key)
+    std::optional<std::string> get_string(std::string_view section, std::string_view key)
     {
         emscripten::val value = get_emcc_value(section, key);
         if (value.isNull()) {
@@ -240,7 +283,7 @@ struct inireader
 
     const char* path_cstr() const { return m_pathstr.c_str(); }
 
-    std::optional<std::string> get_value(std::string_view section, std::string_view key)
+    std::optional<std::string> get_string(std::string_view section, std::string_view key)
     {
         auto str = get_value_sv(section, key);
         if (str.data()) {

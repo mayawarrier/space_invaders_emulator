@@ -35,9 +35,9 @@ static const char* input_ininame(inputtype type)
     case INPUT_P2_LEFT:  return "InputP2Left";
     case INPUT_P2_RIGHT: return "InputP2Right";
     case INPUT_P2_FIRE:  return "InputP2Fire";
-    case INPUT_CREDIT:   return "InputCredit";
     case INPUT_1P_START: return "Input1PStart";
     case INPUT_2P_START: return "Input2PStart";
+    case INPUT_CREDIT:   return "InputCredit";
     default:
         return nullptr;
     }
@@ -52,10 +52,10 @@ static const char* input_inidesc(inputtype type)
     case INPUT_P1_FIRE:  return "Key for P1 fire.";
     case INPUT_P2_LEFT:  return "Key for P2 left.";
     case INPUT_P2_RIGHT: return "Key for P2 right.";
-    case INPUT_P2_FIRE:  return "Key for P2 fire.";
-    case INPUT_CREDIT:   return "Key to insert coin.";
+    case INPUT_P2_FIRE:  return "Key for P2 fire.";   
     case INPUT_1P_START: return "Key to start 1 player mode.";
     case INPUT_2P_START: return "Key to start 2 player mode.";
+    case INPUT_CREDIT:   return "Key to insert coin.";
     default:
         return nullptr;
     }
@@ -70,10 +70,10 @@ static SDL_Scancode input_dflt_key(inputtype type)
     case INPUT_P1_FIRE:  return SDL_SCANCODE_SPACE;
     case INPUT_P2_LEFT:  return SDL_SCANCODE_LEFT;
     case INPUT_P2_RIGHT: return SDL_SCANCODE_RIGHT;
-    case INPUT_P2_FIRE:  return SDL_SCANCODE_SPACE;
-    case INPUT_CREDIT:   return SDL_SCANCODE_RETURN;
+    case INPUT_P2_FIRE:  return SDL_SCANCODE_SPACE;   
     case INPUT_1P_START: return SDL_SCANCODE_1;
     case INPUT_2P_START: return SDL_SCANCODE_2;
+    case INPUT_CREDIT:   return SDL_SCANCODE_RETURN;
     default:
         return SDL_SCANCODE_UNKNOWN;
     }
@@ -96,6 +96,33 @@ void emu::print_ini_help()
     }
 }
 
+static SDL_Point get_viewport_size(SDL_Window* window, int maxX, int maxY)
+{
+    int sizeX, sizeY;
+    if (is_emscripten() ||
+        (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN))
+    {
+        // max resolution maintaining aspect ratio
+        int scaledX = int(maxY * float(RES_NATIVE_X) / RES_NATIVE_Y);
+        if (scaledX <= maxX) {
+            sizeX = scaledX;
+            sizeY = maxY;
+        } else {
+            sizeX = maxX;
+            sizeY = int(maxX * float(RES_NATIVE_Y) / RES_NATIVE_X);
+        }
+    }
+    else {
+        // max discrete multiple of native resolution
+        int max_factorX = maxX / RES_NATIVE_X;
+        int max_factorY = maxY / RES_NATIVE_Y;
+        int factor = std::min(max_factorX, max_factorY);
+        sizeX = RES_NATIVE_X * factor;
+        sizeY = RES_NATIVE_Y * factor;
+    }
+    return { .x = sizeX, .y = sizeY };
+}
+
 // Recompute window/GUI/viewport sizes.
 // Window and GUI must be set up first.
 int emu::resize_window()
@@ -107,51 +134,40 @@ int emu::resize_window()
     }
     SDL_Rect disp_bounds;
     if (SDL_GetDisplayUsableBounds(disp_idx, &disp_bounds) != 0) {
-        logERROR("SDL_GetDesktopDisplayMode(): %s", SDL_GetError());
+        logERROR("SDL_GetDisplayUsableBounds(): %s", SDL_GetError());
         return -1;
     }
+    // Adjust for taskbar, webpage margins etc.
+    disp_bounds.h = int((is_emscripten() ? 0.95 : 0.9) * disp_bounds.h);
 
     auto& vp = m_viewportrect;
-
-    uint vp_offsetY = m_gui ? m_gui->menubar_height() : 0;
-    uint vp_maxX = disp_bounds.w;
-    uint vp_maxY = uint((is_emscripten() ? 0.95 : 0.9) * disp_bounds.h) - vp_offsetY;
-
-    // Resize viewport
-    if (is_emscripten() ||
-        (SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN))
-    {
-        // max resolution maintaining aspect ratio
-        uint scaledX = uint(vp_maxY * float(RES_NATIVE_X) / RES_NATIVE_Y);
-        if (scaledX <= vp_maxX) {
-            vp.w = scaledX;
-            vp.h = vp_maxY;
-        } else {
-            vp.w = vp_maxX;
-            vp.h = uint(vp_maxX * float(RES_NATIVE_Y) / RES_NATIVE_X);
-        }
+    
+    SDL_Point vp_offset{ .x = 0, .y = 0 };
+    SDL_Point vp_maxsize{ .x = disp_bounds.w, .y = disp_bounds.h };
+    if (m_gui) {
+        vp_maxsize = m_gui->max_viewport_size(vp_maxsize);
+        vp_offset = m_gui->viewport_offset();
     }
-    else {
-        // max discrete multiple of native resolution
-        uint max_factorX = vp_maxX / RES_NATIVE_X;
-        uint max_factorY = vp_maxY / RES_NATIVE_Y;
-        uint factor = std::min(max_factorX, max_factorY);
-        vp.w = RES_NATIVE_X * factor;
-        vp.h = RES_NATIVE_Y * factor;
-    }
-    vp.x = 0;
-    vp.y = vp_offsetY;
 
-    int sizeX = vp.w + (m_gui ? m_gui->panel_size() : 0);
-    int sizeY = vp.h + vp_offsetY;
+    SDL_Point vp_size = get_viewport_size(m_window, vp_maxsize.x, vp_maxsize.y);
+    vp = {
+        .x = vp_offset.x, 
+        .y = vp_offset.y, 
+        .w = vp_size.x, 
+        .h = vp_size.y 
+    };
 
-    SDL_SetWindowSize(m_window, sizeX, sizeY);
+    int win_sizeX = vp_size.x + vp_offset.x;
+    int win_sizeY = vp_size.y + vp_offset.y;
+
+    SDL_SetWindowSize(m_window, win_sizeX, win_sizeY);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
-    if constexpr (!is_emscripten()) { // too frequent on emscripten
+    if constexpr (!is_emscripten() || is_debug()) { // too frequent on emscripten
         logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d", vp.x, vp.y, vp.w, vp.h);
-        logMESSAGE("-- Window size: x: %d, y: %u", vp.w, vp.h + vp_offsetY);
+        logMESSAGE("-- Window size: x: %d, y: %d", win_sizeX, win_sizeY);
     }
+
     return 0;
 }
 
@@ -264,7 +280,7 @@ int emu::init_graphics(bool enable_ui, bool windowed)
 
 #ifdef __EMSCRIPTEN__
     EMSCRIPTEN_RESULT res = emscripten_set_resize_callback(
-        EMSCRIPTEN_EVENT_TARGET_WINDOW, this, false, emcc_on_window_resize);
+        EMSCRIPTEN_EVENT_TARGET_WINDOW, this, true, emcc_on_window_resize);
     if (res != EMSCRIPTEN_RESULT_SUCCESS) {
         logERROR("Failed to set window resize callback");
         return -1;
@@ -291,7 +307,7 @@ int emu::init_graphics(bool enable_ui, bool windowed)
     return 0;
 }
 
-static const int MAX_VOLUMES[] = 
+static const int MAX_MIX_VOLUMES[] = 
 {
     MIX_MAX_VOLUME / 3, // UFO fly
     MIX_MAX_VOLUME / 2, // Shoot
@@ -337,7 +353,7 @@ int emu::init_audio(const fs::path& audio_dir)
     for (int i = 0; i < NUM_SOUNDS; ++i)
     {
         m.sounds[i] = nullptr;
-        m.sndpin_lastvals[i] = false;
+        m.sndpins_last[i] = false;
 
         for (int j = 0; j < 2; ++j) 
         {
@@ -452,17 +468,17 @@ static void handle_sound(machine* m, int idx, bool pin_on)
         return;
     }
     if (pin_on) {
-        if (!m->sndpin_lastvals[idx]) {
+        if (!m->sndpins_last[idx]) {
             int loops = snd_is_looping(idx) ? -1 : 0;
             Mix_PlayChannel(idx, m->sounds[idx], loops);
-            m->sndpin_lastvals[idx] = true;
+            m->sndpins_last[idx] = true;
         }
     }
     else {
         if (snd_is_looping(idx)) {
             Mix_HaltChannel(idx);
         }
-        m->sndpin_lastvals[idx] = false;
+        m->sndpins_last[idx] = false;
     }
 }
 
@@ -636,15 +652,16 @@ void emu::set_volume(int new_volume)
     SDL_assert(new_volume >= 0 && new_volume <= 100);
     if (new_volume != m_volume)
     {
-        for (int i = 0; i < NUM_SOUNDS; ++i) {
-            int scaled_vol = int((float(new_volume) / VOLUME_MAX) * MAX_VOLUMES[i]);
-            Mix_Volume(i, scaled_vol);
+        for (int i = 0; i < NUM_SOUNDS; ++i)       
+        {
+            float scaled_vol = MAX_MIX_VOLUMES[i] * (float(new_volume) / 100);
+            Mix_Volume(i, int(std::lroundf(scaled_vol)));
         }
         m_volume = new_volume;
     } 
 }
 
-void emu::emulate_cpu(uint64_t& last_cpucycles, uint64_t nframes_rend)
+void emu::emulate_cpu(uint64_t& cpucycles, uint64_t nframes)
 {
     // pass input to machine ports
     set_bit(&m.in_port1, 0, m_keypressed[m_input2key[INPUT_CREDIT]]);
@@ -658,25 +675,26 @@ void emu::emulate_cpu(uint64_t& last_cpucycles, uint64_t nframes_rend)
     set_bit(&m.in_port2, 6, m_keypressed[m_input2key[INPUT_P2_RIGHT]]);
 
     // 33333.33 clk cycles at emulated CPU's 2Mhz clock speed (16667us/0.5us)
-    uint64_t frame_cycles = 33333 + (nframes_rend % 3 == 0);
+    uint64_t frame_cycles = 33333 + (nframes % 3 == 0);
+    uint64_t prev_cpucycles = cpucycles;
 
     // run till mid-screen
     // 14286 = (96/224) * (16667us/0.5us)
-    while (m.cpu.cycles - last_cpucycles < 14286) {
+    while (m.cpu.cycles - prev_cpucycles < 14286) {
         m.cpu.step();
     }
     m.intr_opcode = i8080_RST_1;
     m.cpu.interrupt();
 
     // run till end of screen (start of VBLANK)
-    while (m.cpu.cycles - last_cpucycles < frame_cycles) {
+    while (m.cpu.cycles - prev_cpucycles < frame_cycles) {
         m.cpu.step();
     }
     m.intr_opcode = i8080_RST_2;
     m.cpu.interrupt();
 
     // extra cycles adjusted in next frame
-    last_cpucycles += frame_cycles;
+    cpucycles += frame_cycles;
 }
 
 // Pixel color after gel overlay
@@ -692,7 +710,7 @@ static colr_idx pixel_color(uint x, uint y)
     else { return COLRIDX_WHITE; }
 }
 
-void emu::draw_screen()
+void emu::draw_vram()
 {
     void* pixels; int pitch;
     SDL_LockTexture(m_viewporttex, NULL, &pixels, &pitch);
@@ -744,7 +762,7 @@ int emu::load_prefs()
     auto volume = ini.get_num<int>("Settings", "Volume");
     if (volume.has_value())
     {
-        if (volume < 0 || volume > VOLUME_MAX) {
+        if (volume < 0 || volume > 100) {
             logERROR("%s: Invalid volume", ini.path_cstr());
             return -1;
         }
@@ -765,7 +783,7 @@ int emu::load_prefs()
     }
     for (int i = 0; i < INPUT_NUM_INPUTS; ++i)
     {
-        auto keyname = ini.get_value("Settings", input_ininame(inputtype(i)));
+        auto keyname = ini.get_string("Settings", input_ininame(inputtype(i)));
         if (keyname.has_value()) 
         {
             SDL_Scancode key = SDL_GetScancodeFromName(keyname->c_str());
@@ -821,75 +839,89 @@ int emu::save_prefs()
 // https://bugzilla.mozilla.org/show_bug.cgi?id=1881627
 // https://github.com/emscripten-core/emscripten/issues/20628
 // emscripten_sleep() aka setTimeout() is broken on Windows Firefox.
-// Min sleep time is ~30ms (~30fps) which makes the game very slow on high refresh-rate 
-// displays where requestAnimationFrame() cannot be used directly.
-// Resort to busy-wait in this case, which results in higher CPU usage.
+// Min sleep time is ~30ms (~30fps) which makes the game very slow on high 
+// refresh-rate displays where requestAnimationFrame() cannot be used directly.
+// Use busy-wait in this case.
 //
-// The proper way to solve this is to make the application independent of FPS,
+// The proper way to solve this is to make the game independent of FPS,
 // but that is not possible without a patched ROM.
 //
-EM_JS(int, fix_firefox_sleep, (), {
+EM_JS(int, fix_win32_firefox, (), {
     return navigator.userAgent.includes("Windows") &&
         navigator.userAgent.includes("Firefox");
     });
-static const bool FIX_FIREFOX_SLEEP = fix_firefox_sleep() != 0;
+static const bool FIX_WIN32_FIREFOX = fix_win32_firefox() != 0;
+#else
+static constexpr bool FIX_WIN32_FIREFOX = false;
+#endif
 
+
+// Much more accurate than std::sleep_for() or PRESENT_VSYNC.
+static void vsync(clk::time_point tframe_start)
+{
+    if (!is_emscripten() || FIX_WIN32_FIREFOX)
+    {
+        // 60 Hz CRT refresh rate
+        static constexpr tim::microseconds tframe_target(16667);
+
+        auto tframe = clk::now() - tframe_start;
+        if (tframe < tframe_target) 
+        {
+            auto twait = tframe_target - tframe;
+            
+            static constexpr auto wake_interval_us = tim::microseconds(3000);
+            static constexpr auto wake_tolerance = tim::microseconds(500);
+            static const uint64_t perfctr_freq = SDL_GetPerformanceFrequency();
+
+            if (perfctr_freq < US_PER_S) [[unlikely]] {
+                SDL_Delay(uint32_t(tim::round<tim::milliseconds>(twait).count()));
+                return;
+            }
+
+            auto tcur = clk::now();
+            auto tend = tcur + twait;
+            auto trem = tend - tcur;
+
+            while (tcur < tend)
+            {
+                trem = tend - tcur;
+
+                if (!FIX_WIN32_FIREFOX && trem > wake_interval_us + wake_tolerance) {
+#ifdef _WIN32
+                    win32_sleep_ns(wake_interval_us.count() * NS_PER_US);
+#else
+                    SDL_Delay(wake_interval_us.count() / US_PER_MS);
+#endif  
+                    // adjust for call overhead
+                    tend -= tim::microseconds(5);
+                }
+                else {
+                    auto trem_us = tim::round<tim::microseconds>(trem);
+                    uint64_t cur_ctr = SDL_GetPerformanceCounter();
+                    uint64_t target_ctr = cur_ctr +
+                        uint64_t(trem_us.count() * (double(perfctr_freq) / US_PER_S));
+
+                    while (cur_ctr < target_ctr) {
+                        cur_ctr = SDL_GetPerformanceCounter();
+                    }
+                }
+
+                tcur = clk::now();
+            }
+        }
+    }
+}
+
+#ifdef __EMSCRIPTEN__
 // this idea from imgui
 static std::function<void()> mainloop_func_emcc;
 static void mainloop_emcc() { mainloop_func_emcc(); }
 
-#define EMCC_MAINLOOP_BEGIN mainloop_func_emcc = [&]() { do
+#define EMCC_MAINLOOP_BEGIN mainloop_func_emcc = [&]() -> void { do
 #define EMCC_MAINLOOP_END \
-    while (0); }; emscripten_set_main_loop(mainloop_emcc, FIX_FIREFOX_SLEEP ? -1 : 60, true)
-
-#else
-static const bool FIX_FIREFOX_SLEEP = false;
+    while (0); }; emscripten_set_main_loop(mainloop_emcc, FIX_WIN32_FIREFOX ? -1 : 60, true)
 #endif
 
-// More accurate than std::sleep_for() or PRESENT_VSYNC.
-template <typename T>
-static void wait_for(T tsleep)
-{
-    static constexpr auto wake_interval_us = tim::microseconds(3000);
-    static constexpr auto wake_tolerance = tim::microseconds(500);
-    static const uint64_t perfctr_freq = SDL_GetPerformanceFrequency();
-    #define BUSY_LOOP_ONLY FIX_FIREFOX_SLEEP
-
-    if (perfctr_freq < US_PER_S) [[unlikely]] {
-        SDL_Delay(uint32_t(tim::round<tim::milliseconds>(tsleep).count()));
-        return;
-    }
-
-    auto tcur = clk::now();
-    auto tend = tcur + tsleep;
-    auto trem = tend - tcur;
-
-    while (tcur < tend)
-    {
-        trem = tend - tcur;
-
-        if (!BUSY_LOOP_ONLY && trem > wake_interval_us + wake_tolerance) {
-#ifdef _WIN32
-            win32_sleep_ns(wake_interval_us.count() * NS_PER_US);
-#else
-            SDL_Delay(wake_interval_us.count() / US_PER_MS);
-#endif  
-            // adjust for call overhead
-            tend -= tim::microseconds(5);
-        }
-        else {
-            auto trem_us = tim::round<tim::microseconds>(trem);
-            uint64_t cur_ctr = SDL_GetPerformanceCounter();
-            uint64_t target_ctr = cur_ctr +
-                uint64_t(trem_us.count() * (double(perfctr_freq) / US_PER_S));
-
-            while (cur_ctr < target_ctr) {
-                cur_ctr = SDL_GetPerformanceCounter();
-            }
-        }
-        tcur = clk::now();
-    }
-}
 
 #ifdef __EMSCRIPTEN__
 const char* emcc_beforeunload(int, const void*, void* udata)
@@ -924,7 +956,7 @@ int emu::run()
 
     bool running = true;
 
-    if (FIX_FIREFOX_SLEEP) {
+    if (FIX_WIN32_FIREFOX) {
         logMESSAGE("Enabled Firefox sleep fix");
     }
 
@@ -939,10 +971,10 @@ int emu::run()
         SDL_Event e;
         while (SDL_PollEvent(&e))
         {
-            bool handle_keyevent = true;
+            bool skip_keyevent = false;
             if (m_gui) {
                 m_gui->process_event(&e);
-                handle_keyevent = !m_gui->want_keyboard();
+                skip_keyevent = m_gui->want_keyboard();
             }
 
             switch (e.type)
@@ -952,12 +984,12 @@ int emu::run()
                 break;
 
             case SDL_KEYDOWN:
-                if (handle_keyevent) {
+                if (!skip_keyevent) {
                     m_keypressed[e.key.keysym.scancode] = true;
                 }
                 break;
             case SDL_KEYUP:
-                if (handle_keyevent) {
+                if (!skip_keyevent) {
                     m_keypressed[e.key.keysym.scancode] = false;
                 }
                 break;
@@ -974,33 +1006,25 @@ int emu::run()
 
         // Emulate CPU for 1 frame.
         emulate_cpu(cpucycles, nframes);
-        // Draw contents of VRAM.
-        draw_screen();
 
-        if (m_gui) { 
-            m_gui->run_frame();
+        // Draw contents of VRAM.
+        draw_vram();
+
+        if (m_gui) {
+            m_gui->draw_frame();
         }
 
         SDL_RenderPresent(m_renderer);
-        
-        if (!is_emscripten() || FIX_FIREFOX_SLEEP)
-        {
-            // 60 Hz CRT refresh rate
-            static constexpr tim::microseconds tframe_target(16667);
 
-            auto tframe = clk::now() - t_start;
-            if (tframe < tframe_target) {
-                wait_for(tframe_target - tframe);
-            }
-        }
+        // Vsync at 60 fps.
+        vsync(t_start);
 
         auto t_laststart = t_start;
         t_start = clk::now();
-        
-        if (m_gui) 
-        {
-            float delta_t = tim::duration<float>(t_start - t_laststart).count();
-            m_gui->set_fps(int(std::lroundf(1.f / delta_t)));
+
+        // Show frame times + fps
+        if (m_gui) {
+            m_gui->set_delta_t(tim::duration<float>(t_start - t_laststart).count());
         }
 
         nframes++;

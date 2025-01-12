@@ -21,7 +21,6 @@
 #define RES_SCALE_DEFAULT 3
 
 #define NUM_SOUNDS 10
-#define VOLUME_MAX 100
 #define VOLUME_DEFAULT 50
 
 
@@ -35,9 +34,9 @@ enum inputtype
     INPUT_P2_RIGHT,
     INPUT_P2_FIRE,
 
-    INPUT_CREDIT,
     INPUT_1P_START,
     INPUT_2P_START,
+    INPUT_CREDIT,
 
     INPUT_NUM_INPUTS
 };
@@ -60,7 +59,7 @@ struct machine
 
     // Sound chip
     Mix_Chunk* sounds[NUM_SOUNDS];
-    std::bitset<NUM_SOUNDS> sndpin_lastvals;
+    std::bitset<NUM_SOUNDS> sndpins_last;
 };
 
 struct pix_fmt
@@ -102,6 +101,8 @@ struct emu_interface
     int get_volume() const;
     void set_volume(int volume);
 
+    void resize_window();
+
     std::array<SDL_Scancode, INPUT_NUM_INPUTS>& input2keymap();
 
 private:
@@ -142,21 +143,21 @@ private:
 
     static void log_dbginfo();
 
-    int load_prefs();
-    int save_prefs();
-
     int init_graphics(bool enable_ui, bool windowed);
     int init_audio(const fs::path& audiodir);
     int load_rom(const fs::path& dir);
+
+    int load_prefs();
+    int save_prefs();
+
+    int resize_window();
     
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
     void set_volume(int volume);
 
     void emulate_cpu(uint64_t& cpucycles, uint64_t nframes);
-    void draw_screen();
-
-    int resize_window();
+    void draw_vram();
     
 private:
     machine m;
@@ -197,6 +198,10 @@ inline int emu_interface::get_volume() const {
 }
 inline void emu_interface::set_volume(int volume) { 
     m_emu->set_volume(volume); 
+}
+
+inline void emu_interface::resize_window() {
+    m_emu->resize_window();
 }
 
 inline std::array<SDL_Scancode, INPUT_NUM_INPUTS>& emu_interface::input2keymap() {

@@ -61,13 +61,15 @@ static int do_main(int argc, char* argv[])
 
 int main(int argc, char* argv[])
 {
-    int e = log_init();
-    if (e != 0) { return e; }
+    int err = log_init();
+    if (err != 0) { 
+        return err; 
+    }
 
 #ifdef _WIN32
     bool pause_at_exit = win32_recreate_console();
 #endif
-    e = do_main(argc, argv);
+    err = do_main(argc, argv);
 
 #ifdef _WIN32
     if (pause_at_exit) {
@@ -75,5 +77,8 @@ int main(int argc, char* argv[])
         std::system("pause");
     }
 #endif
-    return e;
+    if (is_emscripten() && err) {
+        throw err;
+    }
+    return err;
 }
