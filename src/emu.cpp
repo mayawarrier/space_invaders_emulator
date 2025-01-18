@@ -20,7 +20,6 @@
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/html5.h>
-#include <emscripten/val.h>
 #include <functional>
 #endif
 
@@ -96,6 +95,26 @@ void emu::print_ini_help()
     }
 }
 
+static int get_disp_size(SDL_Window* window, SDL_Point& out_size)
+{
+    int disp_idx = SDL_GetWindowDisplayIndex(window);
+    if (disp_idx < 0) {
+        logERROR("SDL_GetWindowDisplayIndex(): %s", SDL_GetError());
+        return -1;
+    }
+    SDL_Rect bounds;
+    if (SDL_GetDisplayUsableBounds(disp_idx, &bounds) != 0) {
+        logERROR("SDL_GetDisplayUsableBounds(): %s", SDL_GetError());
+        return -1;
+    }
+    out_size = { 
+        .x = bounds.w, 
+        // Adjust for taskbar, webpage margins etc.
+        .y = int((is_emscripten() ? 0.95 : 0.9) * bounds.h) 
+    };
+    return 0;
+}
+
 static SDL_Point get_viewport_size(SDL_Window* window, int maxX, int maxY)
 {
     int sizeX, sizeY;
@@ -125,28 +144,20 @@ static SDL_Point get_viewport_size(SDL_Window* window, int maxX, int maxY)
 
 // Recompute window/GUI/viewport sizes.
 // Window and GUI must be set up first.
-int emu::resize_window()
+int emu::resize_window(void)
 {
-    int disp_idx = SDL_GetWindowDisplayIndex(m_window);
-    if (disp_idx < 0) {
-        logERROR("SDL_GetWindowDisplayIndex(): %s", SDL_GetError());
-        return -1;
-    }
-    SDL_Rect disp_bounds;
-    if (SDL_GetDisplayUsableBounds(disp_idx, &disp_bounds) != 0) {
-        logERROR("SDL_GetDisplayUsableBounds(): %s", SDL_GetError());
-        return -1;
-    }
-    // Adjust for taskbar, webpage margins etc.
-    disp_bounds.h = int((is_emscripten() ? 0.95 : 0.9) * disp_bounds.h);
+    int e = get_disp_size(m_window, m_dispsize);
+    if (e) { return e; }
 
     auto& vp = m_viewportrect;
     
     SDL_Point vp_offset{ .x = 0, .y = 0 };
-    SDL_Point vp_maxsize{ .x = disp_bounds.w, .y = disp_bounds.h };
+    SDL_Point vp_maxsize = m_dispsize;
     if (m_gui) {
-        vp_maxsize = m_gui->max_viewport_size(vp_maxsize);
-        vp_offset = m_gui->viewport_offset();
+        auto sizeinfo = m_gui->get_sizeinfo(m_dispsize);
+        vp_offset = sizeinfo.vp_offset;
+        vp_maxsize.x -= sizeinfo.resv_size.x;
+        vp_maxsize.y -= sizeinfo.resv_size.y;
     }
 
     SDL_Point vp_size = get_viewport_size(m_window, vp_maxsize.x, vp_maxsize.y);
@@ -167,17 +178,8 @@ int emu::resize_window()
         logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d", vp.x, vp.y, vp.w, vp.h);
         logMESSAGE("-- Window size: x: %d, y: %d", win_sizeX, win_sizeY);
     }
-
     return 0;
 }
-
-#ifdef __EMSCRIPTEN__
-bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
-{
-    int err = static_cast<emu*>(udata)->resize_window();
-    return !err;
-}
-#endif
 
 // like a palette, same order as PIXFMTS
 enum colr_idx : uint8_t
@@ -204,22 +206,30 @@ static const char* pixfmt_name(uint32_t fmt)
     return str.data();
 }
 
-// Get first supported texture format
-// see https://stackoverflow.com/questions/56143991/
-static int get_pixfmt(SDL_RendererInfo& rendinfo, const pix_fmt*& out_pixfmt)
+int emu::init_texture(SDL_Renderer* renderer)
 {
+    SDL_RendererInfo rendinfo;
+    if (SDL_GetRendererInfo(renderer, &rendinfo) != 0) {
+        logERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
+        return -1;
+    }
+
+    logMESSAGE("-- Render backend: %s", rendinfo.name);
+
+    // Get first supported texture format
+    // see https://stackoverflow.com/questions/56143991/
     for (auto& pixfmt : PIXFMTS) {
         for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
         {
             if (rendinfo.texture_formats[i] == pixfmt.fmt) {
                 logMESSAGE("-- Texture format: %s", pixfmt_name(pixfmt.fmt));
-                out_pixfmt = &pixfmt;
+                m_pixfmt = &pixfmt;
                 goto done;
             }
         }
     }
 done:
-    if (!out_pixfmt)
+    if (!m_pixfmt)
     {
         std::string suppfmts;
         for (auto& pixfmt : PIXFMTS) {
@@ -236,6 +246,14 @@ done:
             "Supported: %s\nAvailable: %s", suppfmts.c_str(), hasfmts.c_str());
         return -1;
     }
+
+    m_viewporttex = SDL_CreateTexture(renderer, m_pixfmt->fmt,
+        SDL_TEXTUREACCESS_STREAMING, RES_NATIVE_X, RES_NATIVE_Y);
+    if (!m_viewporttex) {
+        logERROR("SDL_CreateTexture(): %s", SDL_GetError());
+        return -1;
+    }
+
     return 0;
 }
 
@@ -264,45 +282,22 @@ int emu::init_graphics(bool enable_ui, bool windowed)
         return -1;
     }
 
-    if (enable_ui) {
-        m_gui = std::make_unique<emu_gui>(this);
-        if (!m_gui->ok()) { return -1; }
-    }
+    int e = init_texture(m_renderer);
+    if (e) { return e; }
 
     if (!windowed) {
         //todo. doesn't currently work
         //SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN);
     }
 
+    if (enable_ui) {
+        m_gui = std::make_unique<emu_gui>(m_window, m_renderer, this);
+        if (!m_gui->ok()) { return -1; }
+    }
+
     // Set viewport and window size etc.
     int err = resize_window();
     if (err) { return err; }
-
-#ifdef __EMSCRIPTEN__
-    EMSCRIPTEN_RESULT res = emscripten_set_resize_callback(
-        EMSCRIPTEN_EVENT_TARGET_WINDOW, this, true, emcc_on_window_resize);
-    if (res != EMSCRIPTEN_RESULT_SUCCESS) {
-        logERROR("Failed to set window resize callback");
-        return -1;
-    }
-#endif
-
-    SDL_RendererInfo rendinfo;
-    if (SDL_GetRendererInfo(m_renderer, &rendinfo) != 0) {
-        logERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
-        return -1;
-    }
-    logMESSAGE("-- Render backend: %s", rendinfo.name);
-
-    err = get_pixfmt(rendinfo, m_pixfmt);
-    if (err) { return err; }
-    
-    m_viewporttex = SDL_CreateTexture(m_renderer, m_pixfmt->fmt, 
-        SDL_TEXTUREACCESS_STREAMING, RES_NATIVE_X, RES_NATIVE_Y);
-    if (!m_viewporttex) {
-        logERROR("SDL_CreateTexture(): %s", SDL_GetError());
-        return -1;
-    }
 
     return 0;
 }
@@ -551,9 +546,13 @@ emu::emu(const fs::path& inipath) :
     m_window(nullptr),
     m_renderer(nullptr),
     m_pixfmt(nullptr),
+    m_dispsize({ .x = 0,.y = 0 }),
     m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
     m_viewporttex(nullptr),
     m_volume(0),
+#ifdef __EMSCRIPTEN__
+    m_resizepending(false),
+#endif
 #ifndef __EMSCRIPTEN__
     m_inipath(inipath),
 #endif
@@ -710,7 +709,7 @@ static colr_idx pixel_color(uint x, uint y)
     else { return COLRIDX_WHITE; }
 }
 
-void emu::draw_vram()
+void emu::render_screen()
 {
     void* pixels; int pitch;
     SDL_LockTexture(m_viewporttex, NULL, &pixels, &pitch);
@@ -918,16 +917,19 @@ static std::function<void()> mainloop_func_emcc;
 static void mainloop_emcc() { mainloop_func_emcc(); }
 
 #define EMCC_MAINLOOP_BEGIN mainloop_func_emcc = [&]() -> void { do
-#define EMCC_MAINLOOP_END \
-    while (0); }; emscripten_set_main_loop(mainloop_emcc, FIX_WIN32_FIREFOX ? -1 : 60, true)
-#endif
+#define EMCC_MAINLOOP_END(fps) \
+    while (0); }; emscripten_set_main_loop(mainloop_emcc, (fps), true)
 
 
-#ifdef __EMSCRIPTEN__
 const char* emcc_beforeunload(int, const void*, void* udata)
 {
     static_cast<emu*>(udata)->save_prefs();
     return nullptr;
+}
+bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
+{
+    static_cast<emu*>(udata)->m_resizepending = true;
+    return true;
 }
 #endif
 
@@ -937,13 +939,22 @@ int emu::run()
     if (err) { return err; }
 
 #ifdef __EMSCRIPTEN__
+    EMSCRIPTEN_RESULT res;
+
     // Save prefs before exit.
     // This can't run after emscripten_set_main_loop (because infinite loop),
     // nor can it run in SDL_QUIT (browser unload event is very limited).
     // Callback must also be synchronous.
-    EMSCRIPTEN_RESULT res = emscripten_set_beforeunload_callback(this, emcc_beforeunload);
+    res = emscripten_set_beforeunload_callback(this, emcc_beforeunload);
     if (res != EMSCRIPTEN_RESULT_SUCCESS) {
         logERROR("Failed to set beforeunload callback");
+        return -1;
+    }
+
+    res = emscripten_set_resize_callback(
+        EMSCRIPTEN_EVENT_TARGET_WINDOW, this, true, emcc_on_window_resize);
+    if (res != EMSCRIPTEN_RESULT_SUCCESS) {
+        logERROR("Failed to set window resize callback");
         return -1;
     }
 #endif
@@ -968,29 +979,29 @@ int emu::run()
     while (running)
 #endif
     {
-        SDL_Event e;
-        while (SDL_PollEvent(&e))
+        SDL_Event event;
+        while (SDL_PollEvent(&event))
         {
-            bool skip_keyevent = false;
+            gui_captureinfo evt_capture;
             if (m_gui) {
-                m_gui->process_event(&e);
-                skip_keyevent = m_gui->want_keyboard();
+                m_gui->process_event(&event, evt_capture);
             }
 
-            switch (e.type)
+            switch (event.type)
             {
             case SDL_QUIT:
                 running = false;
                 break;
 
             case SDL_KEYDOWN:
-                if (!skip_keyevent) {
-                    m_keypressed[e.key.keysym.scancode] = true;
+                if (!evt_capture.capture_keyboard) {
+                    m_keypressed[event.key.keysym.scancode] = true;
                 }
                 break;
+
             case SDL_KEYUP:
-                if (!skip_keyevent) {
-                    m_keypressed[e.key.keysym.scancode] = false;
+                if (!evt_capture.capture_keyboard) {
+                    m_keypressed[event.key.keysym.scancode] = false;
                 }
                 break;
 
@@ -1007,11 +1018,19 @@ int emu::run()
         // Emulate CPU for 1 frame.
         emulate_cpu(cpucycles, nframes);
 
-        // Draw contents of VRAM.
-        draw_vram();
+#ifdef __EMSCRIPTEN__
+        if (m_resizepending)
+        {
+            resize_window(); // ignore failure
+            m_resizepending = false;
+        }
+#endif
+        // Draw game.
+        render_screen();
 
+        // Draw GUI.
         if (m_gui) {
-            m_gui->draw_frame();
+            m_gui->render(m_dispsize, m_viewportrect);
         }
 
         SDL_RenderPresent(m_renderer);
@@ -1030,7 +1049,7 @@ int emu::run()
         nframes++;
     }
 #ifdef __EMSCRIPTEN__
-    EMCC_MAINLOOP_END;
+    EMCC_MAINLOOP_END(FIX_WIN32_FIREFOX ? -1 : 60);
 #endif
 
     // see emcc_beforeunload()

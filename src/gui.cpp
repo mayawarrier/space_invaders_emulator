@@ -18,15 +18,63 @@ static constexpr color PANEL_BGCOLOR(36, 36, 36, 255);
 static constexpr color HEADER_BGCOLOR(48, 82, 121, 255);
 static constexpr color SUBHDR_BGCOLOR = HEADER_BGCOLOR.brighter(50);
 
-#define PADX() ImGui::SetCursorPosX(ImGui::GetStyle().WindowPadding.x)
+#define MIN_FONT_SIZE 5
+#define MAX_FONT_SIZE 50
 
-emu_gui::emu_gui(emu_interface emu) :
+#if __EMSCRIPTEN__
+// larger because reported display size is smaller
+#define TXT_FONT_VH 1.85
+#define SUBHDR_FONT_VH 2.41
+#define HDR_FONT_VH 2.96
+#else
+#define TXT_FONT_VH 1.57
+#define SUBHDR_FONT_VH 1.944
+#define HDR_FONT_VH 2.5
+#endif
+
+int emu_gui::init_fontatlas()
+{
+    ImGuiIO& io = ImGui::GetIO();
+
+    for (int i = MIN_FONT_SIZE; i <= MAX_FONT_SIZE; ++i)
+    {
+        ImFontConfig cfg; cfg.SizePixels = i;
+        ImFont* font = io.Fonts->AddFontDefault(&cfg);
+        m_fontatlas.insert({ i, font });
+    }
+    
+    if (!io.Fonts->Build()) {
+        logERROR("Failed to build font atlas");
+        return -1;
+    }
+    return 0;
+}
+
+ImFont* emu_gui::get_font_px(int size) const
+{
+    if (size < MIN_FONT_SIZE) {
+        size = MIN_FONT_SIZE;
+    } else if (size > MAX_FONT_SIZE) {
+        size = MAX_FONT_SIZE;
+    }
+    return m_fontatlas.at(size);
+}
+
+static int get_font_vh_size(float vh, SDL_Point disp_size) {
+    return int(std::lroundf(vh * disp_size.y / 100.f));
+}
+
+ImFont* emu_gui::get_font_vh(float vh, SDL_Point disp_size) const {
+    return get_font_px(get_font_vh_size(vh, disp_size));
+}
+
+emu_gui::emu_gui(SDL_Window* window, SDL_Renderer* renderer, emu_interface emu) :
     m_emu(emu),
-    m_hdr_font(nullptr),
-    m_subhdr_font(nullptr),
-    m_menu_height(0),
+    m_renderer(renderer),
+    m_fonts({ nullptr, nullptr, nullptr }),
     m_cur_panel(PANEL_NONE),
     m_fps(-1),
+    m_drawingframe(false),
     m_lastkeypress(SDL_SCANCODE_UNKNOWN),
     m_ok(false)
 {
@@ -38,42 +86,16 @@ emu_gui::emu_gui(emu_interface emu) :
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-    SDL_assert(emu.window() && emu.renderer());
-
-    if (!ImGui_ImplSDL2_InitForSDLRenderer(emu.window(), emu.renderer()) ||
-        !ImGui_ImplSDLRenderer2_Init(emu.renderer())) {
+    if (!ImGui_ImplSDL2_InitForSDLRenderer(window, renderer) ||
+        !ImGui_ImplSDLRenderer2_Init(renderer)) {
         logERROR("Failed to initialize ImGui with SDL backend");
         return;
     }
 
-    ImGuiIO& io = ImGui::GetIO();
+    ImGui::GetIO().IniFilename = nullptr;
 
-    ImFontConfig text_fontcfg, subhdr_fontcfg, hdr_fontcfg;
-    text_fontcfg.SizePixels = 15.f;
-    subhdr_fontcfg.SizePixels = 19.f;
-    hdr_fontcfg.SizePixels = 25.f;
-
-    io.Fonts->AddFontDefault(&text_fontcfg);
-    m_subhdr_font = io.Fonts->AddFontDefault(&subhdr_fontcfg);
-    m_hdr_font = io.Fonts->AddFontDefault(&hdr_fontcfg);
-    io.Fonts->Build();
-
-    io.IniFilename = nullptr;
-
-    // nasty workaround to determine menubar height
-    // https://github.com/ocornut/imgui/issues/252
-    {
-        ImGui_ImplSDLRenderer2_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
-        ImGui::NewFrame();
-
-        ImGui::Begin("Dummy", NULL, ImGuiWindowFlags_NoTitleBar);
-        ImGui::BeginMainMenuBar();
-        ImGui::EndMainMenuBar();
-        ImGui::End();
-
-        m_menu_height = int(ImGui::GetFrameHeight());
-        ImGui::EndFrame();
+    if (init_fontatlas() != 0) {
+        return;
     }
 
     m_ok = true;
@@ -91,30 +113,22 @@ void emu_gui::log_dbginfo()
     logMESSAGE("ImGui version: %s", ImGui::GetVersion());
 }
 
-bool emu_gui::process_event(const SDL_Event* e) 
+bool emu_gui::process_event(const SDL_Event* e, gui_captureinfo& out_ci)
 {
     if (e->type == SDL_KEYUP) {
         m_lastkeypress = e->key.keysym.scancode;
     }
-    return ImGui_ImplSDL2_ProcessEvent(e); 
+    bool ret = ImGui_ImplSDL2_ProcessEvent(e); 
+
+    auto& io = ImGui::GetIO();
+    out_ci.capture_keyboard = io.WantCaptureKeyboard;
+    out_ci.capture_mouse = io.WantCaptureMouse;
+
+    return ret;
 }
 
-bool emu_gui::want_keyboard() const {
-    return ImGui::GetIO().WantCaptureKeyboard; 
-}
-
-bool emu_gui::want_mouse() const { 
-    return ImGui::GetIO().WantCaptureMouse; 
-}
-
-static void set_window_width(SDL_Window* window, int new_width)
-{
-    int width, height, xpos, ypos;
-    SDL_GetWindowSize(window, &width, &height);
-    SDL_GetWindowPosition(window, &xpos, &ypos);
-
-    SDL_SetWindowSize(window, new_width, height);
-    SDL_SetWindowPosition(window, xpos - (new_width - width) / 2, ypos);
+static void WND_PADX() {
+    ImGui::SetCursorPosX(ImGui::GetStyle().WindowPadding.x);
 }
 
 static void setposX_right_align(const char* text)
@@ -356,7 +370,7 @@ void emu_gui::draw_settings_content()
 {
     // DIP Switches section
     {
-        ImGui::PushFont(m_subhdr_font);
+        ImGui::PushFont(m_fonts.subhdr_font);
         draw_subheader("DIP Switches", SUBHDR_BGCOLOR);
         ImGui::PopFont();
 
@@ -386,7 +400,7 @@ void emu_gui::draw_settings_content()
         }
         ImGui::PopStyleVar();
 
-        ImGui::PushFont(m_subhdr_font);
+        ImGui::PushFont(m_fonts.subhdr_font);
         for (int i = 7; i >= 3; --i)
         {
             char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
@@ -399,11 +413,9 @@ void emu_gui::draw_settings_content()
         ImGui::NewLine();
         ImGui::NewLine();
 
-        // Draw URL
+        // Draw URL message
         {
-            //setposX_right_align("See README to learn how this works.");
-
-            PADX();
+            WND_PADX();
             ImGui::TextUnformatted("See");
             ImGui::SameLine();
             draw_url("README", "https://github.com/mayawarrier/space_invaders_emulator/blob/main/README.md");
@@ -418,17 +430,17 @@ void emu_gui::draw_settings_content()
         set_bit(&num_ships, 1, m_emu.get_switch(5));
         num_ships += 3;
 
-        PADX(); ImGui::Text("Number of ships: %d", num_ships);
-        PADX(); ImGui::Text("Extra ship at: %d points", m_emu.get_switch(6) ? 1000 : 1500);
-        PADX(); ImGui::Text("Diagnostics at startup: %s", m_emu.get_switch(4) ? "Enabled" : "Disabled");
-        PADX(); ImGui::Text("Coins in demo screen: %s", m_emu.get_switch(7) ? "No" : "Yes");
+        WND_PADX(); ImGui::Text("Number of ships: %d", num_ships);
+        WND_PADX(); ImGui::Text("Extra ship at: %d points", m_emu.get_switch(6) ? 1000 : 1500);
+        WND_PADX(); ImGui::Text("Diagnostics at startup: %s", m_emu.get_switch(4) ? "Enabled" : "Disabled");
+        WND_PADX(); ImGui::Text("Coins in demo screen: %s", m_emu.get_switch(7) ? "No" : "Yes");
 
         ImGui::NewLine();
     }
 
     // Controls section
     {
-        ImGui::PushFont(m_subhdr_font);
+        ImGui::PushFont(m_fonts.subhdr_font);
         draw_subheader("Controls", SUBHDR_BGCOLOR);
         ImGui::PopFont();
 
@@ -464,27 +476,28 @@ void emu_gui::draw_settings_content()
 
     // Audio section
     {
-        ImGui::PushFont(m_subhdr_font);
+        ImGui::PushFont(m_fonts.subhdr_font);
         draw_subheader("Audio", SUBHDR_BGCOLOR);
         ImGui::PopFont();
 
         ImGui::NewLine();
         int new_volume = draw_volume_slider("Volume", m_emu.get_volume(), ALIGN_CENTER);
         m_emu.set_volume(new_volume);
+
+        ImGui::NewLine();
     }
 }
 
-void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
+void emu_gui::draw_panel(const char* title, const SDL_Rect& viewport, void(emu_gui::*draw_content)())
 {
     static constexpr ImGuiWindowFlags PANEL_FLAGS = 
         ImGuiWindowFlags_NoTitleBar |
-        //ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoNavInputs;
 
-    const ImVec2 wndpos(m_emu.viewport().x, m_emu.viewport().y);
-    const ImVec2 wndsize(m_emu.viewport().w, m_emu.viewport().h);
+    const ImVec2 wndpos(viewport.x, viewport.y);
+    const ImVec2 wndsize(viewport.w, viewport.h);
 
     ImGui::SetNextWindowPos(wndpos);
     ImGui::SetNextWindowSize(wndsize);
@@ -500,7 +513,7 @@ void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
 
         // header
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(style.WindowPadding.x, 12));
-        ImGui::PushFont(m_hdr_font);
+        ImGui::PushFont(m_fonts.hdr_font);
         ImGui::SetCursorPosY(0); // remove spacing
         draw_header(title, HEADER_BGCOLOR, ALIGN_CENTER);
         ImGui::PopFont();
@@ -517,28 +530,48 @@ void emu_gui::draw_panel(const char* title, void(emu_gui::*draw_content)())
     }
 }
 
-void emu_gui::draw_frame()
+gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
 {
+    SDL_assert(!m_drawingframe);
+
+    int menu_height =
+        get_font_vh_size(TXT_FONT_VH, disp_size) + // text
+        int(ImGui::GetStyle().FramePadding.y * 2.0f);  // padding
+    return {
+        .vp_offset = {.x = 0, .y = menu_height },
+        .resv_size = {.x = 0, .y = menu_height }
+    };
+}
+
+void emu_gui::render( SDL_Point disp_size, const SDL_Rect& viewport)
+{
+    m_drawingframe = true;
+
+    m_fonts.txt_font = get_font_vh(TXT_FONT_VH, disp_size);
+    m_fonts.subhdr_font = get_font_vh(SUBHDR_FONT_VH, disp_size);
+    m_fonts.hdr_font = get_font_vh(HDR_FONT_VH, disp_size);
+
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    int& cur_panel = m_cur_panel;
-    int new_panel = cur_panel;
+    ImGui::PushFont(m_fonts.txt_font);
+
+    int new_panel = m_cur_panel;
 
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::Button("Settings")) {
             new_panel = 
-                (cur_panel == PANEL_SETTINGS) ?
+                (m_cur_panel == PANEL_SETTINGS) ?
                 PANEL_NONE : PANEL_SETTINGS;
         }
         ImGui::SameLine();
 
-        if (ImGui::Button("Help!")) {
+        if (ImGui::Button("About")) {
             new_panel = 
-                (cur_panel == PANEL_HELP) ?
-                PANEL_NONE : PANEL_HELP;
+                (m_cur_panel == PANEL_ABOUT) ?
+                PANEL_NONE : PANEL_ABOUT;
         }
         ImGui::SameLine();
 
@@ -546,21 +579,23 @@ void emu_gui::draw_frame()
 
         ImGui::EndMainMenuBar();
     }
-    cur_panel = new_panel;
+    m_cur_panel = new_panel;
 
-    switch (cur_panel)
+    switch (m_cur_panel)
     {
-    case PANEL_SETTINGS: draw_panel("Settings", &emu_gui::draw_settings_content); break;
-    case PANEL_HELP:     draw_panel("Help!",    &emu_gui::draw_help_content); break;
+    case PANEL_SETTINGS: draw_panel("Settings", viewport, &emu_gui::draw_settings_content); break;
+    case PANEL_ABOUT:    draw_panel("About",    viewport, &emu_gui::draw_help_content); break;
     default: break;
     }
 
     m_lastkeypress = SDL_SCANCODE_UNKNOWN;
 
-    // todo: recompute font sizes for next frame, based on window size?
+    ImGui::PopFont();
 
     ImGui::Render();
-    ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_emu.renderer());
+    ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_renderer);
+
+    m_drawingframe = false;
 }
 
 #ifndef IMGUI_DISABLE_DEMO_WINDOWS

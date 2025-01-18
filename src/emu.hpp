@@ -90,18 +90,11 @@ struct emu_interface
         emu_interface(nullptr)
     {}
 
-    SDL_Window* window();
-    SDL_Renderer* renderer();
-
-    const SDL_Rect& viewport() const;
-
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
 
     int get_volume() const;
     void set_volume(int volume);
-
-    void resize_window();
 
     std::array<SDL_Scancode, INPUT_NUM_INPUTS>& input2keymap();
 
@@ -143,6 +136,7 @@ private:
 
     static void log_dbginfo();
 
+    int init_texture(SDL_Renderer* renderer);
     int init_graphics(bool enable_ui, bool windowed);
     int init_audio(const fs::path& audiodir);
     int load_rom(const fs::path& dir);
@@ -157,7 +151,7 @@ private:
     void set_volume(int volume);
 
     void emulate_cpu(uint64_t& cpucycles, uint64_t nframes);
-    void draw_vram();
+    void render_screen();
     
 private:
     machine m;
@@ -165,26 +159,23 @@ private:
     SDL_Renderer* m_renderer;
     
     const pix_fmt* m_pixfmt;
+    SDL_Point m_dispsize;
     SDL_Rect m_viewportrect;
     SDL_Texture* m_viewporttex;
     std::unique_ptr<emu_gui> m_gui;
-    
+    int m_volume;
+
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
     std::array<SDL_Scancode, INPUT_NUM_INPUTS> m_input2key;
 
-    int m_volume;
+#ifdef __EMSCRIPTEN__
+    bool m_resizepending;
+#endif
 #ifndef __EMSCRIPTEN__
     fs::path m_inipath;
 #endif
     bool m_ok;
 };
-
-inline SDL_Window* emu_interface::window() { return m_emu->m_window; }
-inline SDL_Renderer* emu_interface::renderer() { return m_emu->m_renderer; }
-
-inline const SDL_Rect& emu_interface::viewport() const { 
-    return m_emu->m_viewportrect; 
-}
 
 inline bool emu_interface::get_switch(int index) const {
     return m_emu->get_switch(index);
@@ -198,10 +189,6 @@ inline int emu_interface::get_volume() const {
 }
 inline void emu_interface::set_volume(int volume) { 
     m_emu->set_volume(volume); 
-}
-
-inline void emu_interface::resize_window() {
-    m_emu->resize_window();
 }
 
 inline std::array<SDL_Scancode, INPUT_NUM_INPUTS>& emu_interface::input2keymap() {
