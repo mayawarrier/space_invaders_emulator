@@ -83,9 +83,11 @@ if (EMSCRIPTEN)
 endif()
 
 # -------------------------------- cxxopts --------------------------------
+set(FETCH_CXXOPTS_VERSION "v3.2.0")
+
 FetchContent_Declare(cxxopts
     GIT_REPOSITORY  https://github.com/jarro2783/cxxopts
-    GIT_TAG         origin/master)
+    GIT_TAG         ${FETCH_CXXOPTS_VERSION})
 FetchContent_MakeAvailable(cxxopts)
 
 target_link_libraries(spaceinvaders PRIVATE cxxopts)
