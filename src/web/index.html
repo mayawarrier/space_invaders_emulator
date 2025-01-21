@@ -10,12 +10,46 @@
     <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
 
     <style>
+        html {
+            height: 100%;
+            width: 100%;
+        }
 
         body {
             font-family: arial;
+            background-image: url('background.jpg');
+            display: grid;
+            place-items: center; /* center vert and horiz */
+            text-align: center;
+            align-items: start;
             margin: 0;
             padding: none;
-            background-image: url('background.jpg')
+            height: 100%;
+            width: 100%;
+        }
+
+        #touch-controls {
+            margin-top: 1vh;
+            height: 13vh;
+            grid-template-columns: repeat(2, 1fr);
+            align-items: center;
+            gap: 10px;
+            display: none;
+        }
+
+        .touch-button {
+            height: 13vh;
+        }
+
+        #buttons-left {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-start;
+        }
+
+        #buttons-right {
+            display: flex;
+            justify-content: flex-end;
         }
 
         .emscripten {
@@ -38,6 +72,7 @@
             margin: 0 auto;
             text-align: center;
             background-color: lightgray;
+            width: 100vw;
         }
 
         div.emscripten {
@@ -49,7 +84,6 @@
             padding: 0px;
             border: 0px none;
             background-color: black;
-            transform: translateY(2.5%)
         }
 
         .spinner {
@@ -92,20 +126,31 @@
         }
     </style>
 </head>
-<body >
+<body>
     <div id="statusBar">
         <div class="spinner" id='spinner'></div>
         <div class="emscripten" id="status">Loading...</div>
     </div>
-    
-    <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+
+    <div id="content">
+        <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+        <div id="touch-controls">
+            <div id="buttons-left">
+                <img class="touch-button" src="arcade_button.png" />
+                <img class="touch-button" src="arcade_button.png" />
+            </div>
+            <div id="buttons-right">
+                <img class="touch-button" src="arcade_button.png" />
+            </div>
+        </div>
+    </div>
 
     <script type='text/javascript'>
         var statusElement = document.getElementById('status');
         var spinnerElement = document.getElementById('spinner');
+        var touchCtrlsElement = document.getElementById('touch-controls');
 
-        var bugReportLink = 'https://github.com/mayawarrier/space_invaders_emulator/issues'
-        var criticalError = false;
+        const bugReportLink = 'https://github.com/mayawarrier/space_invaders_emulator/issues'
 
         var Module = {
             print: (...args) => console.log(args.join(' ')),
@@ -120,23 +165,19 @@
                         'If the issue is persistent, <a href="' + bugReportLink + '">please file a bug report.</a>')
 
                     e.preventDefault();
-                    criticalError = true;
+                    Module.criticalError = true;
                 }, false);
 
                 return canvas;
             })(),
 
-            setErrorStatus: (text) =>
-            {
-                if (statusElement.style.height == '0px') {
-                    statusElement.style.display = 'inline-block'
-                    statusElement.style.height = 'auto';
-                    statusElement.innerHTML = text;
+            onRuntimeInitialized() {
+                if (Module.touchEnabled()) {
+                    touchCtrlsElement.style.display = 'grid';
                 }
             },
 
-            setStatus: (text) =>
-            {
+            setStatus: (text) => {
                 if (text) {
                     statusElement.innerHTML = text;
                 } else {
@@ -145,29 +186,57 @@
                     statusElement.style.display = 'none';
                 }
             },
+
+            setErrorStatus: (text) => {
+                if (statusElement.style.height == '0px') {
+                    statusElement.style.display = 'inline-block'
+                    statusElement.style.height = 'auto';
+                    statusElement.innerHTML = text;
+                }
+            },
+
+            // Detect touch support.
+            // This just checks if touch exists; the primary device may not be a touch device.
+            // https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events
+            // https://github.com/Modernizr/Modernizr/pull/2432/files
+            // https://stackoverflow.com/questions/13225662/
+            // https://stackoverflow.com/questions/4817029/
+            touchEnabled: () => {
+                if (window.PointerEvent && 'maxTouchPoints' in navigator) {
+                    return navigator.maxTouchPoints > 0;
+                }
+                else if (
+                    (window.matchMedia && window.matchMedia("(any-pointer: coarse)").matches) ||
+                    window.TouchEvent || 'ontouchstart' in window) {
+                    return true;
+                }
+                else if (window.navigator.msPointerEnabled && 'msMaxTouchPoints' in navigator) {
+                    return navigator.msMaxTouchPoints > 0;
+                }
+                return false;
+            },
+
+            criticalError: false
         };
 
         Module.setStatus('Loading...');
-        window.onerror = (event) =>
-        {
-            // TODO: do not warn on ok events like simulating an infinite loop or exitStatus
+
+        window.onerror = (event) => {
+            // TODO: do not warn on okay events (infinite loop or exitStatus)
             Module.setErrorStatus('Internal error. <a href="' + bugReportLink + '">Please file a bug report.</a>');
             Module.setStatus = (text) => {
                 if (text) console.error('[post-exception status] ' + text);
             };
-            criticalError = true;
+            Module.criticalError = true;
         };
 
-        // Called when user leaves page
         window.addEventListener('beforeunload', () => {
-            if (criticalError) {
+            if (Module.criticalError) {
                 localStorage.setItem('reloadNeeded', true)
             }
         });
 
-        // Called when user visits page
-        window.addEventListener('pageshow', (event) =>
-        {
+        window.addEventListener('pageshow', (event) => {
             const reloadNeeded = localStorage.getItem('reloadNeeded');
             if (reloadNeeded == 'true') {
                 localStorage.removeItem('reloadNeeded')

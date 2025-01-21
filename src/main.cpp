@@ -21,7 +21,7 @@ static int do_main(int argc, char* argv[])
             cxxopts::value<std::string>()->default_value("./spaceinvaders.ini"), "<file>")
         ("r,romdir", "Path to directory containing ROM/audio files.",
             cxxopts::value<std::string>()->default_value("./data"), "<dir>")
-        ("w,windowed", "Launch in windowed mode.")
+        ("f,fullscreen", "Launch in fullscreen mode.")
 #endif
         ("no-ui", "Disable emulator UI (menu/settings/help panels etc.)");
         
@@ -44,10 +44,10 @@ static int do_main(int argc, char* argv[])
 #ifdef __EMSCRIPTEN__
     emu emu("/data", !args["no-ui"].as<bool>());
 #else
-    emu emu(
+    emu emu( 
         args["inifile"].as<std::string>(),
         args["romdir"].as<std::string>(),
-        args["windowed"].as<bool>(),
+        args["fullscreen"].as<bool>(),
         !args["no-ui"].as<bool>()
     );
 #endif

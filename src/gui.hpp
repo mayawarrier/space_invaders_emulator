@@ -41,8 +41,10 @@ struct gui_sizeinfo
 {
     // Viewport offset from window origin.
     SDL_Point vp_offset;
-    // Size reserved for the GUI.
-    SDL_Point resv_size;
+    // Size reserved for GUI elements inside the window.
+    SDL_Point resv_inwnd_size;
+    // Size reserved for GUI elements outside the window.
+    SDL_Point resv_outwnd_size;
 };
 
 struct gui_fonts
@@ -70,8 +72,11 @@ struct emu_gui
     // at the given display size.
     gui_sizeinfo get_sizeinfo(SDL_Point disp_size) const;
 
-    // Run the GUI for one frame.
+    // Render GUI for one frame.
     void render(SDL_Point display_size, const SDL_Rect& viewport);
+
+    // Check if a GUI page is currently visible.
+    bool is_page_visible() const { return m_cur_panel != PANEL_NONE; }
 
     void set_delta_t(float delta_t)
     {
@@ -98,16 +103,17 @@ private:
 private:
     emu_interface m_emu;
     SDL_Renderer* m_renderer;
+    gui_fontatlas m_fontatlas;
     gui_fonts m_fonts;
     int m_cur_panel;
     int m_fps;
-    bool m_drawingframe;
 
     SDL_Scancode m_lastkeypress; // cur frame
     bool m_inputkey_focused[INPUT_NUM_INPUTS];
 
-    gui_fontatlas m_fontatlas;
-
+    bool m_drawingframe;
+    bool m_touchenabled;
+    bool m_anykeypress;
     bool m_ok;
 };
 

@@ -68,14 +68,20 @@ ImFont* emu_gui::get_font_vh(float vh, SDL_Point disp_size) const {
     return get_font_px(get_font_vh_size(vh, disp_size));
 }
 
-emu_gui::emu_gui(SDL_Window* window, SDL_Renderer* renderer, emu_interface emu) :
+emu_gui::emu_gui(
+    SDL_Window* window, 
+    SDL_Renderer* renderer, 
+    emu_interface emu
+) :
     m_emu(emu),
     m_renderer(renderer),
     m_fonts({ nullptr, nullptr, nullptr }),
     m_cur_panel(PANEL_NONE),
     m_fps(-1),
-    m_drawingframe(false),
     m_lastkeypress(SDL_SCANCODE_UNKNOWN),
+    m_drawingframe(false),
+    m_touchenabled(false),
+    m_anykeypress(false),
     m_ok(false)
 {
     //demo_window();
@@ -98,6 +104,11 @@ emu_gui::emu_gui(SDL_Window* window, SDL_Renderer* renderer, emu_interface emu) 
         return;
     }
 
+#ifdef __EMSCRIPTEN__
+    m_touchenabled = EM_ASM_INT(return Module.touchEnabled());
+#else
+    m_touchenabled = false;
+#endif
     m_ok = true;
 }
 
@@ -117,6 +128,7 @@ bool emu_gui::process_event(const SDL_Event* e, gui_captureinfo& out_ci)
 {
     if (e->type == SDL_KEYUP) {
         m_lastkeypress = e->key.keysym.scancode;
+        m_anykeypress = true;
     }
     bool ret = ImGui_ImplSDL2_ProcessEvent(e); 
 
@@ -198,7 +210,7 @@ static void draw_subheader(const char* title, color colr, gui_align_t align = AL
 
 static void draw_url(const char* text, const char* url)
 {
-    const ImU32 color = IM_COL32(0, 0, 238, 255);
+    const ImU32 color = IM_COL32(62, 166, 255, 255);
 
     float posX = ImGui::GetCursorPosX();
     ImVec2 dpos = ImGui::GetCursorScreenPos();
@@ -437,8 +449,9 @@ void emu_gui::draw_settings_content()
 
         ImGui::NewLine();
     }
-
+    
     // Controls section
+    if (!m_touchenabled || m_anykeypress)
     {
         ImGui::PushFont(m_fonts.subhdr_font);
         draw_subheader("Controls", SUBHDR_BGCOLOR);
@@ -479,7 +492,7 @@ void emu_gui::draw_settings_content()
         ImGui::PushFont(m_fonts.subhdr_font);
         draw_subheader("Audio", SUBHDR_BGCOLOR);
         ImGui::PopFont();
-
+        
         ImGui::NewLine();
         int new_volume = draw_volume_slider("Volume", m_emu.get_volume(), ALIGN_CENTER);
         m_emu.set_volume(new_volume);
@@ -527,7 +540,7 @@ void emu_gui::draw_panel(const char* title, const SDL_Rect& viewport, void(emu_g
         ImGui::PopStyleVar();
 
         ImGui::End();
-    }
+    } 
 }
 
 gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
@@ -537,20 +550,25 @@ gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
     int menu_height =
         get_font_vh_size(TXT_FONT_VH, disp_size) + // text
         int(ImGui::GetStyle().FramePadding.y * 2.0f);  // padding
+
+    float resv_outwnd_ypct = is_emscripten() && m_touchenabled ? 0.25f : 0.1f;
+    int resv_outwndY = int(std::lroundf(resv_outwnd_ypct * disp_size.y));
+
     return {
         .vp_offset = {.x = 0, .y = menu_height },
-        .resv_size = {.x = 0, .y = menu_height }
+        .resv_inwnd_size = {.x = 0, .y = menu_height },
+        .resv_outwnd_size = {.x = 0, .y = resv_outwndY }
     };
 }
-
-void emu_gui::render( SDL_Point disp_size, const SDL_Rect& viewport)
+ 
+void emu_gui::render(SDL_Point disp_size, const SDL_Rect& viewport)
 {
     m_drawingframe = true;
 
     m_fonts.txt_font = get_font_vh(TXT_FONT_VH, disp_size);
     m_fonts.subhdr_font = get_font_vh(SUBHDR_FONT_VH, disp_size);
     m_fonts.hdr_font = get_font_vh(HDR_FONT_VH, disp_size);
-
+     
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
@@ -655,7 +673,8 @@ int demo_window()
 
         ImGui::Render();
         SDL_RenderSetScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
-        SDL_SetRenderDrawColor(renderer, (Uint8)(clear_color.x * 255), (Uint8)(clear_color.y * 255), (Uint8)(clear_color.z * 255), (Uint8)(clear_color.w * 255));
+        SDL_SetRenderDrawColor(renderer, (Uint8)(clear_color.x * 255), 
+            (Uint8)(clear_color.y * 255), (Uint8)(clear_color.z * 255), (Uint8)(clear_color.w * 255));
         SDL_RenderClear(renderer);
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
         SDL_RenderPresent(renderer);

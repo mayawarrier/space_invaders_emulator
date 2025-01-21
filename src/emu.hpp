@@ -109,7 +109,7 @@ struct emu
 #endif
     emu(const fs::path& ini_file,
         const fs::path& rom_dir,
-        bool windowed = false,
+        bool fullscreen = false,
         bool enable_ui = true);
 
     ~emu();

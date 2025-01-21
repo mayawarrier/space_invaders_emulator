@@ -15,6 +15,7 @@
 #include <initializer_list>
 
 #include <imgui.h>
+#include <SDL.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -110,6 +111,15 @@ template <typename T>
 inline bool get_bit(T word, int bit)
 {
     return (word & (0x1 << bit)) != 0;
+}
+
+constexpr SDL_Point sdl_point_add(SDL_Point a, SDL_Point b)
+{
+    return { a.x + b.x, a.y + b.y };
+}
+constexpr SDL_Point sdl_point_sub(SDL_Point a, SDL_Point b)
+{
+    return { a.x - b.x, a.y - b.y };
 }
 
 template <std::unsigned_integral T>

@@ -23,7 +23,6 @@
 #include <functional>
 #endif
 
-
 static const char* input_ininame(inputtype type)
 {
     switch (type)
@@ -110,7 +109,7 @@ static int get_disp_size(SDL_Window* window, SDL_Point& out_size)
     out_size = { 
         .x = bounds.w, 
         // Adjust for taskbar, webpage margins etc.
-        .y = int((is_emscripten() ? 0.95 : 0.9) * bounds.h) 
+        .y = bounds.h//int((is_emscripten() ? 1 : 0.9) * bounds.h) 
     };
     return 0;
 }
@@ -153,11 +152,14 @@ int emu::resize_window(void)
     
     SDL_Point vp_offset{ .x = 0, .y = 0 };
     SDL_Point vp_maxsize = m_dispsize;
-    if (m_gui) {
-        auto sizeinfo = m_gui->get_sizeinfo(m_dispsize);
-        vp_offset = sizeinfo.vp_offset;
-        vp_maxsize.x -= sizeinfo.resv_size.x;
-        vp_maxsize.y -= sizeinfo.resv_size.y;
+    gui_sizeinfo guiinfo = {0};
+    if (m_gui) 
+    {
+        guiinfo = m_gui->get_sizeinfo(m_dispsize);
+        auto total_resv = sdl_point_add(guiinfo.resv_inwnd_size, guiinfo.resv_outwnd_size);
+
+        vp_offset = guiinfo.vp_offset;
+        vp_maxsize = sdl_point_sub(vp_maxsize, total_resv);
     }
 
     SDL_Point vp_size = get_viewport_size(m_window, vp_maxsize.x, vp_maxsize.y);
@@ -168,15 +170,14 @@ int emu::resize_window(void)
         .h = vp_size.y 
     };
 
-    int win_sizeX = vp_size.x + vp_offset.x;
-    int win_sizeY = vp_size.y + vp_offset.y;
+    SDL_Point win_size = sdl_point_add(vp_size, guiinfo.resv_inwnd_size);
 
-    SDL_SetWindowSize(m_window, win_sizeX, win_sizeY);
+    SDL_SetWindowSize(m_window, win_size.x, win_size.y);
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
     if constexpr (!is_emscripten() || is_debug()) { // too frequent on emscripten
         logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d", vp.x, vp.y, vp.w, vp.h);
-        logMESSAGE("-- Window size: x: %d, y: %d", win_sizeX, win_sizeY);
+        logMESSAGE("-- Window size: x: %d, y: %d", win_size.x, win_size.y);
     }
     return 0;
 }
@@ -257,7 +258,7 @@ done:
     return 0;
 }
 
-int emu::init_graphics(bool enable_ui, bool windowed)
+int emu::init_graphics(bool enable_ui, bool fullscreen)
 {
     logMESSAGE("Initializing graphics");
 
@@ -285,7 +286,7 @@ int emu::init_graphics(bool enable_ui, bool windowed)
     int e = init_texture(m_renderer);
     if (e) { return e; }
 
-    if (!windowed) {
+    if (fullscreen) {
         //todo. doesn't currently work
         //SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN);
     }
@@ -573,12 +574,12 @@ emu::emu(const fs::path& romdir, bool enable_ui) :
 #endif
 
 emu::emu(const fs::path& inipath, 
-    const fs::path& romdir, bool windowed, bool enable_ui) : 
+    const fs::path& romdir, bool fullscreen, bool enable_ui) : 
     emu(inipath)
 {
     log_dbginfo();
 
-    if (init_graphics(enable_ui, windowed) != 0 || 
+    if (init_graphics(enable_ui, fullscreen) != 0 || 
         init_audio(romdir) != 0) {
         return;
     }
@@ -845,20 +846,22 @@ int emu::save_prefs()
 // The proper way to solve this is to make the game independent of FPS,
 // but that is not possible without a patched ROM.
 //
-EM_JS(int, fix_win32_firefox, (), {
+EM_JS(int, web_has_broken_sleep, (), {
     return navigator.userAgent.includes("Windows") &&
         navigator.userAgent.includes("Firefox");
     });
-static const bool FIX_WIN32_FIREFOX = fix_win32_firefox() != 0;
+
+static const bool WEB_HAS_BROKEN_SLEEP = web_has_broken_sleep() != 0;
+static const int WEB_MAINLOOP_FPS = WEB_HAS_BROKEN_SLEEP ? -1 : 60;
 #else
-static constexpr bool FIX_WIN32_FIREFOX = false;
+static constexpr bool WEB_HAS_BROKEN_SLEEP = false;
 #endif
 
-
+// Vsync with high precision.
 // Much more accurate than std::sleep_for() or PRESENT_VSYNC.
 static void vsync(clk::time_point tframe_start)
 {
-    if (!is_emscripten() || FIX_WIN32_FIREFOX)
+    if (!is_emscripten() || WEB_HAS_BROKEN_SLEEP)
     {
         // 60 Hz CRT refresh rate
         static constexpr tim::microseconds tframe_target(16667);
@@ -885,7 +888,8 @@ static void vsync(clk::time_point tframe_start)
             {
                 trem = tend - tcur;
 
-                if (!FIX_WIN32_FIREFOX && trem > wake_interval_us + wake_tolerance) {
+                if (!WEB_HAS_BROKEN_SLEEP && // busy loop only
+                    trem > wake_interval_us + wake_tolerance) {
 #ifdef _WIN32
                     win32_sleep_ns(wake_interval_us.count() * NS_PER_US);
 #else
@@ -913,12 +917,12 @@ static void vsync(clk::time_point tframe_start)
 
 #ifdef __EMSCRIPTEN__
 // this idea from imgui
-static std::function<void()> mainloop_func_emcc;
-static void mainloop_emcc() { mainloop_func_emcc(); }
+static std::function<void()> emcc_mainloop_func;
+static void emcc_mainloop() { emcc_mainloop_func(); }
 
-#define EMCC_MAINLOOP_BEGIN mainloop_func_emcc = [&]() -> void { do
-#define EMCC_MAINLOOP_END(fps) \
-    while (0); }; emscripten_set_main_loop(mainloop_emcc, (fps), true)
+#define EMCC_MAINLOOP_BEGIN emcc_mainloop_func = [&]() -> void { do
+#define EMCC_MAINLOOP_END \
+    while (0); }; emscripten_set_main_loop(emcc_mainloop, WEB_MAINLOOP_FPS, true)
 
 
 const char* emcc_beforeunload(int, const void*, void* udata)
@@ -967,10 +971,6 @@ int emu::run()
 
     bool running = true;
 
-    if (FIX_WIN32_FIREFOX) {
-        logMESSAGE("Enabled Firefox sleep fix");
-    }
-
     logMESSAGE("Start!");
 
 #ifdef __EMSCRIPTEN__
@@ -1015,9 +1015,6 @@ int emu::run()
             continue;
         }
 
-        // Emulate CPU for 1 frame.
-        emulate_cpu(cpucycles, nframes);
-
 #ifdef __EMSCRIPTEN__
         if (m_resizepending)
         {
@@ -1025,8 +1022,13 @@ int emu::run()
             m_resizepending = false;
         }
 #endif
-        // Draw game.
-        render_screen();
+        if (!(m_gui && m_gui->is_page_visible()))
+        {
+            // Emulate CPU for 1 frame.
+            emulate_cpu(cpucycles, nframes);
+            // Draw game.
+            render_screen();
+        }
 
         // Draw GUI.
         if (m_gui) {
@@ -1049,7 +1051,7 @@ int emu::run()
         nframes++;
     }
 #ifdef __EMSCRIPTEN__
-    EMCC_MAINLOOP_END(FIX_WIN32_FIREFOX ? -1 : 60);
+    EMCC_MAINLOOP_END;
 #endif
 
     // see emcc_beforeunload()
