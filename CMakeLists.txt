@@ -293,10 +293,12 @@ elseif (EMSCRIPTEN)
         "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.wasm"
         "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.data"
         ${CMAKE_BINARY_DIR}/index.html
-        ${CMAKE_BINARY_DIR}/background.jpg
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 
     install(DIRECTORY ${CMAKE_BINARY_DIR}/favicon
+        DESTINATION ${CMAKE_INSTALL_PREFIX})
+
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/assets
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 else()
