@@ -10,6 +10,10 @@
     <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
 
     <style>
+        * {
+            touch-action: none;
+        }
+
         html {
             height: 100%;
             width: 100%;
@@ -43,12 +47,12 @@
 
         #buttons-left {
             display: flex;
-            gap: 10px;
             justify-content: flex-start;
         }
 
         #buttons-right {
             display: flex;
+            gap: 10px;
             justify-content: flex-end;
         }
 
@@ -136,21 +140,37 @@
         <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
         <div id="touch-controls">
             <div id="buttons-left">
-                <img class="touch-button" src="assets/arcade_button.png" />
-                <img class="touch-button" src="assets/arcade_button.png" />
+                <img class="touch-button" id="fire-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
             </div>
             <div id="buttons-right">
-                <img class="touch-button" src="assets/arcade_button.png" />
+                <img class="touch-button" id="left-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
+                <img class="touch-button" id="right-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
             </div>
         </div>
     </div>
+
+    <!--
+    onpointerdown="Module.onPtrFire(true)" onpointerup="Module.onPtrFire(false)"
+    onpointerdown="Module.onPtrLeft(true)" onpointerup="Module.onPtrLeft(false)"
+    onpointerdown="Module.onPtrRight(true)" onpointerup="Module.onPtrRight(false)"
+        -->
 
     <script type='text/javascript'>
         var statusElement = document.getElementById('status');
         var spinnerElement = document.getElementById('spinner');
         var touchCtrlsElement = document.getElementById('touch-controls');
 
+        var criticalError = false;
         const bugReportLink = 'https://github.com/mayawarrier/space_invaders_emulator/issues'
+
+        // keep in sync with the C++ enum!
+        const TouchType = Object.freeze({
+            NONE: 0,
+            TOUCH_EVENTS: 1,
+            POINTER_EVENTS: 2,
+            MS_POINTER_EVENTS: 3,
+            UNKNOWN: 4
+        });
 
         var Module = {
             print: (...args) => console.log(args.join(' ')),
@@ -159,21 +179,59 @@
                 var canvas = document.getElementById('canvas');
 
                 canvas.addEventListener("webglcontextlost", (e) => {
+                    // todo: handle context restore instead of an error, this is a common issue on mobile
                     Module.setErrorStatus('WebGL context lost!<br/>' +
                         'This can occur if GPU load is very high or if there\'s an issue in the GPU driver.<br/>' +
                         'Try closing some tabs and reload the page.<br/>' +
                         'If the issue is persistent, <a href="' + bugReportLink + '">please file a bug report.</a>')
 
                     e.preventDefault();
-                    Module.criticalError = true;
+                    criticalError = true;
                 }, false);
 
                 return canvas;
             })(),
 
             onRuntimeInitialized() {
-                if (Module.touchEnabled()) {
+                var touchType = Module.touchType;
+
+                if (touchType != TouchType.NONE) {
                     touchCtrlsElement.style.display = 'grid';
+
+                    var rightButton = document.getElementById('right-button');
+                    var leftButton = document.getElementById('left-button');
+                    var fireButton = document.getElementById('fire-button');
+
+                    if (touchType == TouchType.TOUCH_EVENTS)
+                    {
+                        rightButton.ontouchstart = (e) => Module.onTouchRight(e, true);
+                        rightButton.ontouchend = (e) => Module.onTouchRight(e, false);
+                        leftButton.ontouchstart = (e) => Module.onTouchLeft(e, true);
+                        leftButton.ontouchend = (e) => Module.onTouchLeft(e, false);
+                        fireButton.ontouchstart = (e) => Module.onTouchFire(e, true);
+                        fireButton.ontouchend = (e) => Module.onTouchFire(e, false);
+                        console.log('Using touch events')
+                    }
+                    else if (touchType == TouchType.POINTER_EVENTS)
+                    {
+                        rightButton.onpointerdown = (e) => Module.onPtrRight(e, true);
+                        rightButton.onpointerup = (e) => Module.onPtrRight(e, false);
+                        leftButton.onpointerdown = (e) => Module.onPtrLeft(e, true);
+                        leftButton.onpointerup = (e) => Module.onPtrLeft(e, false);
+                        fireButton.onpointerdown = (e) => Module.onPtrFire(e, true);
+                        fireButton.onpointerup = (e) => Module.onPtrFire(e, false);
+                        console.log('Using pointer events')
+                    }
+                    else if (touchType == TouchType.MS_POINTER_EVENTS)
+                    {
+                        rightButton.onmspointerdown = (e) => Module.onPtrRight(e, true);
+                        rightButton.onmspointerup = (e) => Module.onPtrRight(e, false);
+                        leftButton.onmspointerdown = (e) => Module.onPtrLeft(e, true);
+                        leftButton.onmspointerup = (e) => Module.onPtrLeft(e, false);
+                        fireButton.onmspointerdown = (e) => Module.onPtrFire(e, true);
+                        fireButton.onmspointerup = (e) => Module.onPtrFire(e, false);
+                        console.log('Using MS pointer events')
+                    }
                 }
             },
 
@@ -201,37 +259,101 @@
             // https://github.com/Modernizr/Modernizr/pull/2432/files
             // https://stackoverflow.com/questions/13225662/
             // https://stackoverflow.com/questions/4817029/
-            touchEnabled: () => {
-                if (window.PointerEvent && 'maxTouchPoints' in navigator) {
-                    return navigator.maxTouchPoints > 0;
+            touchType: (() => {
+                if (false && (window.TouchEvent || 'ontouchstart' in window)) {
+                    return TouchType.TOUCH_EVENTS;
                 }
-                else if (
-                    (window.matchMedia && window.matchMedia("(any-pointer: coarse)").matches) ||
-                    window.TouchEvent || 'ontouchstart' in window) {
-                    return true;
+                else if (window.PointerEvent &&
+                    'maxTouchPoints' in navigator && navigator.maxTouchPoints > 0) {
+                    return TouchType.POINTER_EVENTS;
                 }
-                else if (window.navigator.msPointerEnabled && 'msMaxTouchPoints' in navigator) {
-                    return navigator.msMaxTouchPoints > 0;
+                else if (window.navigator.msPointerEnabled &&
+                    'msMaxTouchPoints' in navigator && navigator.msMaxTouchPoints > 0) {
+                    return TouchType.MS_POINTER_EVENTS;
                 }
-                return false;
+                else if (window.matchMedia && window.matchMedia("(any-pointer: coarse)").matches) {
+                    return TouchType.UNKNOWN;
+                }
+                return TouchType.NONE;
+            })(),
+
+            onPtrFire(e, pressed) {
+                //if (pressed)
+                //    button.setPointerCapture(e.pointerId);
+                //else
+                //    button.releasePointerCapture(e.pointerId);
+
+                Module.ccall('gui_touch_fire', null, ['boolean'], [pressed]);
+                //e.preventDefault();
+                console.log('PTR FIRE');
             },
 
-            criticalError: false
+            onPtrLeft(e, pressed) {
+                //if (pressed)
+                //    button.setPointerCapture(e.pointerId);
+                //else
+                //    button.releasePointerCapture(e.pointerId);
+
+                Module.ccall('gui_touch_left', null, ['boolean'], [pressed]);
+                //e.preventDefault();
+                console.log('PTR LEFT');
+            },
+
+            onPtrRight(e, pressed) {
+                //if (pressed)
+                //    button.setPointerCapture(e.pointerId);
+                //else
+                //    button.releasePointerCapture(e.pointerId);
+            
+                Module.ccall('gui_touch_right', null, ['boolean'], [pressed]);
+                //e.preventDefault();
+                console.log('PTR RIGHT');
+            },
+
+            //onPtrRight(e, pressed) {
+            //    if (pressed) {
+            //        Module.ccall('gui_touch_right', null, ['boolean'], [true]);
+            //        e.preventDefault();
+            //
+            //        setTimeout(() => {
+            //            Module.ccall('gui_touch_right', null, ['boolean'], [false]);
+            //        }, 100);
+            //    } else {
+            //        Module.ccall('gui_touch_right', null, ['boolean'], [false]);
+            //    }
+            //    console.log('PTR RIGHT');
+            //},
+
+
+            onTouchFire(e, pressed) {
+                Module.ccall('gui_touch_fire', null, ['boolean'], [pressed]);
+                e.preventDefault();
+            },
+
+            onTouchLeft(e, pressed) {
+                Module.ccall('gui_touch_left', null, ['boolean'], [pressed]);
+                e.preventDefault();
+            },
+
+            onTouchRight(e, pressed) {
+                Module.ccall('gui_touch_right', null, ['boolean'], [pressed]);
+                e.preventDefault();
+            }
         };
 
         Module.setStatus('Loading...');
 
         window.onerror = (event) => {
-            // TODO: do not warn on okay events (infinite loop or exitStatus)
+            // todo: do not warn on okay events (infinite loop or exitStatus)
             Module.setErrorStatus('Internal error. <a href="' + bugReportLink + '">Please file a bug report.</a>');
             Module.setStatus = (text) => {
                 if (text) console.error('[post-exception status] ' + text);
             };
-            Module.criticalError = true;
+            criticalError = true;
         };
 
         window.addEventListener('beforeunload', () => {
-            if (Module.criticalError) {
+            if (criticalError) {
                 localStorage.setItem('reloadNeeded', true)
             }
         });
