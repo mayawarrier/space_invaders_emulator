@@ -561,7 +561,6 @@ emu::emu(const fs::path& inipath) :
     m_viewporttex(nullptr),
     m_volume(0),
     m_touchenabled(touch_supported()),
-    m_touch_evt_base(uint32_t(-1)),
 #ifdef __EMSCRIPTEN__
     m_resizepending(false),
 #endif
@@ -594,10 +593,14 @@ emu::emu(const fs::path& inipath,
         return;
     }
 
-    m_touch_evt_base = SDL_RegisterEvents(NUM_TOUCHINPUTS);
-    if (m_touch_evt_base == uint32_t(-1)) {
-        logERROR("SDL_RegisterEvents(): %s", SDL_GetError());
-        return;
+    if (m_touchenabled) {
+        logMESSAGE("Enabled touch controls");
+        
+#ifdef __EMSCRIPTEN__
+        char* touch_str = (char*)EM_ASM_PTR({ return Module.touchTypeString(); });
+        logMESSAGE("Touch control type: %s", touch_str);
+        std::free(touch_str);
+#endif
     }
 
     m.cpu.mem_read = cpu_mem_read;
@@ -958,131 +961,37 @@ bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
 }
 #endif
 
-void emu::send_touch(touchinput inp, bool pressed, bool queue)
+void emu::send_touch(touchinput inp, bool pressed)
 {
-    if (queue)
-    {
-        // push event to event queue, will be handled
-        // at the start of the frame
-        SDL_Event event;
-        SDL_zero(event);
-        event.type = m_touch_evt_base + inp;
-        event.user.code = int(pressed);
-        event.user.data1 = nullptr;
-        event.user.data2 = nullptr;
-
-        SDL_PushEvent(&event);
-
-        logMESSAGE("Pushed event %d", event.type);
-    }
-    else {
-        m_touchpressed[inp] = pressed;
-    }
+    m_touchpressed[inp] = pressed;
 }
-
-//EM_JS(void, get_element_at_mouse, (int x, int y, char* buffer, int bufferSize), {
-//    const element = document.elementFromPoint(x, y);
-//    if (element) {
-//        const id = element.id || element.tagName || ""; // Use the ID or tag name of the element
-//        stringToUTF8(id, buffer, bufferSize);          // Write it to the provided buffer
-//    }
-//     else {
-//      stringToUTF8("", buffer, bufferSize);          // Write an empty string if no element found
-//    }
-//});
-//
-//std::string getElementUnderMouse(int x, int y) {
-//    char buffer[256]; // Buffer to hold the element ID or tag name
-//    get_element_at_mouse(x, y, buffer, sizeof(buffer));
-//    return std::string(buffer);
-//}
 
 bool emu::process_events()
 {
-    //std::fill_n(m_touchpressed.begin(), NUM_TOUCHINPUTS, false);
-
-    //if (m_touchpressed[TOUCH_INPUT_RIGHT]) {
-    //    logMESSAGE("touch pressed right: %s", m_touchpressed[TOUCH_INPUT_RIGHT] ? "RIGHT!!!!!" : "");
-    //}
-    //if (m_touchpressed[TOUCH_INPUT_LEFT]) {
-    //    logMESSAGE("touch pressed left: %s", m_touchpressed[TOUCH_INPUT_LEFT] ? "LEFT!!!!!" : "");
-    //}
-    //if (m_touchpressed[TOUCH_INPUT_FIRE]) {
-    //    logMESSAGE("touch pressed fire: %s", m_touchpressed[TOUCH_INPUT_FIRE] ? "FIRE!!!!!" : "");
-    //}
-
-    //int mouseX, mouseY; 
-    //Uint32 mouseState = SDL_GetMouseState(&mouseX, &mouseY);
-    //
-    //// Check if the left mouse button is pressed
-    //if (mouseState & SDL_BUTTON(SDL_BUTTON_LEFT)) {
-    //    std::string element = getElementUnderMouse(mouseX, mouseY);
-    //    if (!element.empty()) {
-    //        //std::cout << "Mouse pressed on element: " << element << " at (" << mouseX << ", " << mouseY << ")\n";
-    //        logMESSAGE("Mouse pressed, %s\n", element.c_str());
-    //    }
-    //    else {
-    //        logMESSAGE("Mouse pressed (?)\n");
-    //    }
-    //    //}
-    //    //else {
-    //    //    std::cout << "Mouse pressed at (" << mouseX << ", " << mouseY << ") but no specific element //detected.//\n";
-    //    //}
-    //}
-    
-    bool any_event = false;
     SDL_Event event;
     while (SDL_PollEvent(&event)) 
     {
-        
-
-        if (event.type >= m_touch_evt_base &&
-            event.type < m_touch_evt_base + NUM_TOUCHINPUTS) {
-            logMESSAGE("Received event %d with pressed=%d", event.type, event.user.code);
-            m_touchpressed[event.type - m_touch_evt_base] = (event.user.code != 0);
+        gui_captureinfo evt_capture;
+        if (m_gui) {
+            m_gui->process_event(&event, evt_capture);
         }
-        else {
-            gui_captureinfo evt_capture;
-            if (m_gui) {
-                m_gui->process_event(&event, evt_capture);
+
+        switch (event.type)
+        {
+        case SDL_QUIT:
+            return false;
+
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:
+            if (!evt_capture.capture_keyboard) {
+                auto scancode = event.key.keysym.scancode;
+                m_keypressed[scancode] = (event.type == SDL_KEYDOWN);
             }
+            break;
 
-            switch (event.type)
-            {
-            case SDL_QUIT:
-                return false;
-
-            case SDL_KEYDOWN:
-            case SDL_KEYUP:
-                if (!evt_capture.capture_keyboard) {
-                    auto scancode = event.key.keysym.scancode;
-                    m_keypressed[scancode] = (event.type == SDL_KEYDOWN);
-                }
-                break;
-
-            //case SDL_MOUSEMOTION:
-            //    logMESSAGE("Mouse Motion: x=%d, y=%d, xrel=%d, yrel=%d", event.motion.x, event.motion.y, event.motion.xrel, event.motion.yrel);
-            //    break;
-
-            case SDL_MOUSEBUTTONDOWN:
-            case SDL_MOUSEBUTTONUP:
-                logMESSAGE("Mouse Button: button=%d, state=%s, clicks=%d, x=%d, y=%d", event.button.button, event.button.state == SDL_PRESSED ? "Down!!!!!!!!!" : "Up", event.button.clicks, event.button.x, event.button.y);
-                any_event = true;
-                break;
-
-            case SDL_MOUSEWHEEL:
-                logMESSAGE("Mouse Wheel: x=%d, y=%d, direction=%d", event.wheel.x, event.wheel.y, event.wheel.direction);
-                break;
-
-            default: break;
-            }
+        default: break;
         }
     }
-
-    if (any_event) {
-        logMESSAGE("Done events, Game will pick up previous events");
-    }
-
 #ifdef __EMSCRIPTEN__
     if (m_resizepending)
     {
@@ -1116,50 +1025,6 @@ int emu::run()
         logERROR("Failed to set window resize callback");
         return -1;
     }
-
-    /*
-    emscripten_set_touchstart_callback("#canvas", this, true,
-        [](int, const EmscriptenTouchEvent* evt, void* udata) -> EM_BOOL {
-            //auto emu = static_cast<emu*>(udata);
-            for (int i = 0; i < evt->numTouches; ++i) {
-                //emu->send_touch(TOUCH_INPUT_FIRE, true, false);
-                logMESSAGE("Touch start: %d, %d", evt->touches[i].canvasX, evt->touches[i].canvasY);
-            }
-            return true;
-        });
-
-    emscripten_set_touchend_callback("#canvas", this, true,
-        [](int, const EmscriptenTouchEvent* evt, void* udata) -> EM_BOOL {
-            //auto emu = static_cast<emu*>(udata);
-            for (int i = 0; i < evt->numTouches; ++i) {
-                //emu->send_touch(TOUCH_INPUT_FIRE, false, false);
-                logMESSAGE("Touch end: %d, %d", evt->touches[i].canvasX, evt->touches[i].canvasY);
-            }
-            return true;
-        });
-        */
-
-    /*
-    emscripten_set_mousedown_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, this, true,
-        [](int, const EmscriptenMouseEvent* evt, void* udata) -> EM_BOOL {
-            //auto emu = static_cast<emu*>(udata);
-            if (evt->button == 0) {
-                logMESSAGE("Mouse down");
-                //emu->send_touch(TOUCH_INPUT_FIRE, true, false);
-            }
-            return true;
-        });
-
-    emscripten_set_mouseup_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, this, true,
-        [](int, const EmscriptenMouseEvent* evt, void* udata) -> EM_BOOL {
-            //auto emu = static_cast<emu*>(udata);
-            if (evt->button == 0) {
-                logMESSAGE("Mouse up");
-                //emu->send_touch(TOUCH_INPUT_FIRE, false, false);
-            }
-            return true;
-        });
-        */
 #endif
 
     logMESSAGE("Start!");

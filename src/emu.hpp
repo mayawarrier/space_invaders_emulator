@@ -106,7 +106,7 @@ struct emu_interface
     void set_volume(int volume);
 
     bool touch_enabled() const;
-    void send_touch(touchinput inp, bool pressed, bool queue);
+    void send_touch(touchinput inp, bool pressed);
 
     std::array<SDL_Scancode, NUM_INPUTS>& input2keymap();
 
@@ -159,7 +159,7 @@ private:
     int resize_window();
 
     bool process_events();
-    void send_touch(touchinput inp, bool pressed, bool queue);
+    void send_touch(touchinput inp, bool pressed);
     
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
@@ -181,7 +181,6 @@ private:
     int m_volume;
 
     bool m_touchenabled;
-    uint32_t m_touch_evt_base;
     std::array<bool, NUM_TOUCHINPUTS> m_touchpressed;
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
     std::array<SDL_Scancode, NUM_INPUTS> m_input2key;
@@ -213,8 +212,8 @@ inline bool emu_interface::touch_enabled() const {
     return m_emu->m_touchenabled;
 }
 
-inline void emu_interface::send_touch(touchinput inp, bool pressed, bool queue) {
-    m_emu->send_touch(inp, pressed, queue);
+inline void emu_interface::send_touch(touchinput inp, bool pressed) {
+    m_emu->send_touch(inp, pressed);
 }
 
 inline std::array<SDL_Scancode, NUM_INPUTS>& emu_interface::input2keymap() {

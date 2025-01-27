@@ -615,50 +615,27 @@ void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_renderer);
 
     m_frame_lastkeypress = SDL_SCANCODE_UNKNOWN;
-
-
     m_drawingframe = false;
 }
 
-
-
 #ifdef __EMSCRIPTEN__
 
-void emcc_queue_touch(touchinput inp, bool pressed)
+void send_touch(emu_gui* gui, touchinput inp, bool pressed) 
 {
-    //if (pressed)
-        GUI->m_emu.send_touch(inp, pressed, false);
+    if (gui->m_emu.touch_enabled()) {
+        gui->m_emu.send_touch(inp, pressed);
+    }
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_fire(bool pressed) {
+    send_touch(GUI, TOUCH_INPUT_FIRE, pressed);
 }
 
-// Since an input can arrive at any time during the emscripten main loop,
-// it has to be buffered and delivered at the end of the frame.
-// The ROM can only handle one press per input per frame,
-// so no queue is needed.
-
-extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_fire(bool pressed)
-{
-    //logMESSAGE("Fire button clicked %d", pressed);
-    //GUI->touchqueue().push(pressed ? TOUCH_FIRE_DOWN : TOUCH_FIRE_UP);
-    //gui_buf_touchinput(GUI, TOUCH_INPUT_FIRE, pressed);
-    emcc_queue_touch(TOUCH_INPUT_FIRE, pressed);
-    
-
-    //auto key = GUI->m_emu.input2keymap()[INPUT_P1_FIRE]
-    //GUI->m_emu.keypressed()[key] = true;
+extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_left(bool pressed) {
+    send_touch(GUI, TOUCH_INPUT_LEFT, pressed);
 }
 
-extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_left(bool pressed)
-{
-    //logMESSAGE("Left button clicked %d", pressed);
-    //gui_buf_touchinput(GUI, TOUCH_INPUT_LEFT, pressed);
-    emcc_queue_touch(TOUCH_INPUT_LEFT, pressed);
-}
-
-extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_right(bool pressed)
-{
-    //logMESSAGE("Right button clicked %d", pressed);
-    //gui_buf_touchinput(GUI, TOUCH_INPUT_RIGHT, pressed);
-    emcc_queue_touch(TOUCH_INPUT_RIGHT, pressed);
+extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_right(bool pressed) {
+    send_touch(GUI, TOUCH_INPUT_RIGHT, pressed);
 }
 #endif 
 
@@ -687,7 +664,7 @@ int demo_window()
 
     ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer2_Init(renderer);
-
+    
     bool running = true;
     bool show_demo_window = true;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);

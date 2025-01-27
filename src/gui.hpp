@@ -103,7 +103,7 @@ private:
     ImFont* get_font_vh(float vmin, SDL_Point disp_size) const;
 
 #ifdef __EMSCRIPTEN__
-    friend void emcc_queue_touch(touchinput inp, bool pressed);
+    friend void send_touch(emu_gui* gui, touchinput inp, bool pressed);
 #endif
 
 private:
