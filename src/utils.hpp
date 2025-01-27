@@ -96,10 +96,6 @@ using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
 #define SAFE_FOPEN(fname, mode) SAFE_FOPENA(fname, mode)
 #endif
 
-// Read entire file.
-bool read_file(const fs::path& path, std::unique_ptr<char[]>& filedata, size_t& filesize);
-
-
 // this has good codegen
 template <typename T>
 inline void set_bit(T* ptr, int bit, bool val)
@@ -113,11 +109,11 @@ inline bool get_bit(T word, int bit)
     return (word & (0x1 << bit)) != 0;
 }
 
-constexpr SDL_Point sdl_point_add(SDL_Point a, SDL_Point b)
+constexpr SDL_Point sdl_ptadd(SDL_Point a, SDL_Point b)
 {
     return { a.x + b.x, a.y + b.y };
 }
-constexpr SDL_Point sdl_point_sub(SDL_Point a, SDL_Point b)
+constexpr SDL_Point sdl_ptsub(SDL_Point a, SDL_Point b)
 {
     return { a.x - b.x, a.y - b.y };
 }
@@ -252,8 +248,10 @@ struct inireader
 private:
     emscripten::val get_emcc_value(std::string_view section, std::string_view key)
     {
-        return m_storage.call<emscripten::val>("getItem", 
-            concat_sv_to_str({ section, "_", key}));
+        return m_storage.call<emscripten::val>(
+            "getItem", 
+            concat_sv_to_str({ section, "_", key })
+        );
     }
 private:
     emscripten::val m_storage;
@@ -265,8 +263,6 @@ struct iniwriter
         m_storage = emscripten::val::global("localStorage");
     }
 
-    bool flush() { return true; }
-
     bool write_section(std::string_view name) { 
         m_section = name; 
         return true; 
@@ -274,10 +270,16 @@ struct iniwriter
 
     bool write_keyvalue(std::string_view key, std::string_view value)
     {
-        m_storage.call<void>("setItem",
-            concat_sv_to_str({ m_section, "_", key }), std::string(value));
+        m_storage.call<void>(
+            "setItem",
+            concat_sv_to_str({ m_section, "_", key }), 
+            std::string(value)
+        );
         return true;
     }
+
+    bool flush() { return true; }
+
 private:
     emscripten::val m_storage;
     std::string m_section;

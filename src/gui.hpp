@@ -5,19 +5,20 @@
 #include <SDL.h>
 #include <imgui.h>
 #include <cmath>
+#include <queue>
 
 #include "utils.hpp"
 #include "emu.hpp"
 
 
-enum gui_panel_t
+enum gui_panel
 {
     PANEL_NONE,
     PANEL_SETTINGS,
     PANEL_ABOUT
 };
 
-enum gui_align_t
+enum gui_align
 {
     ALIGN_LEFT,
     ALIGN_RIGHT,
@@ -66,14 +67,15 @@ struct emu_gui
 
     bool ok() const { return m_ok; }
 
+    // Process an input event.
     bool process_event(const SDL_Event* event, gui_captureinfo& out_capture);
 
     // Get size/layout info for a frame drawn 
     // at the given display size.
-    gui_sizeinfo get_sizeinfo(SDL_Point disp_size) const;
+    gui_sizeinfo frame_sizeinfo(SDL_Point disp_size) const;
 
-    // Render GUI for one frame.
-    void render(SDL_Point display_size, const SDL_Rect& viewport);
+    // Run GUI for one frame.
+    void run(SDL_Point display_size, const SDL_Rect& viewport);
 
     // Check if a GUI page is currently visible.
     bool is_page_visible() const { return m_cur_panel != PANEL_NONE; }
@@ -92,13 +94,17 @@ private:
     void draw_panel(const char* title, 
         const SDL_Rect& viewport, void(emu_gui::*draw_content)());
 
-    void draw_inputkey(const char* label, inputtype inptype,
-        gui_align_t align = ALIGN_LEFT, float labelsizeX = -1);
+    void draw_inputkey(const char* label, input inptype,
+        gui_align align = ALIGN_LEFT, float labelsizeX = -1);
 
     int init_fontatlas();
 
     ImFont* get_font_px(int size) const;
     ImFont* get_font_vh(float vmin, SDL_Point disp_size) const;
+
+#ifdef __EMSCRIPTEN__
+    friend void emcc_queue_touch(touchinput inp, bool pressed);
+#endif
 
 private:
     emu_interface m_emu;
@@ -108,12 +114,12 @@ private:
     int m_cur_panel;
     int m_fps;
 
-    SDL_Scancode m_lastkeypress; // cur frame
-    bool m_inputkey_focused[INPUT_NUM_INPUTS];
+    SDL_Scancode m_frame_lastkeypress; // cur frame
+    bool m_inputkey_focused[NUM_INPUTS];
 
-    bool m_drawingframe;
-    bool m_touchenabled;
     bool m_anykeypress;
+    bool m_drawingframe;
+    
     bool m_ok;
 };
 

@@ -154,23 +154,6 @@ void logMESSAGE(const char* fmt, ...)
 #endif
 }
 
-bool read_file(const fs::path& path, std::unique_ptr<char[]>& filedata, size_t& filesize)
-{
-    scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
-    if (!file) {
-        logERROR("Could not open file %s", path.string().c_str());
-        return false;
-    }
-    filesize = size_t(fs::file_size(path));
-    filedata = std::make_unique<char[]>(filesize);
-
-    if (std::fread(filedata.get(), 1, filesize, file.get()) != filesize) {
-        logERROR("Could not read from file %s", path.string().c_str());
-        return false;
-    }
-    return true;
-}
-
 #ifndef __EMSCRIPTEN__
 
 static std::string_view trim(std::string_view str)
@@ -205,8 +188,16 @@ static bool getline_v(std::string_view& src, std::string_view& line)
 inireader::inireader(const fs::path& path) :
     m_pathstr(path.string()), m_ok(false)
 {
-    size_t filesize;
-    if (!read_file(path, m_filebuf, filesize)) {
+    scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
+    if (!file) {
+        logERROR("Could not open file %s", path.string().c_str());
+        return;
+    }
+    size_t filesize = size_t(fs::file_size(path));
+    m_filebuf = std::make_unique<char[]>(filesize);
+
+    if (std::fread(m_filebuf.get(), 1, filesize, file.get()) != filesize) {
+        logERROR("Could not read from file %s", path.string().c_str());
         return;
     }
 

@@ -24,7 +24,7 @@
 #define VOLUME_DEFAULT 50
 
 
-enum inputtype
+enum input : uint8_t
 {
     INPUT_P1_LEFT,
     INPUT_P1_RIGHT,
@@ -38,7 +38,16 @@ enum inputtype
     INPUT_2P_START,
     INPUT_CREDIT,
 
-    INPUT_NUM_INPUTS
+    NUM_INPUTS
+};
+
+enum touchinput : uint32_t
+{
+    TOUCH_INPUT_LEFT,
+    TOUCH_INPUT_RIGHT,
+    TOUCH_INPUT_FIRE,
+
+    NUM_TOUCHINPUTS
 };
 
 struct machine
@@ -96,7 +105,10 @@ struct emu_interface
     int get_volume() const;
     void set_volume(int volume);
 
-    std::array<SDL_Scancode, INPUT_NUM_INPUTS>& input2keymap();
+    bool touch_enabled() const;
+    void send_touch(touchinput inp, bool pressed, bool queue);
+
+    std::array<SDL_Scancode, NUM_INPUTS>& input2keymap();
 
 private:
     emu* m_emu;
@@ -127,7 +139,7 @@ struct emu
     
 #ifdef __EMSCRIPTEN__
     friend bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata);
-    friend const char* emcc_beforeunload(int, const void*, void* udata);
+    friend const char* emcc_saveprefs_beforeunload(int, const void*, void* udata);
 #endif
     friend emu_interface;
 
@@ -145,6 +157,9 @@ private:
     int save_prefs();
 
     int resize_window();
+
+    bool process_events();
+    void send_touch(touchinput inp, bool pressed, bool queue);
     
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
@@ -165,8 +180,11 @@ private:
     std::unique_ptr<emu_gui> m_gui;
     int m_volume;
 
+    bool m_touchenabled;
+    uint32_t m_touch_evt_base;
+    std::array<bool, NUM_TOUCHINPUTS> m_touchpressed;
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
-    std::array<SDL_Scancode, INPUT_NUM_INPUTS> m_input2key;
+    std::array<SDL_Scancode, NUM_INPUTS> m_input2key;
 
 #ifdef __EMSCRIPTEN__
     bool m_resizepending;
@@ -191,7 +209,15 @@ inline void emu_interface::set_volume(int volume) {
     m_emu->set_volume(volume); 
 }
 
-inline std::array<SDL_Scancode, INPUT_NUM_INPUTS>& emu_interface::input2keymap() {
+inline bool emu_interface::touch_enabled() const {
+    return m_emu->m_touchenabled;
+}
+
+inline void emu_interface::send_touch(touchinput inp, bool pressed, bool queue) {
+    m_emu->send_touch(inp, pressed, queue);
+}
+
+inline std::array<SDL_Scancode, NUM_INPUTS>& emu_interface::input2keymap() {
     return m_emu->m_input2key; 
 }
 

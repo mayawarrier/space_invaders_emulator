@@ -59,7 +59,8 @@ endif()
 
 if (EMSCRIPTEN)
     set_target_properties(spaceinvaders PROPERTIES LINK_FLAGS "\
-        -s ALLOW_MEMORY_GROWTH=1\
+        -sALLOW_MEMORY_GROWTH=1\
+        -sEXPORTED_RUNTIME_METHODS=ccall\
         -lembind\
         --preload-file data/")
 endif()

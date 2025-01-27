@@ -32,6 +32,11 @@ static constexpr color SUBHDR_BGCOLOR = HEADER_BGCOLOR.brighter(50);
 #define HDR_FONT_VH 2.5
 #endif
 
+// For emscripten there can only be one window
+#ifdef __EMSCRIPTEN__
+static emu_gui* GUI = nullptr;
+#endif
+
 int emu_gui::init_fontatlas()
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -78,15 +83,18 @@ emu_gui::emu_gui(
     m_fonts({ nullptr, nullptr, nullptr }),
     m_cur_panel(PANEL_NONE),
     m_fps(-1),
-    m_lastkeypress(SDL_SCANCODE_UNKNOWN),
-    m_drawingframe(false),
-    m_touchenabled(false),
+    m_frame_lastkeypress(SDL_SCANCODE_UNKNOWN),
     m_anykeypress(false),
+    m_drawingframe(false),
     m_ok(false)
 {
     //demo_window();
 
-    std::fill_n(m_inputkey_focused, INPUT_NUM_INPUTS, false);
+#ifdef __EMSCRIPTEN__
+    GUI = this;
+#endif
+
+    std::fill_n(m_inputkey_focused, NUM_INPUTS, false);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -103,12 +111,6 @@ emu_gui::emu_gui(
     if (init_fontatlas() != 0) {
         return;
     }
-
-#ifdef __EMSCRIPTEN__
-    m_touchenabled = EM_ASM_INT(return Module.touchEnabled());
-#else
-    m_touchenabled = false;
-#endif
     m_ok = true;
 }
 
@@ -127,7 +129,7 @@ void emu_gui::log_dbginfo()
 bool emu_gui::process_event(const SDL_Event* e, gui_captureinfo& out_ci)
 {
     if (e->type == SDL_KEYUP) {
-        m_lastkeypress = e->key.keysym.scancode;
+        m_frame_lastkeypress = e->key.keysym.scancode;
         m_anykeypress = true;
     }
     bool ret = ImGui_ImplSDL2_ProcessEvent(e); 
@@ -174,7 +176,7 @@ static void draw_rtalign_text(const char* fmt, Args&&... args)
     ImGui::TextUnformatted(ptxt);
 }
 
-static void draw_header(const char* title, color colr, gui_align_t align = ALIGN_LEFT)
+static void draw_header(const char* title, color colr, gui_align align = ALIGN_LEFT)
 {
     ImVec2 dpos = ImGui::GetCursorScreenPos();
     ImVec2 wndsize = ImGui::GetWindowSize();
@@ -201,7 +203,7 @@ static void draw_header(const char* title, color colr, gui_align_t align = ALIGN
     ImGui::TextUnformatted(title);
 }
 
-static void draw_subheader(const char* title, color colr, gui_align_t align = ALIGN_LEFT)
+static void draw_subheader(const char* title, color colr, gui_align align = ALIGN_LEFT)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, ImGui::GetStyle().WindowPadding.y));
     draw_header(title, colr, align);
@@ -272,7 +274,7 @@ static bool draw_dip_switch(int index, bool value, float draw_width = -1)
     return value;
 }
 
-void emu_gui::draw_inputkey(const char* label, inputtype inptype, gui_align_t align, float labelsizeX)
+void emu_gui::draw_inputkey(const char* label, input inptype, gui_align align, float labelsizeX)
 {
     SDL_assert(align == ALIGN_LEFT || align == ALIGN_RIGHT);
 
@@ -320,10 +322,10 @@ void emu_gui::draw_inputkey(const char* label, inputtype inptype, gui_align_t al
     draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), dpos + style.FramePadding, 
         ImGui::GetColorU32(ImGuiCol_Text), SDL_GetScancodeName(key));
 
-    if (focused && m_lastkeypress != SDL_SCANCODE_UNKNOWN) {
-        key = m_lastkeypress;
-        m_lastkeypress = SDL_SCANCODE_UNKNOWN; // consume
-    }
+    if (focused && m_frame_lastkeypress != SDL_SCANCODE_UNKNOWN) {
+        key = m_frame_lastkeypress;
+        m_frame_lastkeypress = SDL_SCANCODE_UNKNOWN; // consume
+    } 
 
     // update for next frame
     if (next_frame_unfocused) {
@@ -336,7 +338,7 @@ void emu_gui::draw_inputkey(const char* label, inputtype inptype, gui_align_t al
     ImGui::TextUnformatted(label);
 }
 
-static int draw_volume_slider(const char* label, int volume, gui_align_t align = ALIGN_LEFT)
+static int draw_volume_slider(const char* label, int volume, gui_align align = ALIGN_LEFT)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(7, 7));
 
@@ -393,6 +395,7 @@ void emu_gui::draw_settings_content()
         float sw_width = 2 * ImGui::GetFrameHeight();
         float all_sw_width = 5 * sw_width + 4 * sw_spacingX;
         float sw_startposX = (ImGui::GetWindowSize().x - all_sw_width) / 2;
+        
         ImGui::SetCursorPosX(sw_startposX);
 
         float sw_txtpos[5];
@@ -451,7 +454,7 @@ void emu_gui::draw_settings_content()
     }
     
     // Controls section
-    if (!m_touchenabled || m_anykeypress)
+    if (!m_emu.touch_enabled() || m_anykeypress)
     {
         ImGui::PushFont(m_fonts.subhdr_font);
         draw_subheader("Controls", SUBHDR_BGCOLOR);
@@ -459,7 +462,7 @@ void emu_gui::draw_settings_content()
 
         ImGui::NewLine();
 
-        constexpr std::pair<const char*, inputtype> inputs[INPUT_NUM_INPUTS]
+        constexpr std::pair<const char*, input> inputs[NUM_INPUTS]
         {
             { "Player 1 Left ", INPUT_P1_LEFT },
             { "Player 1 Right", INPUT_P1_RIGHT },
@@ -477,7 +480,7 @@ void emu_gui::draw_settings_content()
             labelsizeX = std::max(labelsizeX, ImGui::CalcTextSize(inp.first).x);
         }
 
-        for (int i = 1; i <= INPUT_NUM_INPUTS; ++i)
+        for (int i = 1; i <= NUM_INPUTS; ++i)
         {
             auto& inp = inputs[i - 1];
             draw_inputkey(inp.first, inp.second, ALIGN_LEFT, labelsizeX);
@@ -543,7 +546,7 @@ void emu_gui::draw_panel(const char* title, const SDL_Rect& viewport, void(emu_g
     } 
 }
 
-gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
+gui_sizeinfo emu_gui::frame_sizeinfo(SDL_Point disp_size) const
 {
     SDL_assert(!m_drawingframe);
 
@@ -551,7 +554,7 @@ gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
         get_font_vh_size(TXT_FONT_VH, disp_size) + // text
         int(ImGui::GetStyle().FramePadding.y * 2.0f);  // padding
 
-    float resv_outwnd_ypct = is_emscripten() && m_touchenabled ? 0.25f : 0.1f;
+    float resv_outwnd_ypct = is_emscripten() && m_emu.touch_enabled() ? 0.25f : 0.1f;
     int resv_outwndY = int(std::lroundf(resv_outwnd_ypct * disp_size.y));
 
     return {
@@ -561,7 +564,7 @@ gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
     };
 }
  
-void emu_gui::render(SDL_Point disp_size, const SDL_Rect& viewport)
+void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
 {
     m_drawingframe = true;
 
@@ -606,15 +609,58 @@ void emu_gui::render(SDL_Point disp_size, const SDL_Rect& viewport)
     default: break;
     }
 
-    m_lastkeypress = SDL_SCANCODE_UNKNOWN;
-
     ImGui::PopFont();
 
     ImGui::Render();
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_renderer);
 
+    m_frame_lastkeypress = SDL_SCANCODE_UNKNOWN;
+
+
     m_drawingframe = false;
 }
+
+
+
+#ifdef __EMSCRIPTEN__
+
+void emcc_queue_touch(touchinput inp, bool pressed)
+{
+    //if (pressed)
+        GUI->m_emu.send_touch(inp, pressed, false);
+}
+
+// Since an input can arrive at any time during the emscripten main loop,
+// it has to be buffered and delivered at the end of the frame.
+// The ROM can only handle one press per input per frame,
+// so no queue is needed.
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_fire(bool pressed)
+{
+    //logMESSAGE("Fire button clicked %d", pressed);
+    //GUI->touchqueue().push(pressed ? TOUCH_FIRE_DOWN : TOUCH_FIRE_UP);
+    //gui_buf_touchinput(GUI, TOUCH_INPUT_FIRE, pressed);
+    emcc_queue_touch(TOUCH_INPUT_FIRE, pressed);
+    
+
+    //auto key = GUI->m_emu.input2keymap()[INPUT_P1_FIRE]
+    //GUI->m_emu.keypressed()[key] = true;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_left(bool pressed)
+{
+    //logMESSAGE("Left button clicked %d", pressed);
+    //gui_buf_touchinput(GUI, TOUCH_INPUT_LEFT, pressed);
+    emcc_queue_touch(TOUCH_INPUT_LEFT, pressed);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_right(bool pressed)
+{
+    //logMESSAGE("Right button clicked %d", pressed);
+    //gui_buf_touchinput(GUI, TOUCH_INPUT_RIGHT, pressed);
+    emcc_queue_touch(TOUCH_INPUT_RIGHT, pressed);
+}
+#endif 
 
 #ifndef IMGUI_DISABLE_DEMO_WINDOWS
 int demo_window()
@@ -692,3 +738,4 @@ int demo_window()
 #endif
 
 POP_WARNINGS
+
