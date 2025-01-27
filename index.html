@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>Loading...</title>
 
     <link rel="icon" href="favicon/favicon.ico">
@@ -149,12 +150,6 @@
         </div>
     </div>
 
-    <!--
-    onpointerdown="Module.onPtrFire(true)" onpointerup="Module.onPtrFire(false)"
-    onpointerdown="Module.onPtrLeft(true)" onpointerup="Module.onPtrLeft(false)"
-    onpointerdown="Module.onPtrRight(true)" onpointerup="Module.onPtrRight(false)"
-        -->
-
     <script type='text/javascript'>
         var statusElement = document.getElementById('status');
         var spinnerElement = document.getElementById('spinner');
@@ -163,13 +158,11 @@
         var criticalError = false;
         const bugReportLink = 'https://github.com/mayawarrier/space_invaders_emulator/issues'
 
-        // keep in sync with the C++ enum!
         const TouchType = Object.freeze({
-            NONE: 0,
+            NONE: 0, // must always be 0
             TOUCH_EVENTS: 1,
             POINTER_EVENTS: 2,
-            MS_POINTER_EVENTS: 3,
-            UNKNOWN: 4
+            MS_POINTER_EVENTS: 3
         });
 
         var Module = {
@@ -202,35 +195,36 @@
                     var leftButton = document.getElementById('left-button');
                     var fireButton = document.getElementById('fire-button');
 
-                    if (touchType == TouchType.TOUCH_EVENTS)
+                    switch (touchType)
                     {
-                        rightButton.ontouchstart = (e) => Module.onTouchRight(e, true);
-                        rightButton.ontouchend = (e) => Module.onTouchRight(e, false);
-                        leftButton.ontouchstart = (e) => Module.onTouchLeft(e, true);
-                        leftButton.ontouchend = (e) => Module.onTouchLeft(e, false);
-                        fireButton.ontouchstart = (e) => Module.onTouchFire(e, true);
-                        fireButton.ontouchend = (e) => Module.onTouchFire(e, false);
-                        console.log('Using touch events')
-                    }
-                    else if (touchType == TouchType.POINTER_EVENTS)
-                    {
-                        rightButton.onpointerdown = (e) => Module.onPtrRight(e, true);
-                        rightButton.onpointerup = (e) => Module.onPtrRight(e, false);
-                        leftButton.onpointerdown = (e) => Module.onPtrLeft(e, true);
-                        leftButton.onpointerup = (e) => Module.onPtrLeft(e, false);
-                        fireButton.onpointerdown = (e) => Module.onPtrFire(e, true);
-                        fireButton.onpointerup = (e) => Module.onPtrFire(e, false);
-                        console.log('Using pointer events')
-                    }
-                    else if (touchType == TouchType.MS_POINTER_EVENTS)
-                    {
-                        rightButton.onmspointerdown = (e) => Module.onPtrRight(e, true);
-                        rightButton.onmspointerup = (e) => Module.onPtrRight(e, false);
-                        leftButton.onmspointerdown = (e) => Module.onPtrLeft(e, true);
-                        leftButton.onmspointerup = (e) => Module.onPtrLeft(e, false);
-                        fireButton.onmspointerdown = (e) => Module.onPtrFire(e, true);
-                        fireButton.onmspointerup = (e) => Module.onPtrFire(e, false);
-                        console.log('Using MS pointer events')
+                        case TouchType.TOUCH_EVENTS:
+                            rightButton.ontouchstart = (e) => Module.onTouchRight(e, true);
+                            rightButton.ontouchend = (e) => Module.onTouchRight(e, false);
+                            leftButton.ontouchstart = (e) => Module.onTouchLeft(e, true);
+                            leftButton.ontouchend = (e) => Module.onTouchLeft(e, false);
+                            fireButton.ontouchstart = (e) => Module.onTouchFire(e, true);
+                            fireButton.ontouchend = (e) => Module.onTouchFire(e, false);
+                            break;
+
+                        case TouchType.POINTER_EVENTS:
+                            rightButton.onpointerdown = (e) => Module.onTouchRight(e, true);
+                            rightButton.onpointerup = (e) => Module.onTouchRight(e, false);
+                            leftButton.onpointerdown = (e) => Module.onTouchLeft(e, true);
+                            leftButton.onpointerup = (e) => Module.onTouchLeft(e, false);
+                            fireButton.onpointerdown = (e) => Module.onTouchFire(e, true);
+                            fireButton.onpointerup = (e) => Module.onTouchFire(e, false);
+                            break;
+
+                        case TouchType.MS_POINTER_EVENTS:
+                            rightButton.onmspointerdown = (e) => Module.onTouchRight(e, true);
+                            rightButton.onmspointerup = (e) => Module.onTouchRight(e, false);
+                            leftButton.onmspointerdown = (e) => Module.onTouchLeft(e, true);
+                            leftButton.onmspointerup = (e) => Module.onTouchLeft(e, false);
+                            fireButton.onmspointerdown = (e) => Module.onTouchFire(e, true);
+                            fireButton.onmspointerup = (e) => Module.onTouchFire(e, false);
+                            break;
+
+                        default: break;
                     }
                 }
             },
@@ -260,70 +254,35 @@
             // https://stackoverflow.com/questions/13225662/
             // https://stackoverflow.com/questions/4817029/
             touchType: (() => {
-                if (false && (window.TouchEvent || 'ontouchstart' in window)) {
+
+                var hasMaxTouchPoints = 'maxTouchPoints' in navigator;
+                var hasCoarsePtr = window.matchMedia && window.matchMedia("(any-pointer: coarse)").matches;
+
+                if (window.PointerEvent && hasMaxTouchPoints) {
+                    return navigator.maxTouchPoints > 0 ? TouchType.POINTER_EVENTS : TouchType.NONE;
+                }
+                else if ((hasCoarsePtr || (hasMaxTouchPoints && navigator.maxTouchPoints > 0)) &&
+                    (window.TouchEvent || 'ontouchstart' in window)) {
                     return TouchType.TOUCH_EVENTS;
                 }
-                else if (window.PointerEvent &&
-                    'maxTouchPoints' in navigator && navigator.maxTouchPoints > 0) {
-                    return TouchType.POINTER_EVENTS;
-                }
-                else if (window.navigator.msPointerEnabled &&
-                    'msMaxTouchPoints' in navigator && navigator.msMaxTouchPoints > 0) {
-                    return TouchType.MS_POINTER_EVENTS;
-                }
-                else if (window.matchMedia && window.matchMedia("(any-pointer: coarse)").matches) {
-                    return TouchType.UNKNOWN;
+                else if (window.navigator.msPointerEnabled && 'msMaxTouchPoints' in navigator) {
+                    return navigator.msMaxTouchPoints > 0 ? TouchType.MS_POINTER_EVENTS : TouchType.NONE;
                 }
                 return TouchType.NONE;
             })(),
 
-            onPtrFire(e, pressed) {
-                //if (pressed)
-                //    button.setPointerCapture(e.pointerId);
-                //else
-                //    button.releasePointerCapture(e.pointerId);
-
-                Module.ccall('gui_touch_fire', null, ['boolean'], [pressed]);
-                //e.preventDefault();
-                console.log('PTR FIRE');
+            touchTypeString() {
+                switch (Module.touchType) {
+                    case TouchType.TOUCH_EVENTS:
+                        return stringToNewUTF8('TouchEvent');
+                    case TouchType.POINTER_EVENTS:
+                        return stringToNewUTF8('PointerEvent');
+                    case TouchType.MS_POINTER_EVENTS:
+                        return stringToNewUTF8('MSPointerEvent');
+                    default:
+                        return stringToNewUTF8('None');
+                }
             },
-
-            onPtrLeft(e, pressed) {
-                //if (pressed)
-                //    button.setPointerCapture(e.pointerId);
-                //else
-                //    button.releasePointerCapture(e.pointerId);
-
-                Module.ccall('gui_touch_left', null, ['boolean'], [pressed]);
-                //e.preventDefault();
-                console.log('PTR LEFT');
-            },
-
-            onPtrRight(e, pressed) {
-                //if (pressed)
-                //    button.setPointerCapture(e.pointerId);
-                //else
-                //    button.releasePointerCapture(e.pointerId);
-            
-                Module.ccall('gui_touch_right', null, ['boolean'], [pressed]);
-                //e.preventDefault();
-                console.log('PTR RIGHT');
-            },
-
-            //onPtrRight(e, pressed) {
-            //    if (pressed) {
-            //        Module.ccall('gui_touch_right', null, ['boolean'], [true]);
-            //        e.preventDefault();
-            //
-            //        setTimeout(() => {
-            //            Module.ccall('gui_touch_right', null, ['boolean'], [false]);
-            //        }, 100);
-            //    } else {
-            //        Module.ccall('gui_touch_right', null, ['boolean'], [false]);
-            //    }
-            //    console.log('PTR RIGHT');
-            //},
-
 
             onTouchFire(e, pressed) {
                 Module.ccall('gui_touch_fire', null, ['boolean'], [pressed]);
@@ -367,6 +326,9 @@
                 }
             }
         });
+
+        // disable double click zoom
+        document.ondblclick = (e) => e.preventDefault();
     </script>
 
     <script async type="text/javascript" src="spaceinvaders.js"></script>
