@@ -33,25 +33,32 @@
             width: 100%;
         }
 
-        #touch-controls {
+        .touch-controls {
             margin-top: 1vh;
             height: 13vh;
             grid-template-columns: repeat(2, 1fr);
             align-items: center;
-            gap: 10px;
             display: none;
+        }
+
+        #game-touch-controls {
+            gap: 10px;
+        }
+
+        #playerselect-touch-controls {
+            gap: 100px;
         }
 
         .touch-button {
             height: 13vh;
         }
 
-        #buttons-left {
+        .touch-buttons-flexstart {
             display: flex;
             justify-content: flex-start;
         }
 
-        #buttons-right {
+        .touch-buttons-flexend {
             display: flex;
             gap: 10px;
             justify-content: flex-end;
@@ -139,24 +146,33 @@
 
     <div id="content">
         <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
-        <div id="touch-controls">
-            <div id="buttons-left">
+        <div class="touch-controls" id="game-touch-controls">
+            <div class="touch-buttons-flexstart">
                 <img class="touch-button" id="fire-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
             </div>
-            <div id="buttons-right">
+            <div class="touch-buttons-flexend">
                 <img class="touch-button" id="left-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
                 <img class="touch-button" id="right-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
+            </div>
+        </div>
+        <div class="touch-controls" id="playerselect-touch-controls">
+            <div class="touch-buttons-flexend">
+                <img class="touch-button" id="1p-button" src="assets/1p_arcade_button.png" oncontextmenu="event.preventDefault()" />
+            </div>
+            <div class="touch-buttons-flexstart">
+                <img class="touch-button" id="2p-button" src="assets/2p_arcade_button.png" oncontextmenu="event.preventDefault()" />
             </div>
         </div>
     </div>
 
     <script type='text/javascript'>
-        var statusElement = document.getElementById('status');
-        var spinnerElement = document.getElementById('spinner');
-        var touchCtrlsElement = document.getElementById('touch-controls');
-
         var criticalError = false;
         const bugReportLink = 'https://github.com/mayawarrier/space_invaders_emulator/issues'
+
+        var statusElem = document.getElementById('status');
+        var spinnerElem = document.getElementById('spinner');
+        var gameTouchCtrls = document.getElementById('game-touch-controls');
+        var playerSelectTouchCtrls = document.getElementById('playerselect-touch-controls');
 
         const TouchType = Object.freeze({
             NONE: 0, // must always be 0
@@ -164,6 +180,12 @@
             POINTER_EVENTS: 2,
             MS_POINTER_EVENTS: 3
         });
+
+        //var touchRightFn = Module.cwrap('gui_touch_right', null, ['boolean']);
+        //var touchLeftFn = Module.cwrap('gui_touch_left', null, ['boolean']);
+        //var touchFireFn = Module.cwrap('gui_touch_fire', null, ['boolean']);
+        //var touch1PFn = Module.cwrap('gui_touch_1p', null, ['boolean']);
+        //var touch2PFn = Module.cwrap('gui_touch_2p', null, ['boolean']);
 
         var Module = {
             print: (...args) => console.log(args.join(' ')),
@@ -185,68 +207,6 @@
                 return canvas;
             })(),
 
-            onRuntimeInitialized() {
-                var touchType = Module.touchType;
-
-                if (touchType != TouchType.NONE) {
-                    touchCtrlsElement.style.display = 'grid';
-
-                    var rightButton = document.getElementById('right-button');
-                    var leftButton = document.getElementById('left-button');
-                    var fireButton = document.getElementById('fire-button');
-
-                    switch (touchType)
-                    {
-                        case TouchType.TOUCH_EVENTS:
-                            rightButton.ontouchstart = (e) => Module.onTouchRight(e, true);
-                            rightButton.ontouchend = (e) => Module.onTouchRight(e, false);
-                            leftButton.ontouchstart = (e) => Module.onTouchLeft(e, true);
-                            leftButton.ontouchend = (e) => Module.onTouchLeft(e, false);
-                            fireButton.ontouchstart = (e) => Module.onTouchFire(e, true);
-                            fireButton.ontouchend = (e) => Module.onTouchFire(e, false);
-                            break;
-
-                        case TouchType.POINTER_EVENTS:
-                            rightButton.onpointerdown = (e) => Module.onTouchRight(e, true);
-                            rightButton.onpointerup = (e) => Module.onTouchRight(e, false);
-                            leftButton.onpointerdown = (e) => Module.onTouchLeft(e, true);
-                            leftButton.onpointerup = (e) => Module.onTouchLeft(e, false);
-                            fireButton.onpointerdown = (e) => Module.onTouchFire(e, true);
-                            fireButton.onpointerup = (e) => Module.onTouchFire(e, false);
-                            break;
-
-                        case TouchType.MS_POINTER_EVENTS:
-                            rightButton.onmspointerdown = (e) => Module.onTouchRight(e, true);
-                            rightButton.onmspointerup = (e) => Module.onTouchRight(e, false);
-                            leftButton.onmspointerdown = (e) => Module.onTouchLeft(e, true);
-                            leftButton.onmspointerup = (e) => Module.onTouchLeft(e, false);
-                            fireButton.onmspointerdown = (e) => Module.onTouchFire(e, true);
-                            fireButton.onmspointerup = (e) => Module.onTouchFire(e, false);
-                            break;
-
-                        default: break;
-                    }
-                }
-            },
-
-            setStatus: (text) => {
-                if (text) {
-                    statusElement.innerHTML = text;
-                } else {
-                    spinnerElement.remove();
-                    statusElement.style.height = 0;
-                    statusElement.style.display = 'none';
-                }
-            },
-
-            setErrorStatus: (text) => {
-                if (statusElement.style.height == '0px') {
-                    statusElement.style.display = 'inline-block'
-                    statusElement.style.height = 'auto';
-                    statusElement.innerHTML = text;
-                }
-            },
-
             // Detect touch support.
             // This just checks if touch exists; the primary device may not be a touch device.
             // https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events
@@ -254,7 +214,6 @@
             // https://stackoverflow.com/questions/13225662/
             // https://stackoverflow.com/questions/4817029/
             touchType: (() => {
-
                 var hasMaxTouchPoints = 'maxTouchPoints' in navigator;
                 var hasCoarsePtr = window.matchMedia && window.matchMedia("(any-pointer: coarse)").matches;
 
@@ -284,20 +243,83 @@
                 }
             },
 
-            onTouchFire(e, pressed) {
-                Module.ccall('gui_touch_fire', null, ['boolean'], [pressed]);
+            callTouchFn(fnName, e, pressed) {
+                Module.ccall(fnName, null, ['boolean'], [pressed]);
                 e.preventDefault();
             },
 
-            onTouchLeft(e, pressed) {
-                Module.ccall('gui_touch_left', null, ['boolean'], [pressed]);
-                e.preventDefault();
+            attachTouchListeners(button2FuncMap) {
+                switch (Module.touchType) {
+                    case TouchType.TOUCH_EVENTS:
+                        for (const [button, func] of button2FuncMap) {
+                            button.ontouchstart = (e) => func(e, true);
+                            button.ontouchend = (e) => func(e, false);
+                        }
+                        break;
+
+                    case TouchType.POINTER_EVENTS:
+                        for (const [button, func] of button2FuncMap) {
+                            button.onpointerdown = (e) => func(e, true);
+                            button.onpointerup = (e) => func(e, false);
+                        }
+                        break;
+
+                    case TouchType.MS_POINTER_EVENTS:
+                        for (const [button, func] of button2FuncMap) {
+                            button.onmspointerdown = (e) => func(e, true);
+                            button.onmspointerup = (e) => func(e, false);
+                        }
+                        break;
+
+                    default: break;
+                }
             },
 
-            onTouchRight(e, pressed) {
-                Module.ccall('gui_touch_right', null, ['boolean'], [pressed]);
-                e.preventDefault();
-            }
+            initGameTouchControls() {
+                gameTouchCtrls.style.display = 'grid';
+                playerSelectTouchCtrls.style.display = 'none';
+
+                var rightButton = document.getElementById('right-button');
+                var leftButton = document.getElementById('left-button');
+                var fireButton = document.getElementById('fire-button');
+
+                const button2Func = [
+                    [rightButton, (e, pressed) => Module.callTouchFn('web_touch_right', e, pressed)],
+                    [leftButton,  (e, pressed) => Module.callTouchFn('web_touch_left', e, pressed)],
+                    [fireButton,  (e, pressed) => Module.callTouchFn('web_touch_fire', e, pressed)]
+                ];
+
+                this.attachTouchListeners(button2Func);
+            },
+
+            initPlayerSelectTouchControls() {
+                gameTouchCtrls.style.display = 'none';
+                playerSelectTouchCtrls.style.display = 'grid';
+
+                var player1Button = document.getElementById('1p-button');
+                var player2Button = document.getElementById('2p-button');
+
+                player1Button.onclick = (e) => Module.ccall('web_click_1p');
+                player2Button.onclick = (e) => Module.ccall('web_click_2p');
+            },
+
+            setStatus: (text) => {
+                if (text) {
+                    statusElem.innerHTML = text;
+                } else {
+                    spinnerElem.remove();
+                    statusElem.style.height = 0;
+                    statusElem.style.display = 'none';
+                }
+            },
+
+            setErrorStatus: (text) => {
+                if (statusElem.style.height == '0px') {
+                    statusElem.style.display = 'inline-block'
+                    statusElem.style.height = 'auto';
+                    statusElem.innerHTML = text;
+                }
+            },
         };
 
         Module.setStatus('Loading...');
