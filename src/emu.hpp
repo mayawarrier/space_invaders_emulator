@@ -41,15 +41,6 @@ enum input : uint8_t
     NUM_INPUTS
 };
 
-enum touchinput : uint32_t
-{
-    TOUCH_INPUT_LEFT,
-    TOUCH_INPUT_RIGHT,
-    TOUCH_INPUT_FIRE,
-
-    NUM_TOUCHINPUTS
-};
-
 struct machine
 {
     i8080 cpu;
@@ -105,8 +96,7 @@ struct emu_interface
     int get_volume() const;
     void set_volume(int volume);
 
-    bool touch_enabled() const;
-    void send_touch(touchinput inp, bool pressed);
+    void send_input(input inp, bool pressed);
 
     std::array<SDL_Scancode, NUM_INPUTS>& input2keymap();
 
@@ -130,7 +120,6 @@ struct emu
 
     // Start running.
     // Returns <0 on error, otherwise 0 when window is closed.
-    // On emscripten, this only returns on error.
     int run();
 
     // Help on config file parameters.
@@ -159,7 +148,7 @@ private:
     int resize_window();
 
     bool process_events();
-    void send_touch(touchinput inp, bool pressed);
+    void send_input(input inp, bool pressed);
     
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
@@ -180,8 +169,7 @@ private:
     std::unique_ptr<emu_gui> m_gui;
     int m_volume;
 
-    bool m_touchenabled;
-    std::array<bool, NUM_TOUCHINPUTS> m_touchpressed;
+    std::array<bool, NUM_INPUTS> m_guiinputpressed;
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
     std::array<SDL_Scancode, NUM_INPUTS> m_input2key;
 
@@ -208,12 +196,8 @@ inline void emu_interface::set_volume(int volume) {
     m_emu->set_volume(volume); 
 }
 
-inline bool emu_interface::touch_enabled() const {
-    return m_emu->m_touchenabled;
-}
-
-inline void emu_interface::send_touch(touchinput inp, bool pressed) {
-    m_emu->send_touch(inp, pressed);
+inline void emu_interface::send_input(input inp, bool pressed) {
+    m_emu->send_input(inp, pressed);
 }
 
 inline std::array<SDL_Scancode, NUM_INPUTS>& emu_interface::input2keymap() {

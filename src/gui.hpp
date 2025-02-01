@@ -57,6 +57,23 @@ struct gui_fonts
 
 using gui_fontatlas = std::unordered_map<int, ImFont*>;
 
+#ifdef __EMSCRIPTEN__
+using gui_inputvec = std::vector<std::pair<input, bool>>;
+
+enum gui_playerselect
+{
+    PLAYER_SELECT_NONE = 0,
+    PLAYER_SELECT_1P = 1,
+    PLAYER_SELECT_2P = 2
+};
+
+extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_fire(bool pressed);
+extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_left(bool pressed);
+extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_right(bool pressed);
+extern "C" EMSCRIPTEN_KEEPALIVE void web_click_1p(void);
+extern "C" EMSCRIPTEN_KEEPALIVE void web_click_2p(void);
+#endif
+
 struct emu_gui
 {
     emu_gui(
@@ -72,7 +89,7 @@ struct emu_gui
 
     // Get size/layout info for a frame drawn 
     // at the given display size.
-    gui_sizeinfo frame_sizeinfo(SDL_Point disp_size) const;
+    gui_sizeinfo sizeinfo(SDL_Point disp_size) const;
 
     // Run GUI for one frame.
     void run(SDL_Point display_size, const SDL_Rect& viewport);
@@ -98,12 +115,17 @@ private:
         gui_align align = ALIGN_LEFT, float labelsizeX = -1);
 
     int init_fontatlas();
-
     ImFont* get_font_px(int size) const;
     ImFont* get_font_vh(float vmin, SDL_Point disp_size) const;
 
 #ifdef __EMSCRIPTEN__
-    friend void send_touch(emu_gui* gui, touchinput inp, bool pressed);
+    void process_playerselect();
+
+    friend void web_touch_fire(bool pressed);
+    friend void web_touch_left(bool pressed);
+    friend void web_touch_right(bool pressed);
+    friend void web_click_1p(void);
+    friend void web_click_2p(void);
 #endif
 
 private:
@@ -117,6 +139,13 @@ private:
     SDL_Scancode m_frame_lastkeypress; // cur frame
     bool m_inputkey_focused[NUM_INPUTS];
 
+    bool m_touchenabled;
+
+#ifdef __EMSCRIPTEN__
+    int m_playerselinp_idx;
+    gui_playerselect m_playersel;
+    bool m_showingtouchctrls;
+#endif
     bool m_anykeypress;
     bool m_drawingframe;
     

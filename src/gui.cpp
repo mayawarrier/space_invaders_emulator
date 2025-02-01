@@ -39,6 +39,8 @@ static emu_gui* GUI = nullptr;
 
 int emu_gui::init_fontatlas()
 {
+    logMESSAGE("Building font atlas");
+
     ImGuiIO& io = ImGui::GetIO();
 
     for (int i = MIN_FONT_SIZE; i <= MAX_FONT_SIZE; ++i)
@@ -73,6 +75,15 @@ ImFont* emu_gui::get_font_vh(float vh, SDL_Point disp_size) const {
     return get_font_px(get_font_vh_size(vh, disp_size));
 }
 
+static bool touch_supported()
+{
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT(return Module.touchType != 0);
+#else
+    return false;
+#endif
+}
+
 emu_gui::emu_gui(
     SDL_Window* window, 
     SDL_Renderer* renderer, 
@@ -84,6 +95,12 @@ emu_gui::emu_gui(
     m_cur_panel(PANEL_NONE),
     m_fps(-1),
     m_frame_lastkeypress(SDL_SCANCODE_UNKNOWN),
+    m_touchenabled(touch_supported()),
+#ifdef __EMSCRIPTEN__
+    m_playerselinp_idx(0),
+    m_playersel(PLAYER_SELECT_NONE),
+    m_showingtouchctrls(false),
+#endif    
     m_anykeypress(false),
     m_drawingframe(false),
     m_ok(false)
@@ -94,22 +111,34 @@ emu_gui::emu_gui(
     GUI = this;
 #endif
 
+    logMESSAGE("Initializing GUI");
+
     std::fill_n(m_inputkey_focused, NUM_INPUTS, false);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
+    ImGui::GetIO().IniFilename = nullptr;
 
     if (!ImGui_ImplSDL2_InitForSDLRenderer(window, renderer) ||
         !ImGui_ImplSDLRenderer2_Init(renderer)) {
         logERROR("Failed to initialize ImGui with SDL backend");
         return;
     }
-
-    ImGui::GetIO().IniFilename = nullptr;
-
     if (init_fontatlas() != 0) {
         return;
+    }
+
+    if (m_touchenabled) {
+        logMESSAGE("Enabled touch controls");
+
+#ifdef __EMSCRIPTEN__
+        char* touch_str = (char*)EM_ASM_PTR(return Module.touchTypeString());
+        logMESSAGE("Touch control type: %s", touch_str);
+        std::free(touch_str);
+
+        EM_ASM(Module.initPlayerSelectTouchControls());
+#endif
     }
     m_ok = true;
 }
@@ -454,7 +483,7 @@ void emu_gui::draw_settings_content()
     }
     
     // Controls section
-    if (!m_emu.touch_enabled() || m_anykeypress)
+    if (!m_touchenabled || m_anykeypress)
     {
         ImGui::PushFont(m_fonts.subhdr_font);
         draw_subheader("Controls", SUBHDR_BGCOLOR);
@@ -546,15 +575,14 @@ void emu_gui::draw_panel(const char* title, const SDL_Rect& viewport, void(emu_g
     } 
 }
 
-gui_sizeinfo emu_gui::frame_sizeinfo(SDL_Point disp_size) const
+gui_sizeinfo emu_gui::sizeinfo(SDL_Point disp_size) const
 {
     SDL_assert(!m_drawingframe);
 
-    int menu_height =
-        get_font_vh_size(TXT_FONT_VH, disp_size) + // text
+    int menu_height = get_font_vh_size(TXT_FONT_VH, disp_size) + // text
         int(ImGui::GetStyle().FramePadding.y * 2.0f);  // padding
 
-    float resv_outwnd_ypct = is_emscripten() && m_emu.touch_enabled() ? 0.25f : 0.1f;
+    float resv_outwnd_ypct = is_emscripten() && m_touchenabled ? 0.25f : 0.1f;
     int resv_outwndY = int(std::lroundf(resv_outwnd_ypct * disp_size.y));
 
     return {
@@ -563,7 +591,73 @@ gui_sizeinfo emu_gui::frame_sizeinfo(SDL_Point disp_size) const
         .resv_outwnd_size = {.x = 0, .y = resv_outwndY }
     };
 }
- 
+
+#ifdef __EMSCRIPTEN__
+
+extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_fire(bool pressed) 
+{
+    GUI->m_emu.send_input(INPUT_P1_FIRE, pressed);
+    GUI->m_emu.send_input(INPUT_P2_FIRE, pressed);
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_left(bool pressed) 
+{
+    GUI->m_emu.send_input(INPUT_P1_LEFT, pressed);
+    GUI->m_emu.send_input(INPUT_P2_LEFT, pressed);
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_right(bool pressed) 
+{
+    GUI->m_emu.send_input(INPUT_P1_RIGHT, pressed);
+    GUI->m_emu.send_input(INPUT_P2_RIGHT, pressed);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void web_click_1p(void)
+{
+    if (GUI->m_playersel == PLAYER_SELECT_NONE) {
+        GUI->m_playersel = PLAYER_SELECT_1P;
+    }
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void web_click_2p(void) 
+{
+    if (GUI->m_playersel == PLAYER_SELECT_NONE) {
+        GUI->m_playersel = PLAYER_SELECT_2P;
+    }
+}
+
+static const std::vector<gui_inputvec> player_select_inputs[2] = {
+    { // 1P inputs, frame by frame
+        { { INPUT_CREDIT, true } },
+        { { INPUT_CREDIT, false }, { INPUT_1P_START, true } }
+    },
+    { // 2P inputs, frame by frame
+        { { INPUT_CREDIT, true } },
+        { { INPUT_CREDIT, false } },
+        { { INPUT_CREDIT, true } },
+        { { INPUT_CREDIT, false }, { INPUT_2P_START, true } }
+    }
+};
+
+void emu_gui::process_playerselect()
+{
+    if (m_playersel != PLAYER_SELECT_NONE)
+    {
+        auto& inputs = player_select_inputs[m_playersel - 1];
+        if (m_playerselinp_idx < inputs.size())
+        {
+            const auto& frame_inputs = inputs[m_playerselinp_idx];
+            for (const auto& inp : frame_inputs) {
+                m_emu.send_input(inp.first, inp.second);
+            }
+            m_playerselinp_idx++;
+        }
+        else if (!m_showingtouchctrls)
+        {
+            EM_ASM(Module.initGameTouchControls());
+            m_showingtouchctrls = true;
+        }
+    }
+}
+#endif 
+
 void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
 {
     m_drawingframe = true;
@@ -614,30 +708,14 @@ void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
     ImGui::Render();
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_renderer);
 
+#ifdef __EMSCRIPTEN__
+    process_playerselect();
+#endif
+
     m_frame_lastkeypress = SDL_SCANCODE_UNKNOWN;
     m_drawingframe = false;
 }
 
-#ifdef __EMSCRIPTEN__
-
-void send_touch(emu_gui* gui, touchinput inp, bool pressed) 
-{
-    if (gui->m_emu.touch_enabled()) {
-        gui->m_emu.send_touch(inp, pressed);
-    }
-}
-extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_fire(bool pressed) {
-    send_touch(GUI, TOUCH_INPUT_FIRE, pressed);
-}
-
-extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_left(bool pressed) {
-    send_touch(GUI, TOUCH_INPUT_LEFT, pressed);
-}
-
-extern "C" EMSCRIPTEN_KEEPALIVE void gui_touch_right(bool pressed) {
-    send_touch(GUI, TOUCH_INPUT_RIGHT, pressed);
-}
-#endif 
 
 #ifndef IMGUI_DISABLE_DEMO_WINDOWS
 int demo_window()

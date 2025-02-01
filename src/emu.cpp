@@ -155,7 +155,7 @@ int emu::resize_window(void)
     gui_sizeinfo guiinfo = {0};
     if (m_gui) 
     {
-        guiinfo = m_gui->frame_sizeinfo(m_dispsize);
+        guiinfo = m_gui->sizeinfo(m_dispsize);
         auto total_resv = sdl_ptadd(guiinfo.resv_inwnd_size, guiinfo.resv_outwnd_size);
 
         vp_offset = guiinfo.vp_offset;
@@ -176,8 +176,8 @@ int emu::resize_window(void)
     SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
     if constexpr (!is_emscripten() || is_debug()) { // too frequent on emscripten
-        logMESSAGE("-- Viewport bounds: x: %d, y: %d, w: %d, h: %d", vp.x, vp.y, vp.w, vp.h);
-        logMESSAGE("-- Window size: x: %d, y: %d", win_size.x, win_size.y);
+        logMESSAGE("Viewport bounds: x: %d, y: %d, w: %d, h: %d", vp.x, vp.y, vp.w, vp.h);
+        logMESSAGE("Window size: x: %d, y: %d", win_size.x, win_size.y);
     }
     return 0;
 }
@@ -215,7 +215,7 @@ int emu::init_texture(SDL_Renderer* renderer)
         return -1;
     }
 
-    logMESSAGE("-- Render backend: %s", rendinfo.name);
+    logMESSAGE("Render backend: %s", rendinfo.name);
 
     // Get first supported texture format
     // see https://stackoverflow.com/questions/56143991/
@@ -223,7 +223,7 @@ int emu::init_texture(SDL_Renderer* renderer)
         for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
         {
             if (rendinfo.texture_formats[i] == pixfmt.fmt) {
-                logMESSAGE("-- Texture format: %s", pixfmt_name(pixfmt.fmt));
+                logMESSAGE("Texture format: %s", pixfmt_name(pixfmt.fmt));
                 m_pixfmt = &pixfmt;
                 goto done;
             }
@@ -361,9 +361,6 @@ int emu::init_audio(const fs::path& audio_dir)
             }
         }
         if (!m.sounds[i]) {
-            if constexpr (!is_emscripten()) {
-                log_write(stderr, "-- ");
-            }
             logWARNING("Audio file %d (aka %s) is missing", i, AUDIO_FILENAMES[i][1]);
         }
     }
@@ -542,14 +539,7 @@ void emu::log_dbginfo()
     emu_gui::log_dbginfo();
 }
 
-static bool touch_supported()
-{
-#ifdef __EMSCRIPTEN__
-    return EM_ASM_INT(return Module.touchType != 0);
-#else
-    return false;
-#endif
-}
+
 
 // default values
 emu::emu(const fs::path& inipath) :
@@ -560,7 +550,6 @@ emu::emu(const fs::path& inipath) :
     m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
     m_viewporttex(nullptr),
     m_volume(0),
-    m_touchenabled(touch_supported()),
 #ifdef __EMSCRIPTEN__
     m_resizepending(false),
 #endif
@@ -571,7 +560,7 @@ emu::emu(const fs::path& inipath) :
 {
     std::fill_n(m.sounds, NUM_SOUNDS, nullptr);
 
-    std::fill_n(m_touchpressed.begin(), NUM_TOUCHINPUTS, false);
+    std::fill_n(m_guiinputpressed.begin(), NUM_INPUTS, false);
 
     for (int i = 0; i < NUM_INPUTS; ++i) {
         m_input2key[i] = input_dflt_key(input(i));
@@ -591,16 +580,6 @@ emu::emu(const fs::path& inipath,
     m.mem = std::make_unique<i8080_word_t[]>(65536);
     if (load_rom(romdir) != 0) {
         return;
-    }
-
-    if (m_touchenabled) {
-        logMESSAGE("Enabled touch controls");
-        
-#ifdef __EMSCRIPTEN__
-        char* touch_str = (char*)EM_ASM_PTR({ return Module.touchTypeString(); });
-        logMESSAGE("Touch control type: %s", touch_str);
-        std::free(touch_str);
-#endif
     }
 
     m.cpu.mem_read = cpu_mem_read;
@@ -684,18 +663,16 @@ void emu::set_volume(int new_volume)
 
 void emu::emulate_cpu(uint64_t& cpucycles, uint64_t nframes)
 {
-    //logMESSAGE("Emulating CPU");
-
     // pass input to machine ports
-    set_bit(&m.in_port1, 0, m_keypressed[m_input2key[INPUT_CREDIT]]);
-    set_bit(&m.in_port1, 1, m_keypressed[m_input2key[INPUT_2P_START]]);
-    set_bit(&m.in_port1, 2, m_keypressed[m_input2key[INPUT_1P_START]]);
-    set_bit(&m.in_port1, 4, m_keypressed[m_input2key[INPUT_P1_FIRE]]  || m_touchpressed[TOUCH_INPUT_FIRE]);
-    set_bit(&m.in_port1, 5, m_keypressed[m_input2key[INPUT_P1_LEFT]]  || m_touchpressed[TOUCH_INPUT_LEFT]);
-    set_bit(&m.in_port1, 6, m_keypressed[m_input2key[INPUT_P1_RIGHT]] || m_touchpressed[TOUCH_INPUT_RIGHT]);
-    set_bit(&m.in_port2, 4, m_keypressed[m_input2key[INPUT_P2_FIRE]]  || m_touchpressed[TOUCH_INPUT_FIRE]);
-    set_bit(&m.in_port2, 5, m_keypressed[m_input2key[INPUT_P2_LEFT]]  || m_touchpressed[TOUCH_INPUT_LEFT]);
-    set_bit(&m.in_port2, 6, m_keypressed[m_input2key[INPUT_P2_RIGHT]] || m_touchpressed[TOUCH_INPUT_RIGHT]);
+    set_bit(&m.in_port1, 0, m_keypressed[m_input2key[INPUT_CREDIT]]   || m_guiinputpressed[INPUT_CREDIT]);
+    set_bit(&m.in_port1, 1, m_keypressed[m_input2key[INPUT_2P_START]] || m_guiinputpressed[INPUT_2P_START]);
+    set_bit(&m.in_port1, 2, m_keypressed[m_input2key[INPUT_1P_START]] || m_guiinputpressed[INPUT_1P_START]);
+    set_bit(&m.in_port1, 4, m_keypressed[m_input2key[INPUT_P1_FIRE]]  || m_guiinputpressed[INPUT_P1_FIRE]);
+    set_bit(&m.in_port1, 5, m_keypressed[m_input2key[INPUT_P1_LEFT]]  || m_guiinputpressed[INPUT_P1_LEFT]);
+    set_bit(&m.in_port1, 6, m_keypressed[m_input2key[INPUT_P1_RIGHT]] || m_guiinputpressed[INPUT_P1_RIGHT]);
+    set_bit(&m.in_port2, 4, m_keypressed[m_input2key[INPUT_P2_FIRE]]  || m_guiinputpressed[INPUT_P2_FIRE]);
+    set_bit(&m.in_port2, 5, m_keypressed[m_input2key[INPUT_P2_LEFT]]  || m_guiinputpressed[INPUT_P2_LEFT]);
+    set_bit(&m.in_port2, 6, m_keypressed[m_input2key[INPUT_P2_RIGHT]] || m_guiinputpressed[INPUT_P2_RIGHT]);
 
     // 33333.33 clk cycles at emulated CPU's 2Mhz clock speed (16667us/0.5us)
     uint64_t frame_cycles = 33333 + (nframes % 3 == 0);
@@ -961,9 +938,9 @@ bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
 }
 #endif
 
-void emu::send_touch(touchinput inp, bool pressed)
+void emu::send_input(input inp, bool pressed)
 {
-    m_touchpressed[inp] = pressed;
+    m_guiinputpressed[inp] = pressed;
 }
 
 bool emu::process_events()
