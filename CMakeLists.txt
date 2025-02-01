@@ -271,6 +271,10 @@ if (NOT EMSCRIPTEN)
     target_link_libraries(imgui PUBLIC ${TARGET_NAME_SDL2})
 endif()
 
+if (EMSCRIPTEN AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(imgui PUBLIC "-Wno-nontrivial-memaccess")
+endif()
+
 target_link_libraries(spaceinvaders PRIVATE imgui)
 
 # ---------------------------- Install ----------------------------------

@@ -14,8 +14,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install -y python3
           git clone https://github.com/emscripten-core/emsdk.git
           cd emsdk
           ./emsdk install latest
