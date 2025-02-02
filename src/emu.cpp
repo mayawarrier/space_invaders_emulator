@@ -106,11 +106,7 @@ static int get_disp_size(SDL_Window* window, SDL_Point& out_size)
         logERROR("SDL_GetDisplayUsableBounds(): %s", SDL_GetError());
         return -1;
     }
-    out_size = { 
-        .x = bounds.w, 
-        // Adjust for taskbar, webpage margins etc.
-        .y = bounds.h//int((is_emscripten() ? 1 : 0.9) * bounds.h) 
-    };
+    out_size = { .x = bounds.w, .y = bounds.h };
     return 0;
 }
 
@@ -716,7 +712,7 @@ void emu::render_screen()
     SDL_LockTexture(m_viewporttex, NULL, &pixels, &pitch);
 
     uint VRAM_idx = 0;
-    i8080_word_t* VRAM_start = &m.mem[0x2400];
+    i8080_word_t* VRAM_start = &m.mem[VRAM_START_ADDR];
     const uint texpitch = pitch / m_pixfmt->bypp; // not always eq to original width!
 
     // Unpack (8 on/off pixels per byte) and rotate counter-clockwise

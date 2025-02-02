@@ -67,6 +67,12 @@ enum gui_playerselect
     PLAYER_SELECT_2P = 2
 };
 
+enum gui_ctrls_state
+{
+    CTRLS_PLAYER_SELECT,
+    CTRLS_GAME
+};
+
 extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_fire(bool pressed);
 extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_left(bool pressed);
 extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_right(bool pressed);
@@ -119,7 +125,7 @@ private:
     ImFont* get_font_vh(float vmin, SDL_Point disp_size) const;
 
 #ifdef __EMSCRIPTEN__
-    void process_playerselect();
+    void handle_touchctrls_state();
 
     friend void web_touch_fire(bool pressed);
     friend void web_touch_left(bool pressed);
@@ -144,7 +150,7 @@ private:
 #ifdef __EMSCRIPTEN__
     int m_playerselinp_idx;
     gui_playerselect m_playersel;
-    bool m_showingtouchctrls;
+    gui_ctrls_state m_ctrls_showing;
 #endif
     bool m_anykeypress;
     bool m_drawingframe;

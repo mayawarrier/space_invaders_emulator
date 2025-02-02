@@ -99,7 +99,7 @@ emu_gui::emu_gui(
 #ifdef __EMSCRIPTEN__
     m_playerselinp_idx(0),
     m_playersel(PLAYER_SELECT_NONE),
-    m_showingtouchctrls(false),
+    m_ctrls_showing(CTRLS_PLAYER_SELECT),
 #endif    
     m_anykeypress(false),
     m_drawingframe(false),
@@ -137,7 +137,7 @@ emu_gui::emu_gui(
         logMESSAGE("Touch control type: %s", touch_str);
         std::free(touch_str);
 
-        EM_ASM(Module.initPlayerSelectTouchControls());
+        EM_ASM(Module.showPlayerSelectControls());
 #endif
     }
     m_ok = true;
@@ -623,12 +623,13 @@ extern "C" EMSCRIPTEN_KEEPALIVE void web_click_2p(void)
     }
 }
 
+// inputs to start 1P or 2P, frame by frame
 static const std::vector<gui_inputvec> player_select_inputs[2] = {
-    { // 1P inputs, frame by frame
+    { // 1p
         { { INPUT_CREDIT, true } },
         { { INPUT_CREDIT, false }, { INPUT_1P_START, true } }
     },
-    { // 2P inputs, frame by frame
+    { // 2p
         { { INPUT_CREDIT, true } },
         { { INPUT_CREDIT, false } },
         { { INPUT_CREDIT, true } },
@@ -636,8 +637,24 @@ static const std::vector<gui_inputvec> player_select_inputs[2] = {
     }
 };
 
-void emu_gui::process_playerselect()
+void emu_gui::handle_touchctrls_state()
 {
+    SDL_assert(m_touchenabled);
+
+    if (m_emu.in_demo_mode()) {
+        if (m_ctrls_showing != CTRLS_PLAYER_SELECT) 
+        {
+            EM_ASM(Module.showPlayerSelectControls());
+            m_ctrls_showing = CTRLS_PLAYER_SELECT;
+            m_playersel = PLAYER_SELECT_NONE;
+            m_playerselinp_idx = 0;
+        }
+    } 
+    else if (m_ctrls_showing != CTRLS_GAME) {
+        EM_ASM(Module.showGameControls());
+        m_ctrls_showing = CTRLS_GAME;
+    }
+
     if (m_playersel != PLAYER_SELECT_NONE)
     {
         auto& inputs = player_select_inputs[m_playersel - 1];
@@ -648,11 +665,6 @@ void emu_gui::process_playerselect()
                 m_emu.send_input(inp.first, inp.second);
             }
             m_playerselinp_idx++;
-        }
-        else if (!m_showingtouchctrls)
-        {
-            EM_ASM(Module.initGameTouchControls());
-            m_showingtouchctrls = true;
         }
     }
 }
@@ -709,7 +721,9 @@ void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_renderer);
 
 #ifdef __EMSCRIPTEN__
-    process_playerselect();
+    if (m_touchenabled) {
+        handle_touchctrls_state();
+    }
 #endif
 
     m_frame_lastkeypress = SDL_SCANCODE_UNKNOWN;

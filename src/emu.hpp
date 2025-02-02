@@ -23,6 +23,9 @@
 #define NUM_SOUNDS 10
 #define VOLUME_DEFAULT 50
 
+// todo: these assume a compatible ROM
+#define VRAM_START_ADDR 0x2400
+#define GAMEMODE_ADDR 0x20ef
 
 enum input : uint8_t
 {
@@ -89,6 +92,8 @@ struct emu_interface
     emu_interface() :
         emu_interface(nullptr)
     {}
+
+    bool in_demo_mode() const;
 
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
@@ -181,6 +186,10 @@ private:
 #endif
     bool m_ok;
 };
+
+inline bool emu_interface::in_demo_mode() const {
+    return m_emu->m.mem[GAMEMODE_ADDR] == 0;
+}
 
 inline bool emu_interface::get_switch(int index) const {
     return m_emu->get_switch(index);

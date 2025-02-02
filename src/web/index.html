@@ -41,11 +41,11 @@
             display: none;
         }
 
-        #game-touch-controls {
+        #game-controls {
             gap: 10px;
         }
 
-        #playerselect-touch-controls {
+        #playerselect-controls {
             gap: 100px;
         }
 
@@ -146,7 +146,7 @@
 
     <div id="content">
         <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
-        <div class="touch-controls" id="game-touch-controls">
+        <div class="touch-controls" id="game-controls">
             <div class="touch-buttons-flexstart">
                 <img class="touch-button" id="fire-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
             </div>
@@ -155,7 +155,7 @@
                 <img class="touch-button" id="right-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
             </div>
         </div>
-        <div class="touch-controls" id="playerselect-touch-controls">
+        <div class="touch-controls" id="playerselect-controls">
             <div class="touch-buttons-flexend">
                 <img class="touch-button" id="1p-button" src="assets/1p_arcade_button.png" oncontextmenu="event.preventDefault()" />
             </div>
@@ -171,8 +171,8 @@
 
         var statusElem = document.getElementById('status');
         var spinnerElem = document.getElementById('spinner');
-        var gameTouchCtrls = document.getElementById('game-touch-controls');
-        var playerSelectTouchCtrls = document.getElementById('playerselect-touch-controls');
+        var gameCtrls = document.getElementById('game-controls');
+        var playerSelectCtrls = document.getElementById('playerselect-controls');
 
         const TouchType = Object.freeze({
             NONE: 0, // must always be 0
@@ -275,9 +275,9 @@
                 }
             },
 
-            initGameTouchControls() {
-                gameTouchCtrls.style.display = 'grid';
-                playerSelectTouchCtrls.style.display = 'none';
+            showGameControls() {
+                gameCtrls.style.display = 'grid';
+                playerSelectCtrls.style.display = 'none';
 
                 var rightButton = document.getElementById('right-button');
                 var leftButton = document.getElementById('left-button');
@@ -292,9 +292,9 @@
                 this.attachTouchListeners(button2Func);
             },
 
-            initPlayerSelectTouchControls() {
-                gameTouchCtrls.style.display = 'none';
-                playerSelectTouchCtrls.style.display = 'grid';
+            showPlayerSelectControls() {
+                gameCtrls.style.display = 'none';
+                playerSelectCtrls.style.display = 'grid';
 
                 var player1Button = document.getElementById('1p-button');
                 var player2Button = document.getElementById('2p-button');
