@@ -51,6 +51,10 @@
 
         .touch-button {
             height: 13vh;
+            width: 13vh;
+            border: none;
+            outline: none;
+            cursor: pointer;
         }
 
         .touch-buttons-flexstart {
@@ -62,6 +66,17 @@
             display: flex;
             gap: 10px;
             justify-content: flex-end;
+        }
+
+        #fire-button, #left-button, #right-button {
+            background: url('assets/arcade_button.png') no-repeat center/cover;
+        }
+
+        #p1-button {
+            background: url('assets/1p_arcade_button.png') no-repeat center/cover;
+        }
+        #p2-button {
+            background: url('assets/2p_arcade_button.png') no-repeat center/cover;
         }
 
         .emscripten {
@@ -148,19 +163,19 @@
         <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
         <div class="touch-controls" id="game-controls">
             <div class="touch-buttons-flexstart">
-                <img class="touch-button" id="fire-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
+                <button class="touch-button" id="fire-button" oncontextmenu="event.preventDefault()"></button>
             </div>
             <div class="touch-buttons-flexend">
-                <img class="touch-button" id="left-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
-                <img class="touch-button" id="right-button" src="assets/arcade_button.png" oncontextmenu="event.preventDefault()" />
+                <button class="touch-button" id="left-button" oncontextmenu="event.preventDefault()"></button>
+                <button class="touch-button" id="right-button" oncontextmenu="event.preventDefault()"></button>
             </div>
         </div>
         <div class="touch-controls" id="playerselect-controls">
             <div class="touch-buttons-flexend">
-                <img class="touch-button" id="1p-button" src="assets/1p_arcade_button.png" oncontextmenu="event.preventDefault()" />
+                <button class="touch-button" id="p1-button" oncontextmenu="event.preventDefault()"></button>
             </div>
             <div class="touch-buttons-flexstart">
-                <img class="touch-button" id="2p-button" src="assets/2p_arcade_button.png" oncontextmenu="event.preventDefault()" />
+                <button class="touch-button" id="p2-button" oncontextmenu="event.preventDefault()"></button>
             </div>
         </div>
     </div>
@@ -180,12 +195,6 @@
             POINTER_EVENTS: 2,
             MS_POINTER_EVENTS: 3
         });
-
-        //var touchRightFn = Module.cwrap('gui_touch_right', null, ['boolean']);
-        //var touchLeftFn = Module.cwrap('gui_touch_left', null, ['boolean']);
-        //var touchFireFn = Module.cwrap('gui_touch_fire', null, ['boolean']);
-        //var touch1PFn = Module.cwrap('gui_touch_1p', null, ['boolean']);
-        //var touch2PFn = Module.cwrap('gui_touch_2p', null, ['boolean']);
 
         var Module = {
             print: (...args) => console.log(args.join(' ')),
@@ -296,8 +305,8 @@
                 gameCtrls.style.display = 'none';
                 playerSelectCtrls.style.display = 'grid';
 
-                var player1Button = document.getElementById('1p-button');
-                var player2Button = document.getElementById('2p-button');
+                var player1Button = document.getElementById('p1-button');
+                var player2Button = document.getElementById('p2-button');
 
                 player1Button.onclick = (e) => Module.ccall('web_click_1p');
                 player2Button.onclick = (e) => Module.ccall('web_click_2p');
