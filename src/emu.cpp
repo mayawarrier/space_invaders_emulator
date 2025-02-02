@@ -535,8 +535,6 @@ void emu::log_dbginfo()
     emu_gui::log_dbginfo();
 }
 
-
-
 // default values
 emu::emu(const fs::path& inipath) :
     m_window(nullptr),
@@ -546,6 +544,8 @@ emu::emu(const fs::path& inipath) :
     m_viewportrect({ .x = 0,.y = 0,.w = 0,.h = 0 }),
     m_viewporttex(nullptr),
     m_volume(0),
+    m_audiopaused(false),
+    m_delta_t(-1),
 #ifdef __EMSCRIPTEN__
     m_resizepending(false),
 #endif
@@ -1033,12 +1033,21 @@ int emu::run()
             continue;
         }
 
-        if (!(m_gui && m_gui->is_page_visible()))
+        if (!m_gui || m_gui->current_view() == VIEW_GAME)
         {
             // Emulate CPU for 1 frame.
             emulate_cpu(cpucycles, nframes);
             // Draw game.
             render_screen();
+
+            if (m_audiopaused) {
+                Mix_Resume(-1);
+                m_audiopaused = false;
+            }
+        }
+        else if (!m_audiopaused) {
+            Mix_Pause(-1);
+            m_audiopaused = true;
         }
 
         // Draw GUI.
@@ -1054,11 +1063,7 @@ int emu::run()
         auto t_laststart = t_start;
         t_start = clk::now();
 
-        // Show frame times + fps
-        if (m_gui) {
-            m_gui->set_delta_t(tim::duration<float>(t_start - t_laststart).count());
-        }
-
+        m_delta_t = tim::duration<float>(t_start - t_laststart).count();
         nframes++;
     }
 #ifdef __EMSCRIPTEN__

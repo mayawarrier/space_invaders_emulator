@@ -92,8 +92,7 @@ emu_gui::emu_gui(
     m_emu(emu),
     m_renderer(renderer),
     m_fonts({ nullptr, nullptr, nullptr }),
-    m_cur_panel(PANEL_NONE),
-    m_fps(-1),
+    m_cur_view(VIEW_GAME),
     m_frame_lastkeypress(SDL_SCANCODE_UNKNOWN),
     m_touchenabled(touch_supported()),
 #ifdef __EMSCRIPTEN__
@@ -427,45 +426,47 @@ void emu_gui::draw_settings_content()
         
         ImGui::SetCursorPosX(sw_startposX);
 
-        float sw_txtpos[5];
-
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(sw_spacingX, 0));
-        for (int i = 7; i >= 3; --i)
+        ImGui::PushFont(get_font_px(int(sw_width / 2.25)));
         {
-            sw_txtpos[i - 3] = ImGui::GetCursorPosX();
+            float sw_txtpos[5];
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(sw_spacingX, 0));
+            for (int i = 7; i >= 3; --i)
+            {
+                char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
+                sw_txtpos[i - 3] = ImGui::GetCursorPosX() + 
+                    (sw_width - ImGui::CalcTextSize(sw_name).x) / 2;
 
-            bool cur_val = m_emu.get_switch(i);
-            bool new_val = draw_dip_switch(i, cur_val, sw_width);
-            m_emu.set_switch(i, new_val);
+                bool cur_val = m_emu.get_switch(i);
+                bool new_val = draw_dip_switch(i, cur_val, sw_width);
+                m_emu.set_switch(i, new_val);
 
-            if (i != 3) {
+                if (i != 3) {
+                    ImGui::SameLine();
+                }
+            }
+            ImGui::PopStyleVar();
+
+            for (int i = 7; i >= 3; --i)
+            {
+                char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
+                ImGui::SetCursorPosX(sw_txtpos[i - 3]);
+                ImGui::TextUnformatted(sw_name);
                 ImGui::SameLine();
             }
-        }
-        ImGui::PopStyleVar();
-
-        ImGui::PushFont(m_fonts.subhdr_font);
-        for (int i = 7; i >= 3; --i)
-        {
-            char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
-            ImGui::SetCursorPosX(sw_txtpos[i - 3]);
-            ImGui::TextUnformatted(sw_name);
-            ImGui::SameLine();
         }
         ImGui::PopFont();
 
         ImGui::NewLine();
-        ImGui::NewLine();
 
         // Draw URL message
-        {
-            WND_PADX();
-            ImGui::TextUnformatted("See");
-            ImGui::SameLine();
-            draw_url("README", "https://github.com/mayawarrier/space_invaders_emulator/blob/main/README.md");
-            ImGui::SameLine();
-            ImGui::TextUnformatted("to learn how this works.");
-        }
+        //{
+        //    WND_PADX();
+        //    ImGui::TextUnformatted("See");
+        //    ImGui::SameLine();
+        //    draw_url("README", "https://github.com/mayawarrier/space_invaders_emulator/blob/main/README.md");
+        //    ImGui::SameLine();
+        //    ImGui::TextUnformatted("to learn how this works.");
+        //}
         
         ImGui::NewLine();
 
@@ -684,34 +685,35 @@ void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
 
     ImGui::PushFont(m_fonts.txt_font);
 
-    int new_panel = m_cur_panel;
+    int new_view = m_cur_view;
 
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::Button("Settings")) {
-            new_panel = 
-                (m_cur_panel == PANEL_SETTINGS) ?
-                PANEL_NONE : PANEL_SETTINGS;
+            new_view = 
+                (m_cur_view == VIEW_SETTINGS) ?
+                VIEW_GAME : VIEW_SETTINGS;
         }
         ImGui::SameLine();
 
         if (ImGui::Button("About")) {
-            new_panel = 
-                (m_cur_panel == PANEL_ABOUT) ?
-                PANEL_NONE : PANEL_ABOUT;
+            new_view = 
+                (m_cur_view == VIEW_ABOUT) ?
+                VIEW_GAME : VIEW_ABOUT;
         }
         ImGui::SameLine();
 
-        draw_rtalign_text("FPS: %d", m_fps);
+        int fps = int(std::lroundf(1.f / m_emu.delta_t()));
+        draw_rtalign_text("FPS: %d", fps);
 
         ImGui::EndMainMenuBar();
     }
-    m_cur_panel = new_panel;
+    m_cur_view = new_view;
 
-    switch (m_cur_panel)
+    switch (m_cur_view)
     {
-    case PANEL_SETTINGS: draw_panel("Settings", viewport, &emu_gui::draw_settings_content); break;
-    case PANEL_ABOUT:    draw_panel("About",    viewport, &emu_gui::draw_help_content); break;
+    case VIEW_SETTINGS: draw_panel("Settings", viewport, &emu_gui::draw_settings_content); break;
+    case VIEW_ABOUT:    draw_panel("About",    viewport, &emu_gui::draw_help_content); break;
     default: break;
     }
 

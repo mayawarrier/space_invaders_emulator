@@ -11,11 +11,11 @@
 #include "emu.hpp"
 
 
-enum gui_panel
+enum gui_view
 {
-    PANEL_NONE,
-    PANEL_SETTINGS,
-    PANEL_ABOUT
+    VIEW_GAME,
+    VIEW_SETTINGS,
+    VIEW_ABOUT
 };
 
 enum gui_align
@@ -97,16 +97,11 @@ struct emu_gui
     // at the given display size.
     gui_sizeinfo sizeinfo(SDL_Point disp_size) const;
 
+    // Get the current view.
+    int current_view() const { return m_cur_view; }
+
     // Run GUI for one frame.
     void run(SDL_Point display_size, const SDL_Rect& viewport);
-
-    // Check if a GUI page is currently visible.
-    bool is_page_visible() const { return m_cur_panel != PANEL_NONE; }
-
-    void set_delta_t(float delta_t)
-    {
-        m_fps = int(std::lroundf(1.f / delta_t));
-    }
 
     static void log_dbginfo();
 
@@ -139,8 +134,7 @@ private:
     SDL_Renderer* m_renderer;
     gui_fontatlas m_fontatlas;
     gui_fonts m_fonts;
-    int m_cur_panel;
-    int m_fps;
+    int m_cur_view;
 
     SDL_Scancode m_frame_lastkeypress; // cur frame
     bool m_inputkey_focused[NUM_INPUTS];

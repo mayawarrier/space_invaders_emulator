@@ -101,6 +101,9 @@ struct emu_interface
     int get_volume() const;
     void set_volume(int volume);
 
+    // Delta t for last frame.
+    float delta_t() const;
+
     void send_input(input inp, bool pressed);
 
     std::array<SDL_Scancode, NUM_INPUTS>& input2keymap();
@@ -172,11 +175,15 @@ private:
     SDL_Rect m_viewportrect;
     SDL_Texture* m_viewporttex;
     std::unique_ptr<emu_gui> m_gui;
-    int m_volume;
-
+    
     std::array<bool, NUM_INPUTS> m_guiinputpressed;
     std::bitset<SDL_NUM_SCANCODES> m_keypressed;
     std::array<SDL_Scancode, NUM_INPUTS> m_input2key;
+
+    int m_volume;
+    bool m_audiopaused;
+
+    float m_delta_t;
 
 #ifdef __EMSCRIPTEN__
     bool m_resizepending;
@@ -211,6 +218,10 @@ inline void emu_interface::send_input(input inp, bool pressed) {
 
 inline std::array<SDL_Scancode, NUM_INPUTS>& emu_interface::input2keymap() {
     return m_emu->m_input2key; 
+}
+
+inline float emu_interface::delta_t() const{
+    return m_emu->m_delta_t;
 }
 
 #endif
