@@ -643,12 +643,9 @@ void emu_gui::handle_touchctrls_state()
     SDL_assert(m_touchenabled);
 
     if (m_emu.in_demo_mode()) {
-        if (m_ctrls_showing != CTRLS_PLAYER_SELECT) 
-        {
+        if (m_ctrls_showing != CTRLS_PLAYER_SELECT) {
             EM_ASM(Module.showPlayerSelectControls());
             m_ctrls_showing = CTRLS_PLAYER_SELECT;
-            m_playersel = PLAYER_SELECT_NONE;
-            m_playerselinp_idx = 0;
         }
     } 
     else if (m_ctrls_showing != CTRLS_GAME) {
@@ -658,15 +655,23 @@ void emu_gui::handle_touchctrls_state()
 
     if (m_playersel != PLAYER_SELECT_NONE)
     {
-        auto& inputs = player_select_inputs[m_playersel - 1];
-        if (m_playerselinp_idx < inputs.size())
+        if (m_cur_view == VIEW_GAME) 
         {
-            const auto& frame_inputs = inputs[m_playerselinp_idx];
-            for (const auto& inp : frame_inputs) {
-                m_emu.send_input(inp.first, inp.second);
+            auto& inputs = player_select_inputs[m_playersel - 1];
+            if (m_playerselinp_idx < inputs.size())
+            {
+                const auto& frame_inputs = inputs[m_playerselinp_idx];
+                for (const auto& inp : frame_inputs) {
+                    m_emu.send_input(inp.first, inp.second);
+                }
+                m_playerselinp_idx++;
             }
-            m_playerselinp_idx++;
+            else {
+                m_playersel = PLAYER_SELECT_NONE;
+                m_playerselinp_idx = 0;
+            }
         }
+        else { m_cur_view = VIEW_GAME; } // next frame
     }
 }
 #endif 
@@ -683,41 +688,40 @@ void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
+    if (m_touchenabled) { // disable hovering
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyle().Colors[ImGuiCol_Button]);
+    }
     ImGui::PushFont(m_fonts.txt_font);
-
-    int new_view = m_cur_view;
-
-    if (ImGui::BeginMainMenuBar())
     {
-        if (ImGui::Button("Settings")) {
-            new_view = 
-                (m_cur_view == VIEW_SETTINGS) ?
-                VIEW_GAME : VIEW_SETTINGS;
+        if (ImGui::BeginMainMenuBar())
+        {
+            if (ImGui::Button("Settings")) {
+                m_cur_view = (m_cur_view == VIEW_SETTINGS) ? VIEW_GAME : VIEW_SETTINGS;
+            }
+            ImGui::SameLine();
+
+            if (ImGui::Button("About")) {
+                m_cur_view = (m_cur_view == VIEW_ABOUT) ? VIEW_GAME : VIEW_ABOUT;
+            }
+            ImGui::SameLine();
+
+            int fps = int(std::lroundf(1.f / m_emu.delta_t()));
+            draw_rtalign_text("FPS: %d", fps);
+
+            ImGui::EndMainMenuBar();
         }
-        ImGui::SameLine();
 
-        if (ImGui::Button("About")) {
-            new_view = 
-                (m_cur_view == VIEW_ABOUT) ?
-                VIEW_GAME : VIEW_ABOUT;
+        switch (m_cur_view)
+        {
+        case VIEW_SETTINGS: draw_panel("Settings", viewport, &emu_gui::draw_settings_content); break;
+        case VIEW_ABOUT:    draw_panel("About",    viewport, &emu_gui::draw_help_content); break;
+        default: break;
         }
-        ImGui::SameLine();
-
-        int fps = int(std::lroundf(1.f / m_emu.delta_t()));
-        draw_rtalign_text("FPS: %d", fps);
-
-        ImGui::EndMainMenuBar();
     }
-    m_cur_view = new_view;
-
-    switch (m_cur_view)
-    {
-    case VIEW_SETTINGS: draw_panel("Settings", viewport, &emu_gui::draw_settings_content); break;
-    case VIEW_ABOUT:    draw_panel("About",    viewport, &emu_gui::draw_help_content); break;
-    default: break;
-    }
-
     ImGui::PopFont();
+    if (m_touchenabled) {
+        ImGui::PopStyleColor();
+    }
 
     ImGui::Render();
     ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), m_renderer);
