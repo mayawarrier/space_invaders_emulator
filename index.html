@@ -262,13 +262,6 @@
 
             attachTouchListeners(button2FuncMap) {
                 switch (Module.touchType) {
-                    case TouchType.TOUCH_EVENTS:
-                        for (const [button, func] of button2FuncMap) {
-                            button.ontouchstart = (e) => func(e, true);
-                            button.ontouchend = (e) => func(e, false);
-                        }
-                        break;
-
                     case TouchType.POINTER_EVENTS:
                         for (const [button, func] of button2FuncMap) {
                             button.onpointerdown = (e) => func(e, true);
@@ -283,36 +276,56 @@
                         }
                         break;
 
+                    case TouchType.TOUCH_EVENTS:
+                        for (const [button, func] of button2FuncMap) {
+                            button.ontouchstart = (e) => func(e, true);
+                            button.ontouchend = (e) => func(e, false);
+                        }
+                        break;
+
                     default: break;
+                }
+
+                // stop vibration on touch events
+                if (Module.touchType != TouchType.TOUCH_EVENTS &&
+                    Module.touchType != TouchType.NONE &&
+                    'ontouchstart' in window)
+                {
+                    for (const [button,] of button2FuncMap) {
+                        button.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+                        button.addEventListener('touchend',   (e) => e.preventDefault(), { passive: false });
+                    }
                 }
             },
 
-            showGameControls() {
-                gameCtrls.style.display = 'grid';
-                playerSelectCtrls.style.display = 'none';
-
+            onRuntimeInitialized() {
                 var rightButton = document.getElementById('right-button');
                 var leftButton = document.getElementById('left-button');
                 var fireButton = document.getElementById('fire-button');
 
                 const button2Func = [
                     [rightButton, (e, pressed) => Module.callTouchFn('web_touch_right', e, pressed)],
-                    [leftButton,  (e, pressed) => Module.callTouchFn('web_touch_left', e, pressed)],
-                    [fireButton,  (e, pressed) => Module.callTouchFn('web_touch_fire', e, pressed)]
+                    [leftButton, (e, pressed) => Module.callTouchFn('web_touch_left', e, pressed)],
+                    [fireButton, (e, pressed) => Module.callTouchFn('web_touch_fire', e, pressed)]
                 ];
 
                 this.attachTouchListeners(button2Func);
-            },
-
-            showPlayerSelectControls() {
-                gameCtrls.style.display = 'none';
-                playerSelectCtrls.style.display = 'grid';
 
                 var player1Button = document.getElementById('p1-button');
                 var player2Button = document.getElementById('p2-button');
 
                 player1Button.onclick = (e) => Module.ccall('web_click_1p');
                 player2Button.onclick = (e) => Module.ccall('web_click_2p');
+            },
+
+            showGameControls() {
+                gameCtrls.style.display = 'grid';
+                playerSelectCtrls.style.display = 'none';
+            },
+
+            showPlayerSelectControls() {
+                gameCtrls.style.display = 'none';
+                playerSelectCtrls.style.display = 'grid';
             },
 
             setStatus: (text) => {
