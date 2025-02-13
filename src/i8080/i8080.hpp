@@ -43,8 +43,6 @@ struct i8080
     i8080_addr_t sp; // Stack pointer
     i8080_addr_t pc; // Program counter
 
-    i8080_word_t int_rq; // Interrupt request
-
     // Flags
     i8080_word_t s : 1;  // Sign
     i8080_word_t z : 1;  // Zero
@@ -55,7 +53,7 @@ struct i8080
     i8080_word_t halt : 1; // In HALT state?
 
     i8080_word_t int_en : 1; // Interrupts enabled (INTE pin)  
-    i8080_word_t int_ff : 1; // Interrupt latch
+    i8080_word_t int_rq : 1; // Interrupt request
 
     // Clock cycles elapsed since last reset
     std::uint64_t cycles;
@@ -82,18 +80,21 @@ struct i8080
     // missing IO/intr callback.
     int step();
 
-    // Disassemble one instruction.
-    // This can be called before i8080_step() to print the
-    // instruction that is about to be executed.
-    // It can also be called in a loop to disassemble a section of memory.
-    // Returns 0 on success.
-    void disassemble(std::FILE* os);
-
     // Send an interrupt request.
-    // If interrupts are enabled, intr_read() will be
-    // invoked by step() and the returned opcode 
-    // will be executed.
+    // If interrupts are enabled, the opcode returned by 
+    // intr_read() will be executed.
+    // 
+    // Interrupts are usually received in the middle of an
+    // instruction, but that is not possible with this emulator.
+    // For proper timing, call this function immediately
+    // after the target instruction has completed.
     void interrupt();
+
+    // Disassemble one instruction.
+    // This can be called before step() to print the
+    // instruction that is about to be executed, or in 
+    // a loop to disassemble a section of memory.
+    void disassemble(std::FILE* os);
 };
 
 #endif /* I8080_H */

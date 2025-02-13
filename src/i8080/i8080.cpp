@@ -679,7 +679,6 @@ void i8080::reset()
     pc = 0;
     int_en = 0;
     int_rq = 0;
-    int_ff = 0;
     halt = 0;
     cycles = 0;
 }
@@ -690,33 +689,22 @@ void i8080::interrupt() { int_rq = 1; }
 // (datasheet pg 7)
 int i8080::step() 
 {
-    // execute interrupt if there is one
-    if (int_ff) {
+    // handle interrupt
+    if (int_rq) {
         IF_UNLIKELY(!intr_read) { 
             return -1; 
         }
         int_en = 0;
-        int_ff = 0;
         int_rq = 0;
+        halt = 0;
         return i8080_exec(this, intr_read(this));
     }
 
-    int ret;
     IF_UNLIKELY(halt) { 
-        ret = 0;
-    } else {
-        // normal execution
-        ret = i8080_exec(this, read_word_adv(this));
+        return 0;
     }
-
-    // Sync incoming interrupt with end of 
-    // instruction cycle (datasheet pg 11).
-    // This delays execution by one instruction.
-    if (int_rq && int_en) {     
-        int_ff = 1;
-        halt = 0;
-    }
-    return ret;
+    // execute next instruction
+    return i8080_exec(this, read_word_adv(this));
 }
 
 // '?' indicates that the instruction is undocumented
