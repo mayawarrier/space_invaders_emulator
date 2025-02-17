@@ -103,7 +103,7 @@ target_link_libraries(spaceinvaders PRIVATE cxxopts)
 
 if (EMSCRIPTEN)
     # --use-port and target_compile_options() do not work?
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_SDL=2 -s USE_SDL_MIXER=2")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_SDL=2 -s USE_SDL_MIXER=2 -sUSE_OGG=0 -sUSE_VORBIS=0")
 
 else()
     set(ALLOW_SDL2_SRCBUILD_HELP 
