@@ -71,10 +71,12 @@ else
     exit 1
 fi
 
+SCRIPT_DIR=$(dirname "$0")
+
 if [ "$install" = "true" ]; then
-    ./web-build.sh --config "$config" --emsdk-path "$emsdkPath" --install
+    "$SCRIPT_DIR/web-build.sh" --config "$config" --emsdk-path "$emsdkPath" --install
 elif [ "$build" = "true" ]; then
-    ./web-build.sh --config "$config" --emsdk-path "$emsdkPath"
+    "$SCRIPT_DIR/web-build.sh" --config "$config" --emsdk-path "$emsdkPath"
 fi
 
 echo "Running..."

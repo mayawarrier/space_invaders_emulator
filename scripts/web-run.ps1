@@ -26,9 +26,9 @@ if ($config -eq "Debug") {
 }
 
 if ($install) {
-    & .\web-build.ps1 -config $config -emsdkPath $emsdkPath -install
+    & "$PSScriptRoot\web-build.ps1" -config $config -emsdkPath $emsdkPath -install
 } elseif ($build) {
-    & .\web-build.ps1 -config $config -emsdkPath $emsdkPath
+    & "$PSScriptRoot\web-build.ps1" -config $config -emsdkPath $emsdkPath
 }
 
 $emsdkEnvPath = Join-Path $emsdkPath "emsdk_env.bat"
