@@ -58,8 +58,6 @@ struct gui_fonts
 using gui_fontatlas = std::unordered_map<int, ImFont*>;
 
 #ifdef __EMSCRIPTEN__
-using gui_inputvec = std::vector<std::pair<input, bool>>;
-
 enum gui_playerselect
 {
     PLAYER_SELECT_NONE = 0,
@@ -106,11 +104,11 @@ struct emu_gui
     static void log_dbginfo();
 
 private: 
-    void draw_help_content();
+    void draw_about_content();
     void draw_settings_content();
 
-    void draw_panel(const char* title, 
-        const SDL_Rect& viewport, void(emu_gui::*draw_content)());
+    void draw_view(const char* title, const SDL_Rect& viewport, 
+        void(emu_gui::*draw_content)(), bool* p_closed);
 
     void draw_inputkey(const char* label, input inptype,
         gui_align align = ALIGN_LEFT, float labelsizeX = -1);

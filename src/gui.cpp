@@ -204,19 +204,51 @@ static void draw_rtalign_text(const char* fmt, Args&&... args)
     ImGui::TextUnformatted(ptxt);
 }
 
-static void draw_header(const char* title, color colr, gui_align align = ALIGN_LEFT)
+static float get_scrollbar_width()
+{
+    return ImGui::GetScrollMaxY() > 0.0f ? ImGui::GetStyle().ScrollbarSize : 0.0f;
+}
+
+static void draw_header(const char* title, color colr, bool* p_closed, gui_align align = ALIGN_LEFT)
 {
     ImVec2 dpos = ImGui::GetCursorScreenPos();
     ImVec2 wndsize = ImGui::GetWindowSize();
     ImVec2 wndpos = ImGui::GetWindowPos();
     ImVec2 wndpadding = ImGui::GetStyle().WindowPadding;
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
     float hdr_size = ImGui::GetFont()->FontSize + wndpadding.y * 2;
 
     ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(wndpos.x, dpos.y),
         ImVec2(wndpos.x + wndsize.x, dpos.y + hdr_size), colr.to_imcolor());
 
-    ImGui::SetCursorPos(ImVec2(wndpadding.x, ImGui::GetCursorPosY() + wndpadding.y));
+    if (p_closed)
+    {
+        constexpr float btnsize = 12.f;
+        constexpr float btnpadding = 7.f;
+        float btn_rtoffset = (btnsize + get_scrollbar_width() + wndpadding.x);
 
+        ImVec2 btnpos = ImVec2(dpos.x + wndsize.x - btn_rtoffset - btnpadding, dpos.y + btnpadding);
+        ImGui::SetCursorScreenPos(btnpos);
+
+        ImGui::PushID(title);
+        bool clicked = ImGui::InvisibleButton("##wndclose", ImVec2(btnsize, btnsize));
+        ImGui::PopID();
+
+        static constexpr color btn_basecol(200, 200, 200, 255);
+        ImU32 btncol = (ImGui::IsItemHovered() ? btn_basecol.darker(50) : btn_basecol).to_imcolor();
+
+        ImVec2 p2 = ImVec2(btnpos.x + btnsize, btnpos.y + btnsize);
+        ImVec2 p3 = ImVec2(btnpos.x, btnpos.y + btnsize);
+        ImVec2 p4 = ImVec2(btnpos.x + btnsize, btnpos.y);
+        draw_list->AddLine(btnpos, p2, btncol, 2.0f);
+        draw_list->AddLine(p3, p4, btncol, 2.0f);
+
+        *p_closed = clicked;
+        ImGui::SetCursorScreenPos(dpos);
+    }
+
+    ImGui::SetCursorPos(ImVec2(wndpadding.x, ImGui::GetCursorPosY() + wndpadding.y));
     switch (align)
     {
     case ALIGN_RIGHT:
@@ -228,17 +260,32 @@ static void draw_header(const char* title, color colr, gui_align align = ALIGN_L
     default:
         break;
     }
+
     ImGui::TextUnformatted(title);
 }
 
 static void draw_subheader(const char* title, color colr, gui_align align = ALIGN_LEFT)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, ImGui::GetStyle().WindowPadding.y));
-    draw_header(title, colr, align);
+    draw_header(title, colr, nullptr, align);
     ImGui::PopStyleVar();
 }
 
-static void draw_url(const char* text, const char* url)
+static std::string format_escape(const char* str)
+{
+    std::string ret;
+    for (const char* p = str; *p; ++p) {
+        if (*p == '%') {
+            ret += "%%";
+        } else {
+            ret += *p;
+        }
+    }
+    return ret;
+}
+
+// url must be escaped!
+static void draw_url(const char* text, const char* url, int id_seed = 0)
 {
     const ImU32 color = IM_COL32(62, 166, 255, 255);
 
@@ -246,13 +293,16 @@ static void draw_url(const char* text, const char* url)
     ImVec2 dpos = ImGui::GetCursorScreenPos();
     ImVec2 txtsize = ImGui::CalcTextSize(text);
 
-    if (ImGui::InvisibleButton(text, txtsize)) {
+    ImGui::PushID(id_seed);
+    if (ImGui::InvisibleButton(url, txtsize)) {
         if (SDL_OpenURL(url) != 0) {
             logERROR("Could not open URL %s", url);
         }
     }
+    ImGui::PopID();
     if (ImGui::IsItemHovered()) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        ImGui::SetTooltip(url);
     }
     ImGui::SameLine();
 
@@ -403,9 +453,55 @@ static int draw_volume_slider(const char* label, int volume, gui_align align = A
     return volume;
 }
 
-void emu_gui::draw_help_content()
+void emu_gui::draw_about_content()
 {
+    ImGui::PushFont(m_fonts.subhdr_font);
+    draw_subheader("About", SUBHDR_BGCOLOR);
+    ImGui::PopFont();
+    ImGui::NewLine();
 
+    ImGui::PushTextWrapPos(ImGui::GetWindowSize().x - ImGui::GetStyle().WindowPadding.x);
+    {
+        WND_PADX(); ImGui::TextUnformatted("Space Invaders Emulator v1.0\n");
+        WND_PADX(); ImGui::TextUnformatted("Maya Warrier\n\n");
+        WND_PADX();
+        ImGui::TextUnformatted("Source code available at"); ImGui::SameLine();
+        draw_url("GitHub", "https://github.com/mayawarrier/space_invaders_emulator/");
+        WND_PADX(); ImGui::TextUnformatted("under the MIT license.\n\n");
+
+        ImGui::PushFont(m_fonts.subhdr_font);
+        draw_subheader("How does this work?", SUBHDR_BGCOLOR);
+        ImGui::PopFont();
+        ImGui::NewLine();
+
+        const char* content = 
+            "This program is a small virtual machine that runs the original Space Invaders code from 1978.\n\n"
+            "It emulates the CPU, hardware, and I/O devices the game requires, making the game think it's "
+            "running on the original arcade machine.\n\n"
+            "To achieve this, it must simulate the Intel 8080 CPU at the instruction level, and replicate the "
+            "behavior of several chips on the motherboard.\n\n";
+
+        WND_PADX(); 
+        ImGui::TextUnformatted(content);
+
+        static const std::pair<const char*, std::string> links[] = {
+            { "Computer Archeology website", 
+                format_escape("https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html") },
+            { "Intel 8080 Manual", 
+                format_escape("https://altairclone.com/downloads/manuals/8080%20Programmers%20Manual.pdf") },
+            { "Intel 8080 Datasheet", 
+                format_escape("https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf") }
+        };
+
+        WND_PADX(); ImGui::TextUnformatted("Helpful resources to learn more:");
+        for (auto& link : links) {
+            WND_PADX(); 
+            draw_url(link.first, link.second.c_str());
+        }
+
+        ImGui::NewLine();
+    }
+    ImGui::PopTextWrapPos();
 }
 
 void emu_gui::draw_settings_content()
@@ -457,17 +553,6 @@ void emu_gui::draw_settings_content()
         ImGui::PopFont();
 
         ImGui::NewLine();
-
-        // Draw URL message
-        //{
-        //    WND_PADX();
-        //    ImGui::TextUnformatted("See");
-        //    ImGui::SameLine();
-        //    draw_url("README", "https://github.com/mayawarrier/space_invaders_emulator/blob/main/README.md");
-        //    ImGui::SameLine();
-        //    ImGui::TextUnformatted("to learn how this works.");
-        //}
-        
         ImGui::NewLine();
 
         int num_ships = 0;
@@ -492,7 +577,7 @@ void emu_gui::draw_settings_content()
 
         ImGui::NewLine();
 
-        constexpr std::pair<const char*, input> inputs[NUM_INPUTS]
+        static const std::pair<const char*, input> inputs[NUM_INPUTS]
         {
             { "Player 1 Left ", INPUT_P1_LEFT },
             { "Player 1 Right", INPUT_P1_RIGHT },
@@ -534,7 +619,8 @@ void emu_gui::draw_settings_content()
     }
 }
 
-void emu_gui::draw_panel(const char* title, const SDL_Rect& viewport, void(emu_gui::*draw_content)())
+void emu_gui::draw_view(const char* title, const SDL_Rect& viewport, 
+    void(emu_gui::*draw_content)(), bool* p_wndclosed)
 {
     static constexpr ImGuiWindowFlags PANEL_FLAGS = 
         ImGuiWindowFlags_NoTitleBar |
@@ -561,7 +647,7 @@ void emu_gui::draw_panel(const char* title, const SDL_Rect& viewport, void(emu_g
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(style.WindowPadding.x, 12));
         ImGui::PushFont(m_fonts.hdr_font);
         ImGui::SetCursorPosY(0); // remove spacing
-        draw_header(title, HEADER_BGCOLOR, ALIGN_CENTER);
+        draw_header(title, HEADER_BGCOLOR, p_wndclosed, ALIGN_CENTER);
         ImGui::PopFont();
         ImGui::PopStyleVar();
 
@@ -573,7 +659,7 @@ void emu_gui::draw_panel(const char* title, const SDL_Rect& viewport, void(emu_g
         ImGui::PopStyleVar();
 
         ImGui::End();
-    } 
+    }
 }
 
 gui_sizeinfo emu_gui::sizeinfo(SDL_Point disp_size) const
@@ -624,6 +710,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE void web_click_2p(void)
     }
 }
 
+using gui_inputvec = std::vector<std::pair<input, bool>>;
+
 // inputs to start 1P or 2P, frame by frame
 static const std::vector<gui_inputvec> player_select_inputs[2] = {
     { // 1p
@@ -660,8 +748,8 @@ void emu_gui::handle_touchctrls_state()
             auto& inputs = player_select_inputs[m_playersel - 1];
             if (m_playerselinp_idx < inputs.size())
             {
-                const auto& frame_inputs = inputs[m_playerselinp_idx];
-                for (const auto& inp : frame_inputs) {
+                auto& frame_inputs = inputs[m_playerselinp_idx];
+                for (auto& inp : frame_inputs) {
                     m_emu.send_input(inp.first, inp.second);
                 }
                 m_playerselinp_idx++;
@@ -711,11 +799,16 @@ void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
             ImGui::EndMainMenuBar();
         }
 
+        bool wndclosed = false;
         switch (m_cur_view)
         {
-        case VIEW_SETTINGS: draw_panel("Settings", viewport, &emu_gui::draw_settings_content); break;
-        case VIEW_ABOUT:    draw_panel("About",    viewport, &emu_gui::draw_help_content); break;
+        case VIEW_SETTINGS: draw_view("Settings", viewport, &emu_gui::draw_settings_content, &wndclosed); break;
+        case VIEW_ABOUT:    draw_view("About",    viewport, &emu_gui::draw_about_content, &wndclosed); break;
         default: break;
+        }
+
+        if (wndclosed) {
+            m_cur_view = VIEW_GAME;
         }
     }
     ImGui::PopFont();
