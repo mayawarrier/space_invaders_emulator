@@ -284,7 +284,6 @@ static std::string format_escape(const char* str)
     return ret;
 }
 
-// url must be escaped!
 static void draw_url(const char* text, const char* url, int id_seed = 0)
 {
     const ImU32 color = IM_COL32(62, 166, 255, 255);
@@ -302,7 +301,7 @@ static void draw_url(const char* text, const char* url, int id_seed = 0)
     ImGui::PopID();
     if (ImGui::IsItemHovered()) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        ImGui::SetTooltip(url);
+        ImGui::SetTooltip(format_escape(url).c_str());
     }
     ImGui::SameLine();
 
@@ -470,33 +469,31 @@ void emu_gui::draw_about_content()
         WND_PADX(); ImGui::TextUnformatted("under the MIT license.\n\n");
 
         ImGui::PushFont(m_fonts.subhdr_font);
-        draw_subheader("How does this work?", SUBHDR_BGCOLOR);
+        draw_subheader("How it works", SUBHDR_BGCOLOR);
         ImGui::PopFont();
         ImGui::NewLine();
 
-        const char* content = 
-            "This program is a small virtual machine that runs the original Space Invaders code from 1978.\n\n"
-            "It emulates the CPU, hardware, and I/O devices the game requires, making the game think it's "
-            "running on the original arcade machine.\n\n"
+        const char* content =
+            "This emulator is a small virtual machine that runs the original Space Invaders game code from 1978!\n\n"
+            "It emulates the CPU, hardware, and I/O devices the game requires, "
+            "making the game think it's running on the actual arcade machine.\n\n"
             "To achieve this, it must simulate the Intel 8080 CPU at the instruction level, and replicate the "
             "behavior of several chips on the motherboard.\n\n";
 
         WND_PADX(); 
         ImGui::TextUnformatted(content);
 
-        static const std::pair<const char*, std::string> links[] = {
-            { "Computer Archeology website", 
-                format_escape("https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html") },
-            { "Intel 8080 Manual", 
-                format_escape("https://altairclone.com/downloads/manuals/8080%20Programmers%20Manual.pdf") },
-            { "Intel 8080 Datasheet", 
-                format_escape("https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf") }
+        static constexpr std::pair<const char*, const char*> links[] = {
+            { "Wikipedia", "https://en.wikipedia.org/wiki/Space_Invaders"},
+            { "Computer Archeology website", "https://computerarcheology.com/Arcade/SpaceInvaders/" },
+            { "RadioShack Intel 8080 Manual", "https://archive.org/details/8080-8085_Assembly_Language_Programming_1977_Intel" },
+            { "Intel 8080 Datasheet", "https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf" }
         };
 
-        WND_PADX(); ImGui::TextUnformatted("Helpful resources to learn more:");
+        WND_PADX(); ImGui::TextUnformatted("More reading (if you're interested):");
         for (auto& link : links) {
             WND_PADX(); 
-            draw_url(link.first, link.second.c_str());
+            draw_url(link.first, link.second);
         }
 
         ImGui::NewLine();
