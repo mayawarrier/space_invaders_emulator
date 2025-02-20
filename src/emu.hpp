@@ -26,6 +26,7 @@
 // todo: these assume a compatible ROM
 #define VRAM_START_ADDR 0x2400
 #define GAMEMODE_ADDR 0x20ef
+#define HISCORE_START_ADDR 0x20f4
 
 enum input : uint8_t
 {
@@ -114,11 +115,7 @@ private:
 
 struct emu
 {
-#ifdef __EMSCRIPTEN__
-    emu(const fs::path& rom_dir, bool enable_ui);
-#endif
-    emu(const fs::path& ini_file,
-        const fs::path& rom_dir,
+    emu(const fs::path& rom_dir,
         bool fullscreen = false,
         bool enable_ui = true);
 
@@ -141,7 +138,7 @@ struct emu
     friend emu_interface;
 
 private:
-    emu(const fs::path& inipath);
+    emu();
 
     static void log_dbginfo();
 
@@ -152,6 +149,11 @@ private:
 
     int load_prefs();
     int save_prefs();
+    int load_hiscore();
+    int save_hiscore();
+
+    int run_begin();
+    int run_end();
 
     int resize_window();
 
@@ -162,9 +164,9 @@ private:
     void set_switch(int index, bool value);
     void set_volume(int volume);
 
-    void emulate_cpu(uint64_t& cpucycles, uint64_t nframes);
+    void emulate_cpu(uint64_t frame_idx, uint64_t& target_cycles);
     void render_screen();
-    
+
 private:
     machine m;
     SDL_Window* m_window;
@@ -182,14 +184,11 @@ private:
 
     int m_volume;
     bool m_audiopaused;
-
+    uint16_t m_hiscore_bcd;
     float m_delta_t;
 
 #ifdef __EMSCRIPTEN__
     bool m_resizepending;
-#endif
-#ifndef __EMSCRIPTEN__
-    fs::path m_inipath;
 #endif
     bool m_ok;
 };

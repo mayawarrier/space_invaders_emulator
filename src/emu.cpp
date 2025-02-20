@@ -536,7 +536,7 @@ void emu::log_dbginfo()
 }
 
 // default values
-emu::emu(const fs::path& inipath) :
+emu::emu() :
     m_window(nullptr),
     m_renderer(nullptr),
     m_pixfmt(nullptr),
@@ -546,11 +546,9 @@ emu::emu(const fs::path& inipath) :
     m_volume(0),
     m_audiopaused(false),
     m_delta_t(-1),
+    m_hiscore_bcd(0),
 #ifdef __EMSCRIPTEN__
     m_resizepending(false),
-#endif
-#ifndef __EMSCRIPTEN__
-    m_inipath(inipath),
 #endif
     m_ok(false)
 {
@@ -563,9 +561,8 @@ emu::emu(const fs::path& inipath) :
     }
 }
 
-emu::emu(const fs::path& inipath, 
-    const fs::path& romdir, bool fullscreen, bool enable_ui) : 
-    emu(inipath)
+emu::emu(const fs::path& romdir, bool fullscreen, bool enable_ui) : 
+    emu()
 {
     log_dbginfo();
 
@@ -595,12 +592,6 @@ emu::emu(const fs::path& inipath,
 
     m_ok = true;
 }
-
-#ifdef __EMSCRIPTEN__
-emu::emu(const fs::path& romdir, bool enable_ui) :
-    emu("", romdir, false, enable_ui)
-{}
-#endif
 
 emu::~emu()
 {
@@ -657,7 +648,7 @@ void emu::set_volume(int new_volume)
     } 
 }
 
-void emu::emulate_cpu(uint64_t& cpucycles, uint64_t nframes)
+void emu::emulate_cpu(uint64_t frame_idx, uint64_t& target_cycles)
 {
     // pass input to machine ports
     set_bit(&m.in_port1, 0, m_keypressed[m_input2key[INPUT_CREDIT]]   || m_guiinputpressed[INPUT_CREDIT]);
@@ -671,26 +662,26 @@ void emu::emulate_cpu(uint64_t& cpucycles, uint64_t nframes)
     set_bit(&m.in_port2, 6, m_keypressed[m_input2key[INPUT_P2_RIGHT]] || m_guiinputpressed[INPUT_P2_RIGHT]);
 
     // 33333.33 clk cycles at emulated CPU's 2Mhz clock speed (16667us/0.5us)
-    uint64_t frame_cycles = 33333 + (nframes % 3 == 0);
-    uint64_t prev_cpucycles = cpucycles;
+    uint64_t frame_cycles = 33333 + (frame_idx % 3 == 0);
+    uint64_t prev_targetcycles = target_cycles;
 
     // run till mid-screen
     // 14286 = (96/224) * (16667us/0.5us)
-    while (m.cpu.cycles - prev_cpucycles < 14286) {
+    while (m.cpu.cycles - prev_targetcycles < 14286) {
         m.cpu.step();
     }
     m.intr_opcode = i8080_RST_1;
     m.cpu.interrupt();
 
     // run till end of screen (start of VBLANK)
-    while (m.cpu.cycles - prev_cpucycles < frame_cycles) {
+    while (m.cpu.cycles - prev_targetcycles < frame_cycles) {
         m.cpu.step();
     }
     m.intr_opcode = i8080_RST_2;
     m.cpu.interrupt();
 
     // extra cycles adjusted in next frame
-    cpucycles += frame_cycles;
+    target_cycles += frame_cycles;
 }
 
 // Pixel color after gel overlay
@@ -740,16 +731,38 @@ void emu::render_screen()
     SDL_RenderCopy(m_renderer, m_viewporttex, NULL, &m_viewportrect);
 }
 
+#ifndef __EMSCRIPTEN__
+static const fs::path& APPDATA_DIR()
+{
+    static fs::path g_path = [] {
+        char* pathstr = SDL_GetPrefPath("SpaceInvaders", "v1");
+        fs::path path = fs::u8path(pathstr);
+        SDL_free(pathstr);
+        return path;
+        }();
+    return g_path;
+}
+
+static const fs::path& INI_PATH() {
+    static fs::path path = APPDATA_DIR() / "spaceinvaders.ini";
+    return path;
+}
+static const fs::path& HISCORE_PATH() {
+    static fs::path path = APPDATA_DIR() / "hiscore.dat";
+    return path;
+}
+#endif
+
 int emu::load_prefs()
 {
 #ifdef __EMSCRIPTEN__
     inireader ini;
 #else
-    if (!fs::exists(m_inipath)) {
+    if (!fs::exists(INI_PATH())) {
         // okay, inifile will be created on exit
         return 0;
     }
-    inireader ini(m_inipath);
+    inireader ini(INI_PATH());
     if (!ini.ok()) {
         return -1;
     }
@@ -800,7 +813,7 @@ int emu::save_prefs()
 #ifdef __EMSCRIPTEN__
     iniwriter ini;
 #else
-    iniwriter ini(m_inipath);
+    iniwriter ini(INI_PATH());
     if (!ini.ok()) {
         return -1;
     }
@@ -827,6 +840,109 @@ int emu::save_prefs()
     }
 
     logMESSAGE("Saved prefs");
+    return 0;
+}
+
+// discourage casual tampering :)
+static uint16_t checksum(uint16_t in)
+{
+    char buf[5];
+    auto res = std::to_chars(buf, buf + 5, in);
+
+    uint16_t s1 = 0, s2 = 0;
+    for (int i = 0; i < int(res.ptr - buf); ++i)
+    {
+        s1 = (s1 + uint8_t(buf[i])) % 255;
+        s2 = (s2 + s1) % 255;
+    }
+    return ((s2 << 8) | s1);
+}
+
+int emu::load_hiscore()
+{
+    uint16_t hiscore, cksum;
+
+#ifdef __EMSCRIPTEN__
+    inireader ini;
+
+    auto value = ini.get_string("HiScore", "value");
+    if (!value.has_value()) {
+        return 0; // okay, hiscore will be saved on exit
+    }
+    if (value->size() != 10) {
+        logERROR("Invalid highscore value");
+        return -1;
+    }
+
+    const char* str = value->c_str();
+    auto res1 = std::from_chars(str, str + 5, hiscore);
+    auto res2 = std::from_chars(str + 5, str + 10, cksum);
+
+    if (res1.ec != std::errc() || res1.ptr != str + 5 ||
+        res2.ec != std::errc() || res2.ptr != str + 10) {
+        logERROR("Invalid highscore value");
+        return -1;
+    }
+#else
+    uint8_t buf[4];
+    auto file = SAFE_FOPEN(HISCORE_PATH().c_str(), "rb");
+    if (!file) {
+        return 0; // okay, hiscore will be saved on exit
+    }
+    if (std::fread(buf, 1, 4, file.get()) != 4) {
+        logERROR("Could not read highscore file");
+        return -1;
+    }
+
+    std::memcpy(&hiscore, buf, 2);
+    std::memcpy(&cksum, buf + 2, 2);
+#endif
+
+    uint16_t cksum_calc = checksum(hiscore);
+    if (cksum != cksum_calc) {
+        logERROR("Highscore is corrupt");
+        return -1;
+    }
+    m_hiscore_bcd = hiscore;
+    return 0;
+}
+
+int emu::save_hiscore()
+{
+    uint16_t hiscore = m.mem[HISCORE_START_ADDR] |
+        (uint16_t(m.mem[HISCORE_START_ADDR + 1]) << 8);
+    uint16_t cksum = checksum(hiscore);
+
+#ifdef __EMSCRIPTEN__
+    std::string value;
+
+    char buf[5];
+    auto res = std::to_chars(buf, buf + 5, hiscore);
+    value.append(buf + 5 - res.ptr, '0');
+    value.append(buf, res.ptr - buf);
+
+    res = std::to_chars(buf, buf + 5, cksum);
+    value.append(buf + 5 - res.ptr, '0');
+    value.append(buf, res.ptr - buf);
+    
+    iniwriter ini;
+    ini.write_section("HiScore");
+    ini.write_keyvalue("value", value);
+    if (!ini.flush()) {
+        logERROR("Could not save hiscore");
+        return -1;
+    }
+#else
+    uint8_t buf[4] = {};
+    std::memcpy(buf, &hiscore, 2);
+    std::memcpy(buf + 2, &cksum, 2);
+
+    auto file = SAFE_FOPEN(HISCORE_PATH().c_str(), "wb");
+    if (!file || std::fwrite(buf, 1, 4, file.get()) != 4) {
+        logERROR("Could not open or write highscore file");
+        return -1;
+    }
+#endif
     return 0;
 }
 
@@ -912,19 +1028,9 @@ static void vsync(clk::time_point tframe_start)
 }
 
 #ifdef __EMSCRIPTEN__
-// this idea from imgui
-static std::function<void()> emcc_mainloop_func;
-static void emcc_mainloop() { emcc_mainloop_func(); }
-
-#define EMCC_MAINLOOP_BEGIN emcc_mainloop_func = [&]() -> void { do
-#define EMCC_MAINLOOP_END \
-    while (0); }; emscripten_set_main_loop(emcc_mainloop, WEB_MAINLOOP_FPS, true)
-#endif
-
-#ifdef __EMSCRIPTEN__
 const char* emcc_saveprefs_beforeunload(int, const void*, void* udata)
 {
-    static_cast<emu*>(udata)->save_prefs();
+    static_cast<emu*>(udata)->run_end();
     return nullptr;
 }
 bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
@@ -934,51 +1040,12 @@ bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
 }
 #endif
 
-void emu::send_input(input inp, bool pressed)
-{
-    m_guiinputpressed[inp] = pressed;
-}
-
-bool emu::process_events()
-{
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) 
-    {
-        gui_captureinfo evt_capture;
-        if (m_gui) {
-            m_gui->process_event(&event, evt_capture);
-        }
-
-        switch (event.type)
-        {
-        case SDL_QUIT:
-            return false;
-
-        case SDL_KEYDOWN:
-        case SDL_KEYUP:
-            if (!evt_capture.capture_keyboard) {
-                auto scancode = event.key.keysym.scancode;
-                m_keypressed[scancode] = (event.type == SDL_KEYDOWN);
-            }
-            break;
-
-        default: break;
-        }
-    }
-#ifdef __EMSCRIPTEN__
-    if (m_resizepending)
-    {
-        resize_window(); // ignore failure
-        m_resizepending = false;
-    }
-#endif
-    return true;
-}
-
-int emu::run()
+int emu::run_begin()
 {
     int err = load_prefs();
     if (err) { return err; }
+
+    load_hiscore();
 
 #ifdef __EMSCRIPTEN__
     EMSCRIPTEN_RESULT res;
@@ -999,14 +1066,89 @@ int emu::run()
         return -1;
     }
 #endif
+    logMESSAGE("Starting...");
+    return 0;
+}
 
-    logMESSAGE("Start!");
+int emu::run_end()
+{
+    logMESSAGE("Quitting...");
+    int err = save_prefs();
+    if (err) { return err; }
+    
+    save_hiscore();
+    return 0;
+}
+
+void emu::send_input(input inp, bool pressed)
+{
+    m_guiinputpressed[inp] = pressed;
+}
+
+// Handle all input events, window events etc.
+bool emu::process_events()
+{
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) 
+    {
+        gui_captureinfo evt_capture;
+        if (m_gui) {
+            m_gui->process_event(&event, evt_capture);
+        }
+
+        switch (event.type)
+        {
+        case SDL_KEYDOWN:
+        case SDL_KEYUP:
+            if (!evt_capture.capture_keyboard) {
+                auto scancode = event.key.keysym.scancode;
+                m_keypressed[scancode] = (event.type == SDL_KEYDOWN);
+            }
+            break;
+
+        case SDL_QUIT:
+            // emscripten handled in beforeunload
+            if (!is_emscripten()) {
+                run_end(); 
+            }
+            return false;
+        }
+    }
+#ifdef __EMSCRIPTEN__
+    if (m_resizepending)
+    {
+        resize_window(); // ignore failure
+        m_resizepending = false;
+    }
+#endif
+    // throttle when minimized
+    if (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED) {
+        SDL_Delay(20);
+    }
+
+    return true;
+}
+
+#ifdef __EMSCRIPTEN__
+// this idea from imgui
+static std::function<void()> emcc_mainloop_func;
+static void emcc_mainloop() { emcc_mainloop_func(); }
+
+#define EMCC_MAINLOOP_BEGIN emcc_mainloop_func = [&]() -> void { do
+#define EMCC_MAINLOOP_END \
+    while (0); }; emscripten_set_main_loop(emcc_mainloop, WEB_MAINLOOP_FPS, true)
+#endif
+
+int emu::run()
+{
+    int err = run_begin();
+    if (err) { return err; }
 
     SDL_ShowWindow(m_window);
 
-    uint64_t nframes = 0;
-    uint64_t cpucycles = 0;
-    clk::time_point t_start = clk::now();   
+    uint64_t frame_idx = 0;
+    uint64_t target_clkcycles = 0;
+    clk::time_point t_start = clk::now();
 
 #ifdef __EMSCRIPTEN__
     EMCC_MAINLOOP_BEGIN
@@ -1015,28 +1157,18 @@ int emu::run()
 #endif
     {
         bool running = process_events();
-        if (!running) 
-        {
-#ifndef __EMSCRIPTEN__
-            logMESSAGE("Exiting");
+        if (!running) { break; }
 
-            int err = save_prefs();
-            if (err) { return err; }
-#endif
-            break; 
-        }
-       
-        // "pause" when minimized
-        if (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED)
-        {
-            SDL_Delay(10);
-            continue;
+        // nasty workaround, since the Hiscore table is erased in frame 0
+        if (frame_idx == 1) [[unlikely]] {
+            m.mem[HISCORE_START_ADDR] = uint8_t(m_hiscore_bcd);
+            m.mem[HISCORE_START_ADDR + 1] = uint8_t(m_hiscore_bcd >> 8);
         }
 
         if (!m_gui || m_gui->current_view() == VIEW_GAME)
         {
             // Emulate CPU for 1 frame.
-            emulate_cpu(cpucycles, nframes);
+            emulate_cpu(frame_idx, target_clkcycles);
             // Draw game.
             render_screen();
 
@@ -1064,7 +1196,7 @@ int emu::run()
         t_start = clk::now();
 
         m_delta_t = tim::duration<float>(t_start - t_laststart).count();
-        nframes++;
+        frame_idx++;
     }
 #ifdef __EMSCRIPTEN__
     EMCC_MAINLOOP_END;

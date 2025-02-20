@@ -17,8 +17,6 @@ static int do_main(int argc, char* argv[])
     opts.add_options()
         ("h,help", "Show usage.")
 #ifndef __EMSCRIPTEN__
-        ("i,inifile", "Path to config file.",
-            cxxopts::value<std::string>()->default_value("./spaceinvaders.ini"), "<file>")
         ("r,romdir", "Path to directory containing ROM/audio files.",
             cxxopts::value<std::string>()->default_value("./data"), "<dir>")
         ("f,fullscreen", "Launch in fullscreen mode.")
@@ -42,10 +40,9 @@ static int do_main(int argc, char* argv[])
     }
 
 #ifdef __EMSCRIPTEN__
-    emu emu("/data", !args["no-ui"].as<bool>());
+    emu emu("/data", false, !args["no-ui"].as<bool>());
 #else
     emu emu( 
-        args["inifile"].as<std::string>(),
         args["romdir"].as<std::string>(),
         args["fullscreen"].as<bool>(),
         !args["no-ui"].as<bool>()
