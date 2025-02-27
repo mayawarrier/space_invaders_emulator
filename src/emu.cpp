@@ -282,8 +282,7 @@ int emu::init_graphics(bool enable_ui, bool fullscreen)
     int e = init_texture(m_renderer);
     if (e) { return e; }
 
-    if (fullscreen) {
-        //todo. doesn't currently work
+    if (fullscreen) { // todo, not working
         //SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN);
     }
 
@@ -561,6 +560,25 @@ emu::emu() :
     }
 }
 
+#ifdef __EMSCRIPTEN__
+bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
+{
+    static_cast<emu*>(udata)->m_resizepending = true;
+    return true;
+}
+bool emcc_on_viz_change(int, const EmscriptenVisibilityChangeEvent* event, void* udata)
+{
+    // Udata must be saved on every viz change.
+    // SDL_QUIT aka browser unload() event is very unreliable and
+    // beforeunload does not work reliably either on mobile browsers.
+    // https://developer.chrome.com/docs/web-platform/page-lifecycle-api
+    if (event->hidden) {
+        static_cast<emu*>(udata)->save_udata();
+    }
+    return true;
+}
+#endif
+
 emu::emu(const fs::path& romdir, bool fullscreen, bool enable_ui) : 
     emu()
 {
@@ -570,6 +588,23 @@ emu::emu(const fs::path& romdir, bool fullscreen, bool enable_ui) :
         init_audio(romdir) != 0) {
         return;
     }
+
+#ifdef __EMSCRIPTEN__
+    EMSCRIPTEN_RESULT res;
+
+    res = emscripten_set_resize_callback(
+        EMSCRIPTEN_EVENT_TARGET_WINDOW, this, true, emcc_on_window_resize);
+    if (res != EMSCRIPTEN_RESULT_SUCCESS) {
+        logERROR("emscripten_set_resize_callback(): %s", emcc_result_name(res));
+        return;
+    }
+    res = emscripten_set_visibilitychange_callback(this, true, emcc_on_viz_change);
+    if (res != EMSCRIPTEN_RESULT_SUCCESS) {
+        logERROR("emscripten_set_visibilitychange_callback(): %s", emcc_result_name(res));
+        return;
+    }
+#endif
+
     m.mem = std::make_unique<i8080_word_t[]>(65536);
     if (load_rom(romdir) != 0) {
         return;
@@ -595,6 +630,11 @@ emu::emu(const fs::path& romdir, bool fullscreen, bool enable_ui) :
 
 emu::~emu()
 {
+#ifdef __EMSCRIPTEN__
+    emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, NULL, 0, NULL);
+    emscripten_set_visibilitychange_callback(NULL, 0, NULL);
+#endif
+
     for (int i = 0; i < NUM_SOUNDS; ++i) {
         Mix_FreeChunk(m.sounds[i]);
     }
@@ -753,7 +793,22 @@ static const fs::path& HISCORE_PATH() {
 }
 #endif
 
-int emu::load_prefs()
+// discourage casual tampering :)
+static uint16_t checksum(uint16_t in)
+{
+    char buf[5];
+    auto res = std::to_chars(buf, buf + 5, in);
+
+    uint16_t s1 = 0, s2 = 0;
+    for (int i = 0; i < int(res.ptr - buf); ++i)
+    {
+        s1 = (s1 + uint8_t(buf[i])) % 255;
+        s2 = (s2 + s1) % 255;
+    }
+    return ((s2 << 8) | s1);
+}
+
+int emu::load_udata()
 {
 #ifdef __EMSCRIPTEN__
     inireader ini;
@@ -769,8 +824,7 @@ int emu::load_prefs()
 #endif
 
     auto volume = ini.get_num<int>("Settings", "Volume");
-    if (volume.has_value())
-    {
+    if (volume.has_value()) {
         if (volume < 0 || volume > 100) {
             logERROR("%s: Invalid volume", ini.path_cstr());
             return -1;
@@ -781,8 +835,7 @@ int emu::load_prefs()
     {
         char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
         auto sw = ini.get_num<uint>("Settings", sw_name);
-        if (sw.has_value()) 
-        {
+        if (sw.has_value()) {
             if (sw > 1u) {
                 logERROR("%s: Invalid %s", ini.path_cstr(), sw_name);
                 return -1;
@@ -805,66 +858,10 @@ int emu::load_prefs()
     }
 
     logMESSAGE("Loaded prefs");
-    return 0;
-}
 
-int emu::save_prefs()
-{
-#ifdef __EMSCRIPTEN__
-    iniwriter ini;
-#else
-    iniwriter ini(INI_PATH());
-    if (!ini.ok()) {
-        return -1;
-    }
-#endif
-
-    ini.write_section("Settings");
-
-    ini.write_keyvalue("Volume", std::to_string(m_volume));
-
-    for (int i = 3; i < 8; ++i)
-    {
-        char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
-        char sw_val[] = { char('0' + get_switch(i)), '\0' };
-        ini.write_keyvalue(sw_name, sw_val);
-    }
-    for (int i = 0; i < NUM_INPUTS; ++i)
-    {
-        ini.write_keyvalue(input_ininame(input(i)),
-            SDL_GetScancodeName(m_input2key[i]));
-    }
-
-    if (!ini.flush()) {
-        return -1;
-    }
-
-    logMESSAGE("Saved prefs");
-    return 0;
-}
-
-// discourage casual tampering :)
-static uint16_t checksum(uint16_t in)
-{
-    char buf[5];
-    auto res = std::to_chars(buf, buf + 5, in);
-
-    uint16_t s1 = 0, s2 = 0;
-    for (int i = 0; i < int(res.ptr - buf); ++i)
-    {
-        s1 = (s1 + uint8_t(buf[i])) % 255;
-        s2 = (s2 + s1) % 255;
-    }
-    return ((s2 << 8) | s1);
-}
-
-int emu::load_hiscore()
-{
     uint16_t hiscore, cksum;
 
 #ifdef __EMSCRIPTEN__
-    inireader ini;
-
     auto value = ini.get_string("HiScore", "value");
     if (!value.has_value()) {
         return 0; // okay, hiscore will be saved on exit
@@ -904,13 +901,47 @@ int emu::load_hiscore()
         return -1;
     }
     m_hiscore_bcd = hiscore;
+    
+    logMESSAGE("Loaded hiscore");
     return 0;
 }
 
-int emu::save_hiscore()
+int emu::save_udata()
 {
+#ifdef __EMSCRIPTEN__
+    iniwriter ini;
+#else
+    iniwriter ini(INI_PATH());
+    if (!ini.ok()) {
+        return -1;
+    }
+#endif
+
+    ini.write_section("Settings");
+
+    ini.write_keyvalue("Volume", std::to_string(m_volume));
+
+    for (int i = 3; i < 8; ++i)
+    {
+        char sw_name[] = { 'D', 'I', 'P', char('0' + i), '\0' };
+        char sw_val[] = { char('0' + get_switch(i)), '\0' };
+        ini.write_keyvalue(sw_name, sw_val);
+    }
+    for (int i = 0; i < NUM_INPUTS; ++i)
+    {
+        ini.write_keyvalue(input_ininame(input(i)),
+            SDL_GetScancodeName(m_input2key[i]));
+    }
+
+    if (!ini.flush()) {
+        return -1;
+    }
+
+    logMESSAGE("Saved prefs");
+    
     uint16_t hiscore = m.mem[HISCORE_START_ADDR] |
         (uint16_t(m.mem[HISCORE_START_ADDR + 1]) << 8);
+
     uint16_t cksum = checksum(hiscore);
 
 #ifdef __EMSCRIPTEN__
@@ -924,8 +955,7 @@ int emu::save_hiscore()
     res = std::to_chars(buf, buf + 5, cksum);
     value.append(buf + 5 - res.ptr, '0');
     value.append(buf, res.ptr - buf);
-    
-    iniwriter ini;
+
     ini.write_section("HiScore");
     ini.write_keyvalue("value", value);
     if (!ini.flush()) {
@@ -943,6 +973,7 @@ int emu::save_hiscore()
         return -1;
     }
 #endif
+    logMESSAGE("Saved hiscore");
     return 0;
 }
 
@@ -1027,58 +1058,6 @@ static void vsync(clk::time_point tframe_start)
     }
 }
 
-#ifdef __EMSCRIPTEN__
-const char* emcc_saveprefs_beforeunload(int, const void*, void* udata)
-{
-    static_cast<emu*>(udata)->run_end();
-    return nullptr;
-}
-bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
-{
-    static_cast<emu*>(udata)->m_resizepending = true;
-    return true;
-}
-#endif
-
-int emu::run_begin()
-{
-    int err = load_prefs();
-    if (err) { return err; }
-
-    load_hiscore();
-
-#ifdef __EMSCRIPTEN__
-    EMSCRIPTEN_RESULT res;
-
-    // save_prefs() can't run after emscripten_set_main_loop (because infinite loop),
-    // nor can it run in SDL_QUIT (browser unload event, which is very limited).
-    // It must also be completely synchronous.
-    res = emscripten_set_beforeunload_callback(this, emcc_saveprefs_beforeunload);
-    if (res != EMSCRIPTEN_RESULT_SUCCESS) {
-        logERROR("Failed to set beforeunload callback");
-        return -1;
-    }
-
-    res = emscripten_set_resize_callback(
-        EMSCRIPTEN_EVENT_TARGET_WINDOW, this, true, emcc_on_window_resize);
-    if (res != EMSCRIPTEN_RESULT_SUCCESS) {
-        logERROR("Failed to set window resize callback");
-        return -1;
-    }
-#endif
-    logMESSAGE("Starting...");
-    return 0;
-}
-
-int emu::run_end()
-{
-    logMESSAGE("Quitting...");
-    int err = save_prefs();
-    if (err) { return err; }
-    
-    save_hiscore();
-    return 0;
-}
 
 void emu::send_input(input inp, bool pressed)
 {
@@ -1107,9 +1086,10 @@ bool emu::process_events()
             break;
 
         case SDL_QUIT:
-            // emscripten handled in beforeunload
+            // emscripten udata saved on viz change
             if (!is_emscripten()) {
-                run_end(); 
+                logMESSAGE("Quitting...");
+                save_udata();
             }
             return false;
         }
@@ -1141,8 +1121,10 @@ static void emcc_mainloop() { emcc_mainloop_func(); }
 
 int emu::run()
 {
-    int err = run_begin();
+    int err = load_udata();
     if (err) { return err; }
+
+    logMESSAGE("Start!");
 
     SDL_ShowWindow(m_window);
 

@@ -133,7 +133,7 @@ struct emu
     
 #ifdef __EMSCRIPTEN__
     friend bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata);
-    friend const char* emcc_saveprefs_beforeunload(int, const void*, void* udata);
+    friend bool emcc_on_viz_change(int, const EmscriptenVisibilityChangeEvent* event, void*);
 #endif
     friend emu_interface;
 
@@ -147,13 +147,8 @@ private:
     int init_audio(const fs::path& audiodir);
     int load_rom(const fs::path& dir);
 
-    int load_prefs();
-    int save_prefs();
-    int load_hiscore();
-    int save_hiscore();
-
-    int run_begin();
-    int run_end();
+    int load_udata();
+    int save_udata();
 
     int resize_window();
 

@@ -154,8 +154,24 @@ void logMESSAGE(const char* fmt, ...)
 #endif
 }
 
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+const char* emcc_result_name(EMSCRIPTEN_RESULT result)
+{
+    switch (result) {
+    case EMSCRIPTEN_RESULT_SUCCESS: return "EMSCRIPTEN_RESULT_SUCCESS";
+    case EMSCRIPTEN_RESULT_DEFERRED: return "EMSCRIPTEN_RESULT_DEFERRED";
+    case EMSCRIPTEN_RESULT_NOT_SUPPORTED: return "EMSCRIPTEN_RESULT_NOT_SUPPORTED";
+    case EMSCRIPTEN_RESULT_FAILED_NOT_DEFERRED: return "EMSCRIPTEN_RESULT_FAILED_NOT_DEFERRED";
+    case EMSCRIPTEN_RESULT_INVALID_TARGET: return "EMSCRIPTEN_RESULT_INVALID_TARGET";
+    case EMSCRIPTEN_RESULT_UNKNOWN_TARGET: return "EMSCRIPTEN_RESULT_UNKNOWN_TARGET";
+    case EMSCRIPTEN_RESULT_FAILED: return "EMSCRIPTEN_RESULT_FAILED";
+    case EMSCRIPTEN_RESULT_NO_DATA: return "EMSCRIPTEN_RESULT_NO_DATA";
+    default: return "Unknown result code";
+    }
+}
+#endif
 
+#ifndef __EMSCRIPTEN__
 static std::string_view trim(std::string_view str)
 {
     const char* beg = str.data();

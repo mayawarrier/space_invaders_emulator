@@ -118,6 +118,10 @@ constexpr SDL_Point sdl_ptsub(SDL_Point a, SDL_Point b)
     return { a.x - b.x, a.y - b.y };
 }
 
+#ifdef __EMSCRIPTEN__
+const char* emcc_result_name(EMSCRIPTEN_RESULT result);
+#endif
+
 template <std::unsigned_integral T>
 constexpr T saturating_addu(T lhs, T rhs)
 {
