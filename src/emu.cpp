@@ -1,9 +1,9 @@
 //
 // See https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html
 // to learn about the hardware inside the Space Invaders arcade machine,
-// and to gain some context for what is emulated here.
+// and to understand how the emulator works.
 // 
-// See i8080/ for the bulk of the emulation.
+// See i8080/ for the CPU emulation.
 //
 
 #include <cmath>
@@ -41,24 +41,6 @@ static const char* input_ininame(input type)
     }
 }
 
-static const char* input_inidesc(input type)
-{
-    switch (type)
-    {
-    case INPUT_P1_LEFT:  return "Key for P1 left.";
-    case INPUT_P1_RIGHT: return "Key for P1 right.";
-    case INPUT_P1_FIRE:  return "Key for P1 fire.";
-    case INPUT_P2_LEFT:  return "Key for P2 left.";
-    case INPUT_P2_RIGHT: return "Key for P2 right.";
-    case INPUT_P2_FIRE:  return "Key for P2 fire.";   
-    case INPUT_1P_START: return "Key to start 1 player mode.";
-    case INPUT_2P_START: return "Key to start 2 player mode.";
-    case INPUT_CREDIT:   return "Key to insert coin.";
-    default:
-        return nullptr;
-    }
-}
-
 static SDL_Scancode input_dflt_key(input type)
 {
     switch (type)
@@ -74,23 +56,6 @@ static SDL_Scancode input_dflt_key(input type)
     case INPUT_CREDIT:   return SDL_SCANCODE_RETURN;
     default:
         return SDL_SCANCODE_UNKNOWN;
-    }
-}
-
-void emu::print_ini_help()
-{
-    static constexpr char CONFIG_FMTSTR[] = "  %-18s%-9s%s\n";
-    std::printf(" Config file parameters\n");
-
-    std::printf(CONFIG_FMTSTR, "Volume", "(0-100)", "Set SFX volume.");
-    std::printf(CONFIG_FMTSTR, "DIP3", "(0/1)", "Set DIP switch 3. See README.");
-    std::printf(CONFIG_FMTSTR, "DIP4", "(0/1)", "Set DIP switch 4. See README.");
-    std::printf(CONFIG_FMTSTR, "DIP5", "(0/1)", "Set DIP switch 5. See README.");
-    std::printf(CONFIG_FMTSTR, "DIP6", "(0/1)", "Set DIP switch 6. See README.");
-    std::printf(CONFIG_FMTSTR, "DIP7", "(0/1)", "Set DIP switch 7. See README.");
-
-    for (int i = 0; i < NUM_INPUTS; ++i) {
-        std::printf(CONFIG_FMTSTR, input_ininame(input(i)), "(<key>)", input_inidesc(input(i)));
     }
 }
 
@@ -983,11 +948,11 @@ int emu::save_udata()
 // https://github.com/emscripten-core/emscripten/issues/20628
 // emscripten_sleep() aka setTimeout() is broken on Windows Firefox.
 // Min sleep time is ~30ms (~30fps) which makes the game very slow on high 
-// refresh-rate displays where requestAnimationFrame() cannot be used directly.
-// Use busy-wait in this case.
+// refresh-rate displays where requestAnimationFrame() cannot be used.
+// Use busy-wait to limit to 60fps in this case.
 //
 // The proper way to solve this is to make the game independent of FPS,
-// but that is not possible without a patched ROM.
+// but that is difficult to do without a patched ROM.
 //
 EM_JS(int, web_has_broken_sleep, (), {
     return navigator.userAgent.includes("Windows") &&

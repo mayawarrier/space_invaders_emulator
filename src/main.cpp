@@ -34,8 +34,7 @@ static int do_main(int argc, char* argv[])
 
     if (args["help"].as<bool>()) 
     {
-        std::printf("%s\n", opts.help().c_str());
-        emu::print_ini_help();        
+        std::printf("%s\n", opts.help().c_str());       
         return 0;
     }
 

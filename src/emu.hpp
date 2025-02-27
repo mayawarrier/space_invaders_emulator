@@ -126,10 +126,6 @@ struct emu
     // Start running.
     // Returns <0 on error, otherwise 0 when window is closed.
     int run();
-
-    // Help on config file parameters.
-    static void print_ini_help();
-
     
 #ifdef __EMSCRIPTEN__
     friend bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata);

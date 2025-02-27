@@ -474,9 +474,9 @@ void emu_gui::draw_about_content()
         ImGui::NewLine();
 
         const char* content =
-            "This emulator is a small virtual machine that runs the original Space Invaders code from 1978!\n\n"
+            "This emulator is a small virtual machine that runs the original Space Invaders game from 1978!\n\n"
             "It emulates the CPU, hardware, and I/O devices the game requires, "
-            "making the game's code think it's running on an actual arcade machine.\n\n"
+            "making the game think it's running on an actual arcade machine.\n\n"
             "To achieve this, the emulator simulates the Intel 8080 CPU at the instruction level, "
             "and replicates the behavior of several chips on the motherboard.\n\n";
 
@@ -489,7 +489,7 @@ void emu_gui::draw_about_content()
             { "Intel 8080 Datasheet", "https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf" }
         };
 
-        WND_PADX(); ImGui::TextUnformatted("Read more about the SpaceInvaders hardware:");
+        WND_PADX(); ImGui::TextUnformatted("Read about the SpaceInvaders hardware:");
         for (auto& link : links) {
             WND_PADX(); 
             draw_url(link.first, link.second);
