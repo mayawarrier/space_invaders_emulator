@@ -1,46 +1,61 @@
 param (
-    [string]$config = "Release",         # "Debug" or "Release"
-    [string]$emsdkPath = "C:/emsdk",
-    [switch]$install = $false            # Install after building
+    [string]$BuildType = "Release",      # "Debug" or "Release"
+    [string]$EmsdkPath = "C:/emsdk",
+    [switch]$Install = $false            # Install after building
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $emsdkPath)) {
-    Write-Host "Could not find emsdk at $emsdkPath."
-    Write-Host "Install emsdk or set emsdkPath appropriately."
+function Assert-Success {
+    param ([string]$ErrorMessage = $null)
+
+    if ($LASTEXITCODE -ne 0) {
+        if ($ErrorMessage) { Write-Host $ErrorMessage }
+        exit $LASTEXITCODE
+    }
+}
+
+if (-not (Test-Path $EmsdkPath)) {
+    Write-Host "Could not find emsdk at $EmsdkPath."
+    Write-Host "Install emsdk or set EmsdkPath appropriately."
     exit 1
 }
 
-if ($config -eq "Debug") {
+if ($BuildType -eq "Debug") {
     $buildPath = "out/build/Emscripten-Debug/"
     $installPath = "out/install/Emscripten-Debug/"
-} elseif ($config -eq "Release") {
+} elseif ($BuildType -eq "Release") {
     $buildPath = "out/build/Emscripten-Release/"
     $installPath = "out/install/Emscripten-Release/"
 } else {
-    Write-Host "Invalid config. Use 'Debug' or 'Release'."
+    Write-Host "Invalid BuildType. Use 'Debug' or 'Release'."
     exit 1
 }
 if (-not (Test-Path $buildPath)) {
-    New-Item -ItemType Directory -Path $buildPath
+    New-Item -ItemType Directory -Path $buildPath | Out-Null
 }
 
-$emsdkEnvPath = Join-Path $emsdkPath "emsdk_env.bat"
-$emcmakePath = Join-Path $emsdkPath "upstream/emscripten/emcmake.bat"
+Write-Host "------------------- Building..."
 
-Write-Host "Building..."
 $env:EMSDK_QUIET = "1"
+
+$emsdkEnvPath = Join-Path $EmsdkPath "emsdk_env.bat"
 & $emsdkEnvPath
+Assert-Success "emsdk_env.bat failed."
+
+$emcmakePath = Join-Path $EmsdkPath "upstream/emscripten/emcmake.bat"
 & $emcmakePath cmake . -B $buildPath `
-    -DCMAKE_BUILD_TYPE="$config" -DCMAKE_INSTALL_PREFIX="$installPath" 
+    -DCMAKE_BUILD_TYPE="$BuildType" -DCMAKE_INSTALL_PREFIX="$installPath" 
+Assert-Success "cmake configure failed."
 
 & ninja -C $buildPath
+Assert-Success "ninja build failed."
 
 if ($install) {
-    Write-Host "Installing..."
+    Write-Host "------------------- Installing..."
     if (-not (Test-Path $installPath)) {
-        New-Item -ItemType Directory -Path $installPath
+        New-Item -ItemType Directory -Path $installPath | Out-Null
     }
     & cmake --install $buildPath
+    Assert-Success "cmake install failed."
 }

@@ -106,9 +106,9 @@ if (EMSCRIPTEN)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_SDL=2 -s USE_SDL_MIXER=2")
 
 else()
-    set(ALLOW_SDL2_SRCBUILD_HELP 
-        "If existing SDL2 or SDL2_Mixer installations \
-        cannot be found, allow building SDL2 libraries from source.")
+    string(CONCAT ALLOW_SDL2_SRCBUILD_HELP 
+        "Allow building SDL2/SDL2_Mixer libraries from source "
+        "if no existing installations can be found.")
 
     if (WIN32)
         option(ALLOW_SDL2_SRCBUILD ${ALLOW_SDL2_SRCBUILD_HELP} ON)
@@ -146,11 +146,13 @@ else()
 
     # If both ways fail or if user hasn't installed SDL, build from source.
     if (NOT FOUND_SDL2_CMAKE_CONFIG AND NOT FOUND_SDL2_PKGCONFIG)
-        message(WARNING "Could not find SDL2 or SDL2_Mixer libraries and/or config files.")
+        set(SDL_NOTFOUND_MSG_PREFIX "Could not find SDL2 libraries and/or config files.")
         if (ALLOW_SDL2_SRCBUILD)
-            message(WARNING "SDL2 libraries will be built from source.")
+            message(WARNING "${SDL_NOTFOUND_MSG_PREFIX} \
+                SDL2 libraries will be built from source.")
         else()
-            message(FATAL_ERROR "Set ALLOW_SDL2_SRCBUILD to allow building SDL2 libraries from source.")
+            message(FATAL_ERROR "${SDL_NOTFOUND_MSG_PREFIX} \
+                Set ALLOW_SDL2_SRCBUILD=ON to allow building SDL2 from source.")
         endif()
 
         if (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -236,10 +238,6 @@ file(GLOB IMGUI_SOURCES
     ${imgui_ext_SOURCE_DIR}/*.cpp
     ${imgui_ext_SOURCE_DIR}/*.h)
 
-list(APPEND IMGUI_SOURCES
-    ${imgui_ext_SOURCE_DIR}/misc/cpp/imgui_stdlib.h
-    ${imgui_ext_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp)
-
 if (CMAKE_GENERATOR MATCHES "Visual Studio")
     list(APPEND IMGUI_SOURCES
         ${imgui_ext_SOURCE_DIR}/misc/debuggers/imgui.natvis
@@ -256,8 +254,7 @@ add_library(imgui ${IMGUI_SOURCES} ${IMGUI_BACKEND_SOURCES})
 
 target_include_directories(imgui PUBLIC 
     ${imgui_ext_SOURCE_DIR} 
-    ${imgui_ext_SOURCE_DIR}/backends
-    ${imgui_ext_SOURCE_DIR}/misc/cpp)
+    ${imgui_ext_SOURCE_DIR}/backends)
 
 target_compile_definitions(imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS)
 

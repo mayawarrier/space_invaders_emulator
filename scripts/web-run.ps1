@@ -1,40 +1,55 @@
 param (
-    [string]$config = "Release",         # "Debug" or "Release"
-    [string]$browser = "chrome",
-    [string]$emsdkPath = "C:/emsdk",
-    [switch]$build = $false,             # Build before running
-    [switch]$install = $false            # Install before running
+    [string]$RunType = "Release",        # "Debug" or "Release"
+    [string]$Browser = "chrome",
+    [switch]$Build = $false,             # Build before running
+    [switch]$Install = $false,           # Install before running
+    [string]$EmsdkPath = "C:/emsdk"
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $emsdkPath)) {
-    Write-Host "Could not find emsdk at $emsdkPath."
-    Write-Host "Install emsdk or set emsdkPath appropriately."
+function Assert-Success {
+    param ([string]$ErrorMessage = $null)
+
+    if ($LASTEXITCODE -ne 0) {
+        if ($ErrorMessage) { Write-Host $ErrorMessage }
+        exit $LASTEXITCODE
+    }
+}
+
+if (-not (Test-Path $EmsdkPath)) {
+    Write-Host "Could not find emsdk at $EmsdkPath."
+    Write-Host "Install emsdk or set EmsdkPath appropriately."
     exit 1
 }
 
-$runDir = if ($install) { "install" } else { "build" }
+$runDir = if ($Install) { "install" } else { "build" }
 
-if ($config -eq "Debug") {
+if ($RunType -eq "Debug") {
     $runPath = "out/$runDir/Emscripten-Debug/"
-} elseif ($config -eq "Release") {
+} elseif ($RunType -eq "Release") {
     $runPath = "out/$runDir/Emscripten-Release/"
 } else {
-    Write-Host "Invalid config. Use 'Debug' or 'Release'."
+    Write-Host "Invalid RunType. Use 'Debug' or 'Release'."
     exit 1
 }
 
-if ($install) {
-    & "$PSScriptRoot\web-build.ps1" -config $config -emsdkPath $emsdkPath -install
-} elseif ($build) {
-    & "$PSScriptRoot\web-build.ps1" -config $config -emsdkPath $emsdkPath
+if ($Install) {
+    & "$PSScriptRoot\web-build.ps1" -BuildType $RunType -emsdkPath $EmsdkPath -install
+    Assert-Success
+} elseif ($Build) {
+    & "$PSScriptRoot\web-build.ps1" -BuildType $RunType -emsdkPath $EmsdkPath
+    Assert-Success
 }
 
-$emsdkEnvPath = Join-Path $emsdkPath "emsdk_env.bat"
-$emrunPath = Join-Path $emsdkPath "upstream/emscripten/emrun.bat"
+Write-Host "------------------- Running..."
 
-Write-Host "Running..."
 $env:EMSDK_QUIET = "1"
+
+$emsdkEnvPath = Join-Path $EmsdkPath "emsdk_env.bat"
 & $emsdkEnvPath
-& $emrunPath --browser $browser $runPath
+Assert-Success "emsdk_env.bat failed."
+
+$emrunPath = Join-Path $EmsdkPath "upstream/emscripten/emrun.bat"
+& $emrunPath --browser $Browser $runPath
+Assert-Success "emrun.bat failed."
