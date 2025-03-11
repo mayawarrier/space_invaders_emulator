@@ -116,7 +116,7 @@ int emu::resize_window(void)
     gui_sizeinfo guiinfo = {0};
     if (m_gui) 
     {
-        guiinfo = m_gui->sizeinfo(m_dispsize);
+        guiinfo = m_gui->get_sizeinfo(m_dispsize);
         auto total_resv = sdl_ptadd(guiinfo.resv_inwnd_size, guiinfo.resv_outwnd_size);
 
         vp_offset = guiinfo.vp_offset;
@@ -533,9 +533,9 @@ bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
 }
 bool emcc_on_viz_change(int, const EmscriptenVisibilityChangeEvent* event, void* udata)
 {
-    // Udata must be saved on every viz change.
     // SDL_QUIT aka browser unload() event is very unreliable and
     // beforeunload does not work reliably either on mobile browsers.
+    // Viz change seems to be the most reliable way to save state.
     // https://developer.chrome.com/docs/web-platform/page-lifecycle-api
     if (event->hidden) {
         static_cast<emu*>(udata)->save_udata();
@@ -822,8 +822,6 @@ int emu::load_udata()
         }
     }
 
-    logMESSAGE("Loaded prefs");
-
     uint16_t hiscore, cksum;
 
 #ifdef __EMSCRIPTEN__
@@ -867,7 +865,7 @@ int emu::load_udata()
     }
     m_hiscore_bcd = hiscore;
     
-    logMESSAGE("Loaded hiscore");
+    logMESSAGE("Loaded user data");
     return 0;
 }
 
@@ -901,8 +899,6 @@ int emu::save_udata()
     if (!ini.flush()) {
         return -1;
     }
-
-    logMESSAGE("Saved prefs");
     
     uint16_t hiscore = m.mem[HISCORE_START_ADDR] |
         (uint16_t(m.mem[HISCORE_START_ADDR + 1]) << 8);
@@ -938,7 +934,7 @@ int emu::save_udata()
         return -1;
     }
 #endif
-    logMESSAGE("Saved hiscore");
+
     return 0;
 }
 
@@ -1106,7 +1102,7 @@ int emu::run()
         bool running = process_events();
         if (!running) { break; }
 
-        // nasty workaround, since the Hiscore table is erased in frame 0
+        // nasty workaround, since the score table is erased in frame 0
         if (frame_idx == 1) [[unlikely]] {
             m.mem[HISCORE_START_ADDR] = uint8_t(m_hiscore_bcd);
             m.mem[HISCORE_START_ADDR + 1] = uint8_t(m_hiscore_bcd >> 8);

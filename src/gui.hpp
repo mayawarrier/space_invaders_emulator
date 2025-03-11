@@ -55,6 +55,13 @@ struct gui_fonts
     ImFont* subhdr_font;
 };
 
+enum gui_font_type
+{
+    FONT_TXT,
+    FONT_HDR,
+    FONT_SUBHDR
+};
+
 using gui_fontatlas = std::unordered_map<int, ImFont*>;
 
 #ifdef __EMSCRIPTEN__
@@ -92,8 +99,8 @@ struct emu_gui
     bool process_event(const SDL_Event* event, gui_captureinfo& out_capture);
 
     // Get size/layout info for a frame drawn 
-    // at the given display size.
-    gui_sizeinfo sizeinfo(SDL_Point disp_size) const;
+    // at a given display size.
+    gui_sizeinfo get_sizeinfo(SDL_Point disp_size) const;
 
     // Get the current view.
     int current_view() const { return m_cur_view; }
@@ -115,7 +122,7 @@ private:
 
     int init_fontatlas();
     ImFont* get_font_px(int size) const;
-    ImFont* get_font_vh(float vmin, SDL_Point disp_size) const;
+    ImFont* get_font(gui_font_type type, SDL_Point disp_size) const;
 
 #ifdef __EMSCRIPTEN__
     void handle_touchctrls_state();

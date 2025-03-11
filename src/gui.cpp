@@ -6,6 +6,10 @@
 #include "emu.hpp"
 #include "gui.hpp"
 
+#if __has_include("buildnum.h")
+#include "buildnum.h"
+#endif
+
 PUSH_WARNINGS
 IGNORE_WFORMAT_SECURITY
 
@@ -21,21 +25,21 @@ static constexpr color SUBHDR_BGCOLOR = HEADER_BGCOLOR.brighter(50);
 #define MIN_FONT_SIZE 5
 #define MAX_FONT_SIZE 50
 
-#if __EMSCRIPTEN__
-// larger because reported display size is smaller
-#define TXT_FONT_VH 1.85
-#define SUBHDR_FONT_VH 2.41
-#define HDR_FONT_VH 2.96
-#else
-#define TXT_FONT_VH 1.57
-#define SUBHDR_FONT_VH 1.944
-#define HDR_FONT_VH 2.5
-#endif
 
 // For emscripten there can only be one window
 #ifdef __EMSCRIPTEN__
 static emu_gui* GUI = nullptr;
 #endif
+
+static const char* build_num()
+{
+#if defined(BUILD_NUM)
+    const char* value = XSTR(BUILD_NUM);
+    return std::string_view(value) == "0" ? nullptr : value;
+#else
+    return nullptr;
+#endif
+}
 
 int emu_gui::init_fontatlas()
 {
@@ -67,12 +71,31 @@ ImFont* emu_gui::get_font_px(int size) const
     return m_fontatlas.at(size);
 }
 
-static int get_font_vh_size(float vh, SDL_Point disp_size) {
+static int vh_to_px(float vh, SDL_Point disp_size) {
     return int(std::lroundf(vh * disp_size.y / 100.f));
 }
 
-ImFont* emu_gui::get_font_vh(float vh, SDL_Point disp_size) const {
-    return get_font_px(get_font_vh_size(vh, disp_size));
+static int get_font_px_size(gui_font_type type, SDL_Point disp_size)
+{
+    float vh = 0;
+    switch (type)
+    {
+    case FONT_TXT:
+        vh = is_emscripten() ?
+            disp_size.y < disp_size.x ? 1.85f : 1.95f :
+            1.57f;
+        break;
+    case FONT_SUBHDR: vh = is_emscripten() ? 2.41f : 1.944f; break;
+    case FONT_HDR:    vh = is_emscripten() ? 2.96f : 2.5f;   break;
+
+    default: SDL_assert(false);
+    }
+    return vh_to_px(vh, disp_size);
+}
+
+ImFont* emu_gui::get_font(gui_font_type type, SDL_Point disp_size) const
+{
+    return get_font_px(get_font_px_size(type, disp_size));
 }
 
 static bool touch_supported()
@@ -219,29 +242,31 @@ static void draw_header(const char* title, color colr, bool* p_closed, gui_align
 
     float hdr_size = ImGui::GetFont()->FontSize + wndpadding.y * 2;
 
-    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(wndpos.x, dpos.y),
+    draw_list->AddRectFilled(ImVec2(wndpos.x, dpos.y),
         ImVec2(wndpos.x + wndsize.x, dpos.y + hdr_size), colr.to_imcolor());
 
     if (p_closed)
     {
-        constexpr float btnsize = 12.f;
-        constexpr float btnpadding = 7.f;
-        float btn_rtoffset = (btnsize + get_scrollbar_width() + wndpadding.x);
+        constexpr float cross_size = 12.f;
+        constexpr float btnmargin = 4.f, btnpadding = 3.f;
+        constexpr float btnsize = cross_size + 2 * btnpadding;
 
-        ImVec2 btnpos = ImVec2(dpos.x + wndsize.x - btn_rtoffset - btnpadding, dpos.y + btnpadding);
-        ImGui::SetCursorScreenPos(btnpos);
+        float btn_xoffset = wndsize.x - (cross_size + get_scrollbar_width() + wndpadding.x + 2 * btnpadding + btnmargin);
+        ImVec2 btnpos = ImVec2(dpos.x + btn_xoffset, dpos.y + btnmargin);
+        ImVec2 crosspos = ImVec2(btnpos.x + btnpadding, btnpos.y + btnpadding);
 
         ImGui::PushID(title);
-        bool clicked = ImGui::InvisibleButton("##wndclose", ImVec2(btnsize, btnsize));
+        ImGui::SetCursorScreenPos(btnpos);
+        bool clicked = ImGui::Button("##wndclose", ImVec2(btnsize, btnsize));
         ImGui::PopID();
 
         static constexpr color btn_basecol(200, 200, 200, 255);
-        ImU32 btncol = (ImGui::IsItemHovered() ? btn_basecol.darker(50) : btn_basecol).to_imcolor();
+        ImU32 btncol = (ImGui::IsItemHovered() ? btn_basecol.brighter(50) : btn_basecol).to_imcolor();
 
-        ImVec2 p2 = ImVec2(btnpos.x + btnsize, btnpos.y + btnsize);
-        ImVec2 p3 = ImVec2(btnpos.x, btnpos.y + btnsize);
-        ImVec2 p4 = ImVec2(btnpos.x + btnsize, btnpos.y);
-        draw_list->AddLine(btnpos, p2, btncol, 2.0f);
+        ImVec2 p2 = ImVec2(crosspos.x + cross_size, crosspos.y + cross_size);
+        ImVec2 p3 = ImVec2(crosspos.x, crosspos.y + cross_size);
+        ImVec2 p4 = ImVec2(crosspos.x + cross_size, crosspos.y);
+        draw_list->AddLine(crosspos, p2, btncol, 2.0f);
         draw_list->AddLine(p3, p4, btncol, 2.0f);
 
         *p_closed = clicked;
@@ -251,14 +276,9 @@ static void draw_header(const char* title, color colr, bool* p_closed, gui_align
     ImGui::SetCursorPos(ImVec2(wndpadding.x, ImGui::GetCursorPosY() + wndpadding.y));
     switch (align)
     {
-    case ALIGN_RIGHT:
-        setposX_right_align(title);
-        break;
-    case ALIGN_CENTER:
-        setposX_center_align(title);
-        break;
-    default:
-        break;
+    case ALIGN_RIGHT:  setposX_right_align(title); break;
+    case ALIGN_CENTER: setposX_center_align(title); break;
+    default: break;
     }
 
     ImGui::TextUnformatted(title);
@@ -461,8 +481,17 @@ void emu_gui::draw_about_content()
 
     ImGui::PushTextWrapPos(ImGui::GetWindowSize().x - ImGui::GetStyle().WindowPadding.x);
     {
-        WND_PADX(); ImGui::TextUnformatted("Space Invaders Emulator v1.0\n");
-        WND_PADX(); ImGui::TextUnformatted("Maya Warrier\n\n");
+        WND_PADX(); 
+        if (build_num()) {
+            ImGui::Text("Space Invaders Emulator (build %s)", build_num());
+        } else {
+            ImGui::TextUnformatted("Space Invaders Emulator");
+        }
+
+        WND_PADX(); ImGui::TextUnformatted("Maya Warrier");
+        WND_PADX(); draw_url("mayawarrier.github.io", "https://mayawarrier.github.io/");
+        ImGui::NewLine();
+
         WND_PADX();
         ImGui::TextUnformatted("Source code available at"); ImGui::SameLine();
         draw_url("GitHub", "https://github.com/mayawarrier/space_invaders_emulator/");
@@ -474,11 +503,11 @@ void emu_gui::draw_about_content()
         ImGui::NewLine();
 
         const char* content =
-            "This emulator is a small virtual machine that runs the original Space Invaders game from 1978!\n\n"
-            "It emulates the CPU, hardware, and I/O devices the game requires, "
+            "This emulator runs the original Space Invaders game from 1978!\n\n"
+            "It simulates the CPU, hardware, and I/O devices the game requires, "
             "making the game think it's running on an actual arcade machine.\n\n"
-            "To achieve this, the emulator simulates the Intel 8080 CPU at the instruction level, "
-            "and replicates the behavior of several chips on the motherboard.\n\n";
+            "This involves a complete simulation of the Intel 8080 CPU, as well as "
+            "several other chips on the Space Invaders motherboard.\n\n";
 
         WND_PADX(); 
         ImGui::TextUnformatted(content);
@@ -489,7 +518,7 @@ void emu_gui::draw_about_content()
             { "Intel 8080 Datasheet", "https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf" }
         };
 
-        WND_PADX(); ImGui::TextUnformatted("Read about the SpaceInvaders hardware:");
+        WND_PADX(); ImGui::TextUnformatted("Read about the Space Invaders hardware:");
         for (auto& link : links) {
             WND_PADX(); 
             draw_url(link.first, link.second);
@@ -615,8 +644,8 @@ void emu_gui::draw_settings_content()
     }
 }
 
-void emu_gui::draw_view(const char* title, const SDL_Rect& viewport, 
-    void(emu_gui::*draw_content)(), bool* p_wndclosed)
+void emu_gui::draw_view(const char* title, 
+    const SDL_Rect& viewport, void(emu_gui::*draw_content)(), bool* p_wndclosed)
 {
     static constexpr ImGuiWindowFlags PANEL_FLAGS = 
         ImGuiWindowFlags_NoTitleBar |
@@ -658,11 +687,11 @@ void emu_gui::draw_view(const char* title, const SDL_Rect& viewport,
     }
 }
 
-gui_sizeinfo emu_gui::sizeinfo(SDL_Point disp_size) const
+gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
 {
     SDL_assert(!m_drawingframe);
 
-    int menu_height = get_font_vh_size(TXT_FONT_VH, disp_size) + // text
+    int menu_height = get_font_px_size(FONT_TXT, disp_size) + // text
         int(ImGui::GetStyle().FramePadding.y * 2.0f);  // padding
 
     float resv_outwnd_ypct = is_emscripten() && m_touchenabled ? 0.25f : 0.1f;
@@ -764,9 +793,9 @@ void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
 {
     m_drawingframe = true;
 
-    m_fonts.txt_font = get_font_vh(TXT_FONT_VH, disp_size);
-    m_fonts.subhdr_font = get_font_vh(SUBHDR_FONT_VH, disp_size);
-    m_fonts.hdr_font = get_font_vh(HDR_FONT_VH, disp_size);
+    m_fonts.txt_font = get_font(FONT_TXT, disp_size);
+    m_fonts.subhdr_font = get_font(FONT_SUBHDR, disp_size);
+    m_fonts.hdr_font = get_font(FONT_HDR, disp_size);
      
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();

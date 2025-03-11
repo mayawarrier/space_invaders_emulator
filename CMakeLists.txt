@@ -83,13 +83,28 @@ if (EMSCRIPTEN)
         VERBATIM)
 endif()
 
+set(BUILDNUM_FILE "${CMAKE_SOURCE_DIR}/src/buildnum.h")
+
+find_program(GIT_EXECUTABLE git)
+if(NOT GIT_EXECUTABLE)
+    message(WARNING "Git not found. Build number will not be generated.")
+else()
+    add_custom_command(
+        TARGET spaceinvaders
+        PRE_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM " > ${BUILDNUM_FILE}
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD >> ${BUILDNUM_FILE} || 
+                ${CMAKE_COMMAND} -E echo_append "0" >> ${BUILDNUM_FILE}
+        VERBATIM)
+endif()
+
 # -------------------------------- cxxopts --------------------------------
 set(FETCH_CXXOPTS_VERSION "v3.2.0")
 
 FetchContent_Declare(cxxopts
     GIT_REPOSITORY  https://github.com/jarro2783/cxxopts
     GIT_TAG         ${FETCH_CXXOPTS_VERSION})
-FetchContent_MakeAvailable(cxxopts)
+FetchContent_MakeAvailable(cxxopts) 
 
 target_link_libraries(spaceinvaders PRIVATE cxxopts)
 
