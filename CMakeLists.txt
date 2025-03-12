@@ -13,7 +13,26 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
+set(BUILDNUM_FILE "${CMAKE_SOURCE_DIR}/src/buildnum.h")
+
+find_program(GIT_EXECUTABLE git)
+if(NOT GIT_EXECUTABLE)
+    message(WARNING "Git not found. Build number will be unavailable.")
+    add_custom_command(
+        OUTPUT ${BUILDNUM_FILE}
+        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM 0" > ${BUILDNUM_FILE}
+        VERBATIM)
+else()
+    add_custom_command(
+        OUTPUT ${BUILDNUM_FILE}
+        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM " > ${BUILDNUM_FILE}
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD >> ${BUILDNUM_FILE} || 
+                ${CMAKE_COMMAND} -E echo_append "0" >> ${BUILDNUM_FILE}
+        VERBATIM)
+endif()
+
 set(SOURCES 
+    ${BUILDNUM_FILE}
     "src/i8080/i8080.hpp" 
     "src/i8080/i8080_opcodes.h"
     "src/i8080/i8080.cpp" 
@@ -80,21 +99,6 @@ if (EMSCRIPTEN)
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_SOURCE_DIR}/src/web
             ${CMAKE_BINARY_DIR}
-        VERBATIM)
-endif()
-
-set(BUILDNUM_FILE "${CMAKE_SOURCE_DIR}/src/buildnum.h")
-
-find_program(GIT_EXECUTABLE git)
-if(NOT GIT_EXECUTABLE)
-    message(WARNING "Git not found. Build number will not be generated.")
-else()
-    add_custom_command(
-        TARGET spaceinvaders
-        PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM " > ${BUILDNUM_FILE}
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD >> ${BUILDNUM_FILE} || 
-                ${CMAKE_COMMAND} -E echo_append "0" >> ${BUILDNUM_FILE}
         VERBATIM)
 endif()
 

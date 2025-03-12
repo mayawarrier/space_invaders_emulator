@@ -25,7 +25,6 @@ static constexpr color SUBHDR_BGCOLOR = HEADER_BGCOLOR.brighter(50);
 #define MIN_FONT_SIZE 5
 #define MAX_FONT_SIZE 50
 
-
 // For emscripten there can only be one window
 #ifdef __EMSCRIPTEN__
 static emu_gui* GUI = nullptr;
