@@ -302,7 +302,7 @@ struct inireader
     std::optional<std::string> get_string(std::string_view section, std::string_view key)
     {
         auto str = get_value_sv(section, key);
-        if (str.data()) {
+        if (!str.data()) {
             return {};
         }
         return std::string(str);

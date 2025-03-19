@@ -52,14 +52,12 @@ struct gui_fonts
 {
     ImFont* txt_font;
     ImFont* hdr_font;
-    ImFont* subhdr_font;
 };
 
 enum gui_font_type
 {
     FONT_TXT,
-    FONT_HDR,
-    FONT_SUBHDR
+    FONT_HDR
 };
 
 using gui_fontatlas = std::unordered_map<int, ImFont*>;
@@ -117,8 +115,8 @@ private:
     void draw_view(const char* title, const SDL_Rect& viewport, 
         void(emu_gui::*draw_content)(), bool* p_closed);
 
-    void draw_inputkey(const char* label, input inptype,
-        gui_align align = ALIGN_LEFT, float labelsizeX = -1);
+    void draw_ctrlpanel(const char* id, const char* title,
+        const std::pair<const char*, input> inputs[], int num_inputs, float panelsizeX);
 
     int init_fontatlas();
     ImFont* get_font_px(int size) const;
@@ -141,7 +139,7 @@ private:
     gui_fonts m_fonts;
     int m_cur_view;
 
-    SDL_Scancode m_frame_lastkeypress; // cur frame
+    SDL_Scancode m_lastkeypress; // cur frame
     bool m_inputkey_focused[NUM_INPUTS];
 
     bool m_touchenabled;

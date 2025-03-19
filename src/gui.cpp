@@ -13,21 +13,27 @@
 PUSH_WARNINGS
 IGNORE_WFORMAT_SECURITY
 
-#ifndef IMGUI_DISABLE_DEMO_WINDOWS
-// good for learning Imgui features
-int demo_window();
-#endif
+static constexpr ImU32 WND_BGCOLOR = IM_COL32(0, 0, 0, 255);
+static constexpr ImU32 HDR_FONTCOLOR = IM_COL32(0x1E, 0xFE, 0x1E, 0xFF);
+static constexpr ImU32 BORDER_COLOR = IM_COL32(0x1E, 0xFE, 0x1E, 0x33);
 
-static constexpr color PANEL_BGCOLOR(36, 36, 36, 255);
-static constexpr color HEADER_BGCOLOR(48, 82, 121, 255);
-static constexpr color SUBHDR_BGCOLOR = HEADER_BGCOLOR.brighter(50);
+static constexpr ImGuiWindowFlags WND_DEFAULT_FLAGS = 
+    ImGuiWindowFlags_NoTitleBar |
+    ImGuiWindowFlags_NoResize |
+    ImGuiWindowFlags_NoMove |
+    ImGuiWindowFlags_NoNavInputs;
 
-#define MIN_FONT_SIZE 5
-#define MAX_FONT_SIZE 50
+static constexpr int MIN_FONT_SIZE = 5;
+static constexpr int MAX_FONT_SIZE = 50;
 
 // For emscripten there can only be one window
 #ifdef __EMSCRIPTEN__
 static emu_gui* GUI = nullptr;
+#endif
+
+#ifndef IMGUI_DISABLE_DEMO_WINDOWS
+// good for learning Imgui features
+int demo_window();
 #endif
 
 static const char* build_num()
@@ -49,7 +55,7 @@ int emu_gui::init_fontatlas()
     for (int i = MIN_FONT_SIZE; i <= MAX_FONT_SIZE; ++i)
     {
         ImFontConfig cfg; cfg.SizePixels = i;
-        ImFont* font = io.Fonts->AddFontDefault(&cfg);
+        ImFont* font = io.Fonts->AddFontFromFileTTF("data/SourceCodePro-Semibold.ttf", i, &cfg);
         m_fontatlas.insert({ i, font });
     }
     
@@ -82,10 +88,9 @@ static int get_font_px_size(gui_font_type type, SDL_Point disp_size)
     case FONT_TXT:
         vh = is_emscripten() ?
             disp_size.y < disp_size.x ? 1.85f : 1.95f :
-            1.57f;
+            1.70f;//1.57f;
         break;
-    case FONT_SUBHDR: vh = is_emscripten() ? 2.41f : 1.944f; break;
-    case FONT_HDR:    vh = is_emscripten() ? 2.96f : 2.5f;   break;
+    case FONT_HDR: vh = is_emscripten() ? 2.41f : 2.1; break;//1.944f; break;
 
     default: SDL_assert(false);
     }
@@ -113,9 +118,9 @@ emu_gui::emu_gui(
 ) :
     m_emu(emu),
     m_renderer(renderer),
-    m_fonts({ nullptr, nullptr, nullptr }),
+    m_fonts({ nullptr, nullptr }),
     m_cur_view(VIEW_GAME),
-    m_frame_lastkeypress(SDL_SCANCODE_UNKNOWN),
+    m_lastkeypress(SDL_SCANCODE_UNKNOWN),
     m_touchenabled(touch_supported()),
 #ifdef __EMSCRIPTEN__
     m_playerselinp_idx(0),
@@ -179,7 +184,7 @@ void emu_gui::log_dbginfo()
 bool emu_gui::process_event(const SDL_Event* e, gui_captureinfo& out_ci)
 {
     if (e->type == SDL_KEYUP) {
-        m_frame_lastkeypress = e->key.keysym.scancode;
+        m_lastkeypress = e->key.keysym.scancode;
         m_anykeypress = true;
     }
     bool ret = ImGui_ImplSDL2_ProcessEvent(e); 
@@ -189,10 +194,6 @@ bool emu_gui::process_event(const SDL_Event* e, gui_captureinfo& out_ci)
     out_ci.capture_mouse = io.WantCaptureMouse;
 
     return ret;
-}
-
-static void WND_PADX() {
-    ImGui::SetCursorPosX(ImGui::GetStyle().WindowPadding.x);
 }
 
 static void setposX_right_align(const char* text)
@@ -231,63 +232,57 @@ static float get_scrollbar_width()
     return ImGui::GetScrollMaxY() > 0.0f ? ImGui::GetStyle().ScrollbarSize : 0.0f;
 }
 
-static void draw_header(const char* title, color colr, bool* p_closed, gui_align align = ALIGN_LEFT)
+static void draw_header(const char* title, gui_align align = ALIGN_LEFT)
 {
-    ImVec2 dpos = ImGui::GetCursorScreenPos();
-    ImVec2 wndsize = ImGui::GetWindowSize();
-    ImVec2 wndpos = ImGui::GetWindowPos();
-    ImVec2 wndpadding = ImGui::GetStyle().WindowPadding;
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-    float hdr_size = ImGui::GetFont()->FontSize + wndpadding.y * 2;
-
-    draw_list->AddRectFilled(ImVec2(wndpos.x, dpos.y),
-        ImVec2(wndpos.x + wndsize.x, dpos.y + hdr_size), colr.to_imcolor());
-
-    if (p_closed)
+    bool* p_closed = nullptr;
+    ImGui::PushStyleColor(ImGuiCol_Text, HDR_FONTCOLOR);
     {
-        constexpr float cross_size = 12.f;
-        constexpr float btnmargin = 4.f, btnpadding = 3.f;
-        constexpr float btnsize = cross_size + 2 * btnpadding;
+        ImVec2 dpos = ImGui::GetCursorScreenPos();
+        ImVec2 wndsize = ImGui::GetWindowSize();
+        ImVec2 wndpos = ImGui::GetWindowPos();
+        ImVec2 wndpadding = ImGui::GetStyle().WindowPadding;
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-        float btn_xoffset = wndsize.x - (cross_size + get_scrollbar_width() + wndpadding.x + 2 * btnpadding + btnmargin);
-        ImVec2 btnpos = ImVec2(dpos.x + btn_xoffset, dpos.y + btnmargin);
-        ImVec2 crosspos = ImVec2(btnpos.x + btnpadding, btnpos.y + btnpadding);
+        float hdr_size = ImGui::GetFont()->FontSize + wndpadding.y;
 
-        ImGui::PushID(title);
-        ImGui::SetCursorScreenPos(btnpos);
-        bool clicked = ImGui::Button("##wndclose", ImVec2(btnsize, btnsize));
-        ImGui::PopID();
+        if (p_closed)
+        {
+            constexpr float cross_size = 12.f;
+            constexpr float btnmargin = 4.f, btnpadding = 3.f;
+            constexpr float btnsize = cross_size + 2 * btnpadding;
 
-        static constexpr color btn_basecol(200, 200, 200, 255);
-        ImU32 btncol = (ImGui::IsItemHovered() ? btn_basecol.brighter(50) : btn_basecol).to_imcolor();
+            float btn_xoffset = wndsize.x - (cross_size + get_scrollbar_width() + wndpadding.x + 2 * btnpadding + btnmargin);
+            ImVec2 btnpos = ImVec2(dpos.x + btn_xoffset, dpos.y + btnmargin);
+            ImVec2 crosspos = ImVec2(btnpos.x + btnpadding, btnpos.y + btnpadding);
 
-        ImVec2 p2 = ImVec2(crosspos.x + cross_size, crosspos.y + cross_size);
-        ImVec2 p3 = ImVec2(crosspos.x, crosspos.y + cross_size);
-        ImVec2 p4 = ImVec2(crosspos.x + cross_size, crosspos.y);
-        draw_list->AddLine(crosspos, p2, btncol, 2.0f);
-        draw_list->AddLine(p3, p4, btncol, 2.0f);
+            ImGui::PushID(title);
+            ImGui::SetCursorScreenPos(btnpos);
+            bool clicked = ImGui::Button("##wndclose", ImVec2(btnsize, btnsize));
+            ImGui::PopID();
 
-        *p_closed = clicked;
-        ImGui::SetCursorScreenPos(dpos);
+            static constexpr color btn_basecol(200, 200, 200, 255);
+            ImU32 btncol = (ImGui::IsItemHovered() ? btn_basecol.brighter(50) : btn_basecol).to_imcolor();
+
+            ImVec2 p2 = ImVec2(crosspos.x + cross_size, crosspos.y + cross_size);
+            ImVec2 p3 = ImVec2(crosspos.x, crosspos.y + cross_size);
+            ImVec2 p4 = ImVec2(crosspos.x + cross_size, crosspos.y);
+            draw_list->AddLine(crosspos, p2, btncol, 2.0f);
+            draw_list->AddLine(p3, p4, btncol, 2.0f);
+
+            *p_closed = clicked;
+            ImGui::SetCursorScreenPos(dpos);
+        }
+
+        switch (align)
+        {
+        case ALIGN_RIGHT:  setposX_right_align(title); break;
+        case ALIGN_CENTER: setposX_center_align(title); break;
+        default: break;
+        }
+
+        ImGui::TextUnformatted(title);
     }
-
-    ImGui::SetCursorPos(ImVec2(wndpadding.x, ImGui::GetCursorPosY() + wndpadding.y));
-    switch (align)
-    {
-    case ALIGN_RIGHT:  setposX_right_align(title); break;
-    case ALIGN_CENTER: setposX_center_align(title); break;
-    default: break;
-    }
-
-    ImGui::TextUnformatted(title);
-}
-
-static void draw_subheader(const char* title, color colr, gui_align align = ALIGN_LEFT)
-{
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, ImGui::GetStyle().WindowPadding.y));
-    draw_header(title, colr, nullptr, align);
-    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
 }
 
 static std::string format_escape(const char* str)
@@ -370,32 +365,38 @@ static bool draw_dip_switch(int index, bool value, float draw_width = -1)
     return value;
 }
 
-void emu_gui::draw_inputkey(const char* label, input inptype, gui_align align, float labelsizeX)
+struct inputkey_stateptrs
+{
+    bool* focused;
+    SDL_Scancode* key;
+};
+
+static void draw_inputkey(int id, inputkey_stateptrs state, 
+    SDL_Scancode keyvalue, gui_align align = ALIGN_LEFT)
 {
     SDL_assert(align == ALIGN_LEFT || align == ALIGN_RIGHT);
 
-    bool& focused = m_inputkey_focused[inptype];
-    SDL_Scancode& key = m_emu.input2keymap()[inptype];
+    bool& focused = *state.focused;
+    SDL_Scancode& key = *state.key;
 
     ImGuiStyle style = ImGui::GetStyle();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
     ImVec2 wndsize = ImGui::GetWindowSize();
     ImVec2 wndpadding = style.WindowPadding;
 
     float inputwidth = wndsize.x / 3;
-    float textsizeX = labelsizeX < 0 ? ImGui::CalcTextSize(label).x : labelsizeX;
-    float inputposX = align == ALIGN_LEFT ? 
-        textsizeX + 2 * wndpadding.x : wndsize.x - wndpadding.x - inputwidth;
-    
+    float inputposX = align == ALIGN_LEFT ?
+        wndpadding.x : wndsize.x - wndpadding.x - inputwidth;
+
     ImVec2 inputpos(inputposX, ImGui::GetCursorPosY() - style.FramePadding.y);
     ImVec2 inputsize(inputwidth, ImGui::GetFontSize() + style.FramePadding.y * 2);
-    ImVec2 txtpos(inputposX - textsizeX - wndpadding.x, ImGui::GetCursorPosY());
-    
+
     ImGui::SetCursorPos(inputpos);
     ImVec2 dpos = ImGui::GetCursorScreenPos();
 
     // invisible selectable to determine focus
-    ImGui::PushID(label);
+    ImGui::PushID(id);
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
@@ -410,28 +411,83 @@ void emu_gui::draw_inputkey(const char* label, input inptype, gui_align align, f
         !ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
 
     ImU32 bgcolor = focused ?
-        ImGui::GetColorU32(ImGuiCol_FrameBgActive) : 
+        ImGui::GetColorU32(ImGuiCol_FrameBgActive) :
         ImGui::GetColorU32(ImGuiCol_FrameBg);
 
     // Render a textbox-like widget
     draw_list->AddRectFilled(dpos, dpos + inputsize, bgcolor, style.FrameRounding);
-    draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), dpos + style.FramePadding, 
+    draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize(), dpos + style.FramePadding,
         ImGui::GetColorU32(ImGuiCol_Text), SDL_GetScancodeName(key));
 
-    if (focused && m_frame_lastkeypress != SDL_SCANCODE_UNKNOWN) {
-        key = m_frame_lastkeypress;
-        m_frame_lastkeypress = SDL_SCANCODE_UNKNOWN; // consume
-    } 
+    if (focused && keyvalue != SDL_SCANCODE_UNKNOWN) {
+        key = keyvalue;
+    }
 
     // update for next frame
     if (next_frame_unfocused) {
         focused = false;
         ImGui::SetNextFrameWantCaptureKeyboard(false);
     }
+}
 
-    ImGui::SameLine();
-    ImGui::SetCursorPos(txtpos);
-    ImGui::TextUnformatted(label);
+void emu_gui::draw_ctrlpanel(const char* id, const char* title, 
+    const std::pair<const char*, input> inputs[], int num_inputs, float panelsizeX)
+{
+    ImGui::PushStyleColor(ImGuiCol_Border, BORDER_COLOR);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 0));
+    {
+        static constexpr float top_padding = 10;
+        static constexpr float bot_padding = 8;
+        static constexpr float title_botpadding = 10;
+
+        int num_lines = title ? num_inputs + 1 : num_inputs;
+
+        // best attempt at calculating the panel size. 
+        // this is slightly off so add a bit extra
+        float panelsizeY =
+            num_lines * (
+                ImGui::GetFontSize() +
+                ImGui::GetStyle().ItemSpacing.y +
+                ImGui::GetStyle().FramePadding.y
+                ) + 
+            (2 * ImGui::GetStyle().WindowPadding.y) +
+            top_padding + bot_padding + (title ? title_botpadding : 0) + 5;
+
+        static constexpr ImGuiWindowFlags wnd_flags =
+            WND_DEFAULT_FLAGS |
+            ImGuiWindowFlags_NoScrollbar |
+            ImGuiWindowFlags_NoScrollWithMouse;
+            
+        ImGui::BeginChild(id, ImVec2(panelsizeX, panelsizeY), ImGuiChildFlags_Border, wnd_flags);
+        {
+            ImGui::Dummy(ImVec2(0, top_padding));
+
+            if (title) {
+                draw_header(title, ALIGN_LEFT);
+                ImGui::Dummy(ImVec2(0, title_botpadding));
+            }
+
+            for (int i = 0; i < num_inputs; ++i)
+            {
+                auto& inp = inputs[i];
+
+                ImGui::TextUnformatted(inp.first);
+                ImGui::SameLine();
+
+                inputkey_stateptrs stateptrs = {
+                    .focused = &m_inputkey_focused[inp.second],
+                    .key = &m_emu.input2keymap()[inp.second]
+                };
+                draw_inputkey(i, stateptrs, m_lastkeypress, ALIGN_RIGHT);
+            }
+
+            ImGui::Dummy(ImVec2(0, bot_padding));
+        }
+        ImGui::EndChild();
+    }
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor();
 }
 
 static int draw_volume_slider(const char* label, int volume, gui_align align = ALIGN_LEFT)
@@ -473,31 +529,29 @@ static int draw_volume_slider(const char* label, int volume, gui_align align = A
 
 void emu_gui::draw_about_content()
 {
-    ImGui::PushFont(m_fonts.subhdr_font);
-    draw_subheader("About", SUBHDR_BGCOLOR);
+    ImGui::PushFont(m_fonts.hdr_font);
+    draw_header("About");
     ImGui::PopFont();
     ImGui::NewLine();
 
     ImGui::PushTextWrapPos(ImGui::GetWindowSize().x - ImGui::GetStyle().WindowPadding.x);
     {
-        WND_PADX(); 
         if (build_num()) {
             ImGui::Text("Space Invaders Emulator (build %s)", build_num());
         } else {
             ImGui::TextUnformatted("Space Invaders Emulator");
         }
 
-        WND_PADX(); ImGui::TextUnformatted("Maya Warrier");
-        WND_PADX(); draw_url("mayawarrier.github.io", "https://mayawarrier.github.io/");
+        ImGui::TextUnformatted("Maya Warrier");
+        draw_url("mayawarrier.github.io", "https://mayawarrier.github.io/");
         ImGui::NewLine();
 
-        WND_PADX();
         ImGui::TextUnformatted("Source code available at"); ImGui::SameLine();
         draw_url("GitHub", "https://github.com/mayawarrier/space_invaders_emulator/");
-        WND_PADX(); ImGui::TextUnformatted("under the MIT license.\n\n");
+        ImGui::TextUnformatted("under the MIT license.\n\n");
 
-        ImGui::PushFont(m_fonts.subhdr_font);
-        draw_subheader("How it works", SUBHDR_BGCOLOR);
+        ImGui::PushFont(m_fonts.hdr_font);
+        draw_header("How it works");
         ImGui::PopFont();
         ImGui::NewLine();
 
@@ -508,7 +562,7 @@ void emu_gui::draw_about_content()
             "This involves a complete simulation of the Intel 8080 CPU, as well as "
             "several other chips on the Space Invaders motherboard.\n\n";
 
-        WND_PADX(); 
+        
         ImGui::TextUnformatted(content);
 
         static constexpr std::pair<const char*, const char*> links[] = {
@@ -517,9 +571,9 @@ void emu_gui::draw_about_content()
             { "Intel 8080 Datasheet", "https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf" }
         };
 
-        WND_PADX(); ImGui::TextUnformatted("Read about the Space Invaders hardware:");
+        ImGui::TextUnformatted("Read about the Space Invaders hardware:");
         for (auto& link : links) {
-            WND_PADX(); 
+            
             draw_url(link.first, link.second);
         }
 
@@ -530,10 +584,12 @@ void emu_gui::draw_about_content()
 
 void emu_gui::draw_settings_content()
 {
+    auto& style = ImGui::GetStyle();
+
     // DIP Switches section
     {
-        ImGui::PushFont(m_fonts.subhdr_font);
-        draw_subheader("DIP Switches", SUBHDR_BGCOLOR);
+        ImGui::PushFont(m_fonts.hdr_font);
+        draw_header("DIP Switches");
         ImGui::PopFont();
 
         ImGui::NewLine();
@@ -584,10 +640,10 @@ void emu_gui::draw_settings_content()
         set_bit(&num_ships, 1, m_emu.get_switch(5));
         num_ships += 3;
 
-        WND_PADX(); ImGui::Text("Number of ships: %d", num_ships);
-        WND_PADX(); ImGui::Text("Extra ship at: %d points", m_emu.get_switch(6) ? 1000 : 1500);
-        WND_PADX(); ImGui::Text("Diagnostics at startup: %s", m_emu.get_switch(4) ? "Enabled" : "Disabled");
-        WND_PADX(); ImGui::Text("Coins in demo screen: %s", m_emu.get_switch(7) ? "No" : "Yes");
+        ImGui::Text("Number of ships: %d", num_ships);
+        ImGui::Text("Extra ship at: %d points", m_emu.get_switch(6) ? 1000 : 1500);
+        ImGui::Text("Diagnostics at startup: %s", m_emu.get_switch(4) ? "Enabled" : "Disabled");
+        ImGui::Text("Coins in demo screen: %s", m_emu.get_switch(7) ? "No" : "Yes");
 
         ImGui::NewLine();
     }
@@ -595,44 +651,43 @@ void emu_gui::draw_settings_content()
     // Controls section
     if (!m_touchenabled || m_anykeypress)
     {
-        ImGui::PushFont(m_fonts.subhdr_font);
-        draw_subheader("Controls", SUBHDR_BGCOLOR);
+        ImGui::PushFont(m_fonts.hdr_font);
+        draw_header("Controls");
         ImGui::PopFont();
 
         ImGui::NewLine();
 
-        static const std::pair<const char*, input> inputs[NUM_INPUTS]
+        static constexpr std::pair<const char*, input> inputs[9]
         {
-            { "Player 1 Left ", INPUT_P1_LEFT },
-            { "Player 1 Right", INPUT_P1_RIGHT },
-            { "Player 1 Fire ", INPUT_P1_FIRE },
-            { "Player 2 Left ", INPUT_P2_LEFT },
-            { "Player 2 Right", INPUT_P2_RIGHT },
-            { "Player 2 Fire ", INPUT_P2_FIRE },
+            { "Left ", INPUT_P1_LEFT },
+            { "Right", INPUT_P1_RIGHT },
+            { "Fire ", INPUT_P1_FIRE },
+            { "Left ", INPUT_P2_LEFT },
+            { "Right", INPUT_P2_RIGHT },
+            { "Fire ", INPUT_P2_FIRE },
             { "1P Start", INPUT_1P_START },
             { "2P Start", INPUT_2P_START },
             { "Insert coin", INPUT_CREDIT }
         };
+        
+        float panelmargin = 8;
+        float panelsizeX = (ImGui::GetWindowSize().x - panelmargin) / 2 - style.WindowPadding.x;
 
-        float labelsizeX = std::numeric_limits<float>::min();
-        for (auto& inp : inputs) {
-            labelsizeX = std::max(labelsizeX, ImGui::CalcTextSize(inp.first).x);
-        }
+        draw_ctrlpanel("inputkeys1", "Player 1", inputs, 3, panelsizeX); ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() - style.ItemSpacing.x + panelmargin);
 
-        for (int i = 1; i <= NUM_INPUTS; ++i)
-        {
-            auto& inp = inputs[i - 1];
-            draw_inputkey(inp.first, inp.second, ALIGN_LEFT, labelsizeX);
-            if ((i % 3) == 0) {
-                ImGui::NewLine();
-            }
-        }
+        draw_ctrlpanel("inputkeys2", "Player 2", inputs + 3, 3, panelsizeX);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - style.ItemSpacing.y + panelmargin);
+
+        draw_ctrlpanel("inputkeys3", nullptr, inputs + 6, 3, ImGui::GetWindowSize().x - 2 * style.WindowPadding.x);
+    
+        ImGui::NewLine();
     }
 
     // Audio section
     {
-        ImGui::PushFont(m_fonts.subhdr_font);
-        draw_subheader("Audio", SUBHDR_BGCOLOR);
+        ImGui::PushFont(m_fonts.hdr_font);
+        draw_header("Audio");
         ImGui::PopFont();
         
         ImGui::NewLine();
@@ -646,44 +701,22 @@ void emu_gui::draw_settings_content()
 void emu_gui::draw_view(const char* title, 
     const SDL_Rect& viewport, void(emu_gui::*draw_content)(), bool* p_wndclosed)
 {
-    static constexpr ImGuiWindowFlags PANEL_FLAGS = 
-        ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoNavInputs;
+    auto& style = ImGui::GetStyle();
 
-    const ImVec2 wndpos(viewport.x, viewport.y);
-    const ImVec2 wndsize(viewport.w, viewport.h);
+    ImGui::SetNextWindowPos(ImVec2(viewport.x, viewport.y));
+    ImGui::SetNextWindowSize(ImVec2(viewport.w, viewport.h));
 
-    ImGui::SetNextWindowPos(wndpos);
-    ImGui::SetNextWindowSize(wndsize);
-
-    if (ImGui::Begin(title, NULL, PANEL_FLAGS))
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, style.WindowPadding.y));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, WND_BGCOLOR);
     {
-        auto& style = ImGui::GetStyle();
-
-        // background
-        ImGui::GetWindowDrawList()->AddRectFilled(wndpos,
-            ImVec2(wndpos.x + wndsize.x, wndpos.y + wndsize.y),
-            PANEL_BGCOLOR.to_imcolor());
-
-        // header
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(style.WindowPadding.x, 12));
-        ImGui::PushFont(m_fonts.hdr_font);
-        ImGui::SetCursorPosY(0); // remove spacing
-        draw_header(title, HEADER_BGCOLOR, p_wndclosed, ALIGN_CENTER);
-        ImGui::PopFont();
-        ImGui::PopStyleVar();
-
-        ImGui::NewLine();
-
-        // content
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(25, style.WindowPadding.y));
-        (this->*draw_content)();
-        ImGui::PopStyleVar();
-
-        ImGui::End();
+        if (ImGui::Begin(title, NULL, WND_DEFAULT_FLAGS))
+        {
+            (this->*draw_content)();
+            ImGui::End();
+        }
     }
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
 }
 
 gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
@@ -793,7 +826,6 @@ void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
     m_drawingframe = true;
 
     m_fonts.txt_font = get_font(FONT_TXT, disp_size);
-    m_fonts.subhdr_font = get_font(FONT_SUBHDR, disp_size);
     m_fonts.hdr_font = get_font(FONT_HDR, disp_size);
      
     ImGui_ImplSDLRenderer2_NewFrame();
@@ -849,7 +881,7 @@ void emu_gui::run(SDL_Point disp_size, const SDL_Rect& viewport)
     }
 #endif
 
-    m_frame_lastkeypress = SDL_SCANCODE_UNKNOWN;
+    m_lastkeypress = SDL_SCANCODE_UNKNOWN;
     m_drawingframe = false;
 }
 
