@@ -168,6 +168,19 @@ struct color
         return color(rd, gd, bd, 255);
     }
 
+    constexpr color alpha(float alpha) const {
+        return color(r, g, b, uint8_t(alpha * 255));
+    }
+
+    constexpr color from_imcolor(ImU32 col) {
+        return color(
+            (col >> IM_COL32_R_SHIFT) & 0xFF,
+            (col >> IM_COL32_G_SHIFT) & 0xFF,
+            (col >> IM_COL32_B_SHIFT) & 0xFF,
+            (col >> IM_COL32_A_SHIFT) & 0xFF
+        );
+    }
+
     constexpr ImU32 to_imcolor() const {
         return IM_COL32(r, g, b, a);
     }

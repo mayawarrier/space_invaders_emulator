@@ -935,6 +935,9 @@ int emu::save_udata()
     }
 #endif
 
+    if (!is_emscripten()) { // too frequent on emscripten
+        logMESSAGE("Saved user data");
+    }
     return 0;
 }
 
@@ -1085,7 +1088,7 @@ int emu::run()
     int err = load_udata();
     if (err) { return err; }
 
-    logMESSAGE("Start!");
+    logMESSAGE("Starting emulator...");
 
     SDL_ShowWindow(m_window);
 

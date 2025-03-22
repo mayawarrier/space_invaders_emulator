@@ -115,6 +115,8 @@ private:
     void draw_view(const char* title, const SDL_Rect& viewport, 
         void(emu_gui::*draw_content)(), bool* p_closed);
 
+    void draw_header(const char* title, gui_align align = ALIGN_LEFT);
+
     void draw_ctrlpanel(const char* id, const char* title,
         const std::pair<const char*, input> inputs[], int num_inputs, float panelsizeX);
 
