@@ -15,7 +15,9 @@ enum gui_view
 {
     VIEW_GAME,
     VIEW_SETTINGS,
-    VIEW_ABOUT
+    VIEW_ABOUT,
+
+    NUM_VIEWS
 };
 
 enum gui_align
@@ -48,16 +50,13 @@ struct gui_sizeinfo
     SDL_Point resv_outwnd_size;
 };
 
-struct gui_fonts
-{
-    ImFont* txt_font;
-    ImFont* hdr_font;
-};
-
 enum gui_font_type
 {
+    FONT_MENUBAR,
     FONT_TXT,
-    FONT_HDR
+    FONT_HDR,
+
+    NUM_FONT_TYPES
 };
 
 using gui_fontatlas = std::unordered_map<int, ImFont*>;
@@ -112,6 +111,8 @@ private:
     void draw_about_content();
     void draw_settings_content();
 
+    int draw_menubar(const SDL_Rect& viewport);
+
     void draw_view(const char* title, const SDL_Rect& viewport, 
         void(emu_gui::*draw_content)(), bool* p_closed);
 
@@ -138,7 +139,7 @@ private:
     emu_interface m_emu;
     SDL_Renderer* m_renderer;
     gui_fontatlas m_fontatlas;
-    gui_fonts m_fonts;
+    ImFont* m_fonts[NUM_FONT_TYPES];
     int m_cur_view;
 
     SDL_Scancode m_lastkeypress; // cur frame
