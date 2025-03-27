@@ -18,7 +18,6 @@ IGNORE_WFORMAT_SECURITY
 int demo_window();
 #endif
 
-
 static constexpr ImU32 WND_BGCOLOR_IM32 = IM_COL32(0, 0, 0, 255);
 static constexpr color PRIMARY_COLOR(0x1E, 0xFE, 0x1E, 0xFF);
 
@@ -237,6 +236,91 @@ bool emu_gui::process_event(const SDL_Event* e, gui_captureinfo& out_ci)
 
     return ret;
 }
+
+#ifdef __EMSCRIPTEN__
+
+extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_fire(bool pressed)
+{
+    GUI->m_emu.send_input(INPUT_P1_FIRE, pressed);
+    GUI->m_emu.send_input(INPUT_P2_FIRE, pressed);
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_left(bool pressed)
+{
+    GUI->m_emu.send_input(INPUT_P1_LEFT, pressed);
+    GUI->m_emu.send_input(INPUT_P2_LEFT, pressed);
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_right(bool pressed)
+{
+    GUI->m_emu.send_input(INPUT_P1_RIGHT, pressed);
+    GUI->m_emu.send_input(INPUT_P2_RIGHT, pressed);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void web_click_1p(void)
+{
+    if (GUI->m_playersel == PLAYER_SELECT_NONE) {
+        GUI->m_playersel = PLAYER_SELECT_1P;
+    }
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void web_click_2p(void)
+{
+    if (GUI->m_playersel == PLAYER_SELECT_NONE) {
+        GUI->m_playersel = PLAYER_SELECT_2P;
+    }
+}
+
+using gui_inputvec = std::vector<std::pair<input, bool>>;
+
+// inputs to start 1P or 2P, frame by frame
+static const std::vector<gui_inputvec> player_select_inputs[2] = {
+    { // 1p
+        { { INPUT_CREDIT, true } },
+        { { INPUT_CREDIT, false }, { INPUT_1P_START, true } }
+    },
+    { // 2p
+        { { INPUT_CREDIT, true } },
+        { { INPUT_CREDIT, false } },
+        { { INPUT_CREDIT, true } },
+        { { INPUT_CREDIT, false }, { INPUT_2P_START, true } }
+    }
+};
+
+void emu_gui::handle_touchctrls_state()
+{
+    SDL_assert(m_touchenabled);
+
+    if (m_emu.in_demo_mode()) {
+        if (m_ctrls_showing != CTRLS_PLAYER_SELECT) {
+            EM_ASM(Module.showPlayerSelectControls());
+            m_ctrls_showing = CTRLS_PLAYER_SELECT;
+        }
+    }
+    else if (m_ctrls_showing != CTRLS_GAME) {
+        EM_ASM(Module.showGameControls());
+        m_ctrls_showing = CTRLS_GAME;
+    }
+
+    if (m_playersel != PLAYER_SELECT_NONE)
+    {
+        if (m_cur_view == VIEW_GAME)
+        {
+            auto& inputs = player_select_inputs[m_playersel - 1];
+            if (m_playerselinp_idx < inputs.size())
+            {
+                auto& frame_inputs = inputs[m_playerselinp_idx];
+                for (auto& inp : frame_inputs) {
+                    m_emu.send_input(inp.first, inp.second);
+                }
+                m_playerselinp_idx++;
+            }
+            else {
+                m_playersel = PLAYER_SELECT_NONE;
+                m_playerselinp_idx = 0;
+            }
+        }
+        else { m_cur_view = VIEW_GAME; } // next frame
+    }
+}
+#endif 
 
 static void setposX_right_align(const char* text)
 {
@@ -637,7 +721,7 @@ static int draw_volume_slider(int volume)
     }
 
     // Margin after icon and before volume text
-    float slider_margin_left = style.ItemSpacing.x * 3;
+    float slider_margin_left = style.ItemSpacing.x * 2.5;
     float slider_margin_right = style.ItemSpacing.x / 2;
 
     // Draw volume slider
@@ -905,91 +989,6 @@ gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
         .resv_outwnd_size = {.x = 0, .y = resv_outwndY }
     };
 }
-
-#ifdef __EMSCRIPTEN__
-
-extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_fire(bool pressed) 
-{
-    GUI->m_emu.send_input(INPUT_P1_FIRE, pressed);
-    GUI->m_emu.send_input(INPUT_P2_FIRE, pressed);
-}
-extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_left(bool pressed) 
-{
-    GUI->m_emu.send_input(INPUT_P1_LEFT, pressed);
-    GUI->m_emu.send_input(INPUT_P2_LEFT, pressed);
-}
-extern "C" EMSCRIPTEN_KEEPALIVE void web_touch_right(bool pressed) 
-{
-    GUI->m_emu.send_input(INPUT_P1_RIGHT, pressed);
-    GUI->m_emu.send_input(INPUT_P2_RIGHT, pressed);
-}
-
-extern "C" EMSCRIPTEN_KEEPALIVE void web_click_1p(void)
-{
-    if (GUI->m_playersel == PLAYER_SELECT_NONE) {
-        GUI->m_playersel = PLAYER_SELECT_1P;
-    }
-}
-extern "C" EMSCRIPTEN_KEEPALIVE void web_click_2p(void) 
-{
-    if (GUI->m_playersel == PLAYER_SELECT_NONE) {
-        GUI->m_playersel = PLAYER_SELECT_2P;
-    }
-}
-
-using gui_inputvec = std::vector<std::pair<input, bool>>;
-
-// inputs to start 1P or 2P, frame by frame
-static const std::vector<gui_inputvec> player_select_inputs[2] = {
-    { // 1p
-        { { INPUT_CREDIT, true } },
-        { { INPUT_CREDIT, false }, { INPUT_1P_START, true } }
-    },
-    { // 2p
-        { { INPUT_CREDIT, true } },
-        { { INPUT_CREDIT, false } },
-        { { INPUT_CREDIT, true } },
-        { { INPUT_CREDIT, false }, { INPUT_2P_START, true } }
-    }
-};
-
-void emu_gui::handle_touchctrls_state()
-{
-    SDL_assert(m_touchenabled);
-
-    if (m_emu.in_demo_mode()) {
-        if (m_ctrls_showing != CTRLS_PLAYER_SELECT) {
-            EM_ASM(Module.showPlayerSelectControls());
-            m_ctrls_showing = CTRLS_PLAYER_SELECT;
-        }
-    } 
-    else if (m_ctrls_showing != CTRLS_GAME) {
-        EM_ASM(Module.showGameControls());
-        m_ctrls_showing = CTRLS_GAME;
-    }
-
-    if (m_playersel != PLAYER_SELECT_NONE)
-    {
-        if (m_cur_view == VIEW_GAME) 
-        {
-            auto& inputs = player_select_inputs[m_playersel - 1];
-            if (m_playerselinp_idx < inputs.size())
-            {
-                auto& frame_inputs = inputs[m_playerselinp_idx];
-                for (auto& inp : frame_inputs) {
-                    m_emu.send_input(inp.first, inp.second);
-                }
-                m_playerselinp_idx++;
-            }
-            else {
-                m_playersel = PLAYER_SELECT_NONE;
-                m_playerselinp_idx = 0;
-            }
-        }
-        else { m_cur_view = VIEW_GAME; } // next frame
-    }
-}
-#endif 
 
 static const char* view_name(int view)
 {

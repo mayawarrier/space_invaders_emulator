@@ -3,7 +3,8 @@
 // to learn about the hardware inside the Space Invaders arcade machine,
 // and to understand how the emulator works.
 // 
-// See i8080/ for the CPU emulation.
+// For CPU emulation, see i8080.cpp.
+// This file emulates everything else (audio, video, I/O, interrupts, etc.).
 //
 
 #include <cmath>
@@ -1022,7 +1023,6 @@ static void vsync(clk::time_point tframe_start)
     }
 }
 
-
 void emu::send_input(input inp, bool pressed)
 {
     m_guiinputpressed[inp] = pressed;
@@ -1080,7 +1080,7 @@ static void emcc_mainloop() { emcc_mainloop_func(); }
 
 #define EMCC_MAINLOOP_BEGIN emcc_mainloop_func = [&]() -> void { do
 #define EMCC_MAINLOOP_END \
-    while (0); }; emscripten_set_main_loop(emcc_mainloop, WEB_MAINLOOP_FPS, true)
+    while (0); }; emscripten_set_main_loop(emcc_mainloop, -1, true)
 #endif
 
 int emu::run()
