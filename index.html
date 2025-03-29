@@ -213,25 +213,26 @@
         var rightButtonElem = document.getElementById('right-button');
         var leftButtonElem = document.getElementById('left-button');
         var fireButtonElem = document.getElementById('fire-button');
+
         var p1ButtonElem = document.getElementById('p1-button');
         var p2ButtonElem = document.getElementById('p2-button');
 
-        var canvasElem = document.getElementById('canvas');
-        canvasElem.addEventListener("webglcontextlost", e => window.location.reload(), false);
+        var gameCanvasElem = document.getElementById('canvas');
+        gameCanvasElem.addEventListener("webglcontextlost", e => window.location.reload(), false);
 
         // Disable double click zoom on mobile devices
         document.ondblclick = e => e.preventDefault();
 
         // Emscripten Module
-        var Module = {    
-            touchType: (() => {
-                // Detect touch support.
-                // This just checks if touch exists; the primary device may not be a touch device.
-                // https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events
-                // https://github.com/Modernizr/Modernizr/pull/2432/files
-                // https://stackoverflow.com/questions/13225662/
-                // https://stackoverflow.com/questions/4817029/
+        var Module = {
 
+            // Detect touch support.
+            // This just checks if touch exists; the primary device may not be a touch device.
+            // https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events
+            // https://github.com/Modernizr/Modernizr/pull/2432/files
+            // https://stackoverflow.com/questions/13225662/
+            // https://stackoverflow.com/questions/4817029/
+            touchType: (() => {
                 const hasMaxTouchPoints = 'maxTouchPoints' in navigator;
                 const hasCoarsePtr = window.matchMedia && window.matchMedia("(any-pointer: coarse)").matches;
 
@@ -308,6 +309,14 @@
                 }
             },
 
+            setErrorStatus: (text) => {
+                if (statusElem.style.height == '0px') {
+                    statusElem.style.display = 'inline-block'
+                    statusElem.style.height = 'auto';
+                    statusElem.innerHTML = text;
+                }
+            },
+
             // ---------------- Called from C++ --------------------------
 
             touchTypeString() {
@@ -337,7 +346,7 @@
 
             print: (...args) => console.log(args.join(' ')),
 
-            canvas: canvasElem,
+            canvas: gameCanvasElem,
 
             onRuntimeInitialized() {
                 const button2CppFunc = [
@@ -358,14 +367,6 @@
                     spinnerElem.remove();
                     statusElem.style.height = 0;
                     statusElem.style.display = 'none';
-                }
-            },
-
-            setErrorStatus: (text) => {
-                if (statusElem.style.height == '0px') {
-                    statusElem.style.display = 'inline-block'
-                    statusElem.style.height = 'auto';
-                    statusElem.innerHTML = text;
                 }
             },
             // --------------------------------------------------------
@@ -402,52 +403,49 @@
             constructor(canvas) {
                 this.canvas = canvas;
                 this.canvasCtx = canvas.getContext('2d');
-        
-            }
-        }
-        
-        const bgCanvas = document.getElementById('background-canvas');
-        const bgCanvasCtx = bgCanvas.getContext('2d');
-        
-        const resizeCanvas = () => {
-            bgCanvas.width = window.innerWidth
-            bgCanvas.height = window.innerHeight
-        }
-        resizeCanvas()
-        window.addEventListener("resize", resizeCanvas)
-        
-        const stars = []
-        const numStars = 150
-        
-        // Initialize stars
-        for (let i = 0; i < numStars; i++) {
-            stars.push({
-                x: Math.random() * bgCanvas.width,
-                y: Math.random() * bgCanvas.height,
-                size: Math.random() * 2 + 0.5,
-                speed: Math.random() * 0.5 + 0.1,
-            })
-        }
-        
-        function drawStars() {
-            bgCanvasCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
-        
-            // Update and draw stars
-            for (const star of stars) {
-                star.y += star.speed
-                if (star.y > bgCanvas.height) {
-                    star.y = 0
-                    star.x = Math.random() * bgCanvas.width
-                }
-        
-                bgCanvasCtx.fillStyle = "rgba(255, 255, 255, 0.8)"
-                bgCanvasCtx.fillRect(star.x, star.y, star.size, star.size)
-            }
-        
-            requestAnimationFrame(drawStars)
-        }
+                this.stars = [];
 
-        drawStars()
+                this.onCanvasResized();
+                window.addEventListener("resize", () => this.onCanvasResized());
+            }
+
+            onCanvasResized() {
+                this.canvasCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+
+                this.stars = [];
+                for (let i = 0; i < 150; i++) {
+                    this.stars.push({
+                        x: Math.random() * this.canvas.width,
+                        y: Math.random() * this.canvas.height,
+                        size: Math.random() * 2 + 0.5,
+                        speed: 4 * (Math.random() * 0.5 + 0.1)
+                    });
+                }
+            }
+
+            animate() {
+                this.canvasCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                for (const star of this.stars) {
+                    star.y += star.speed;
+                    if (star.y > this.canvas.height) {
+                        star.y = 0;
+                        star.x = Math.random() * this.canvas.width;
+                    }
+
+                    this.canvasCtx.fillStyle = "rgba(255, 255, 255, 0.8)";
+                    this.canvasCtx.fillRect(star.x, star.y, star.size, star.size);
+                }
+
+                setTimeout(() => this.animate(), 64);
+            }
+        };
+
+        var starfield = new Starfield(document.getElementById('background-canvas'));
+        starfield.animate();
 
     </script>
 
