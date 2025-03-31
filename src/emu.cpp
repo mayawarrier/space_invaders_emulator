@@ -51,7 +51,7 @@ static SDL_Scancode input_dflt_key(input type)
     case INPUT_P1_FIRE:  return SDL_SCANCODE_SPACE;
     case INPUT_P2_LEFT:  return SDL_SCANCODE_LEFT;
     case INPUT_P2_RIGHT: return SDL_SCANCODE_RIGHT;
-    case INPUT_P2_FIRE:  return SDL_SCANCODE_SPACE;   
+    case INPUT_P2_FIRE:  return SDL_SCANCODE_SPACE;
     case INPUT_1P_START: return SDL_SCANCODE_1;
     case INPUT_2P_START: return SDL_SCANCODE_2;
     case INPUT_CREDIT:   return SDL_SCANCODE_RETURN;
@@ -111,11 +111,11 @@ int emu::resize_window(void)
     if (e) { return e; }
 
     auto& vp = m_viewportrect;
-    
+
     SDL_Point vp_offset{ .x = 0, .y = 0 };
     SDL_Point vp_maxsize = m_dispsize;
     gui_sizeinfo guiinfo = {0};
-    if (m_gui) 
+    if (m_gui)
     {
         guiinfo = m_gui->get_sizeinfo(m_dispsize);
         auto total_resv = sdl_ptadd(guiinfo.resv_inwnd_size, guiinfo.resv_outwnd_size);
@@ -126,10 +126,10 @@ int emu::resize_window(void)
 
     SDL_Point vp_size = get_viewport_size(m_window, vp_maxsize.x, vp_maxsize.y);
     vp = {
-        .x = vp_offset.x, 
-        .y = vp_offset.y, 
-        .w = vp_size.x, 
-        .h = vp_size.y 
+        .x = vp_offset.x,
+        .y = vp_offset.y,
+        .w = vp_size.x,
+        .h = vp_size.y
     };
 
     SDL_Point win_size = sdl_ptadd(vp_size, guiinfo.resv_inwnd_size);
@@ -154,10 +154,10 @@ enum colr_idx : uint8_t
 };
 
 static const std::array<pix_fmt, 3> PIXFMTS = {
-                                     // black,      green,      red,        white
-    pix_fmt(SDL_PIXELFORMAT_BGR565,   { 0x0000,     0x1FE3,     0x18FF,     0xFFFF,    }),
-    pix_fmt(SDL_PIXELFORMAT_ARGB8888, { 0xFF000000, 0xFF1EFE1E, 0xFFFE1E1E, 0xFFFFFFFF }),
-    pix_fmt(SDL_PIXELFORMAT_ABGR8888, { 0xFF000000, 0xFF1EFE1E, 0xFF1E1EFE, 0xFFFFFFFF }),
+    // black,      green,      red,        white
+pix_fmt(SDL_PIXELFORMAT_BGR565,   { 0x0000,     0x1FE3,     0x18FF,     0xFFFF,    }),
+pix_fmt(SDL_PIXELFORMAT_ARGB8888, { 0xFF000000, 0xFF1EFE1E, 0xFFFE1E1E, 0xFFFFFFFF }),
+pix_fmt(SDL_PIXELFORMAT_ABGR8888, { 0xFF000000, 0xFF1EFE1E, 0xFF1E1EFE, 0xFFFFFFFF }),
 };
 
 static const char* pixfmt_name(uint32_t fmt)
@@ -264,7 +264,7 @@ int emu::init_graphics(bool enable_ui, bool fullscreen)
     return 0;
 }
 
-static const int MAX_MIX_VOLUMES[] = 
+static const int MAX_MIX_VOLUMES[] =
 {
     MIX_MAX_VOLUME / 3, // UFO fly
     MIX_MAX_VOLUME / 2, // Shoot
@@ -278,12 +278,12 @@ static const int MAX_MIX_VOLUMES[] =
     MIX_MAX_VOLUME,
 };
 
-int emu::init_audio(const fs::path& audio_dir) 
+int emu::init_audio(const fs::path& audio_dir)
 {
     logMESSAGE("Initializing audio");
 
     // chunksize is small to reduce latency
-    if (Mix_OpenAudio(11025, AUDIO_U8, 1, 512) != 0) {
+    if (Mix_OpenAudio(11025, AUDIO_U8, 1, is_emscripten() ? 1024 : 512) != 0) {
         logERROR("Mix_OpenAudio(): %s", Mix_GetError());
         return -1;
     }
@@ -305,14 +305,14 @@ int emu::init_audio(const fs::path& audio_dir)
         {"8.wav", "ufo_lowpitch.wav"},
         {"9.wav", "extendedplay.wav"}
     };
-    
+
     int num_loaded = 0;
     for (int i = 0; i < NUM_SOUNDS; ++i)
     {
         m.sounds[i] = nullptr;
         m.sndpins_last[i] = false;
 
-        for (int j = 0; j < 2; ++j) 
+        for (int j = 0; j < 2; ++j)
         {
             fs::path path = audio_dir / AUDIO_FILENAMES[i][j];
             m.sounds[i] = Mix_LoadWAV(path.string().c_str());
@@ -545,12 +545,12 @@ bool emcc_on_viz_change(int, const EmscriptenVisibilityChangeEvent* event, void*
 }
 #endif
 
-emu::emu(const fs::path& romdir, bool fullscreen, bool enable_ui) : 
+emu::emu(const fs::path& romdir, bool fullscreen, bool enable_ui) :
     emu()
 {
     log_dbginfo();
 
-    if (init_graphics(enable_ui, fullscreen) != 0 || 
+    if (init_graphics(enable_ui, fullscreen) != 0 ||
         init_audio(romdir) != 0) {
         return;
     }
@@ -645,13 +645,13 @@ void emu::set_volume(int new_volume)
     SDL_assert(new_volume >= 0 && new_volume <= 100);
     if (new_volume != m_volume)
     {
-        for (int i = 0; i < NUM_SOUNDS; ++i)       
+        for (int i = 0; i < NUM_SOUNDS; ++i)
         {
             float scaled_vol = MAX_MIX_VOLUMES[i] * (float(new_volume) / 100);
             Mix_Volume(i, int(std::lroundf(scaled_vol)));
         }
         m_volume = new_volume;
-    } 
+    }
 }
 
 void emu::emulate_cpu(uint64_t frame_idx, uint64_t& target_cycles)
@@ -713,7 +713,7 @@ void emu::render_screen()
     const uint texpitch = pitch / m_pixfmt->bypp; // not always eq to original width!
 
     // Unpack (8 on/off pixels per byte) and rotate counter-clockwise
-    for (uint x = 0; x < RES_NATIVE_X; ++x) 
+    for (uint x = 0; x < RES_NATIVE_X; ++x)
     {
         for (uint y = 0; y < RES_NATIVE_Y; y += 8)
         {
@@ -812,7 +812,7 @@ int emu::load_udata()
     for (int i = 0; i < NUM_INPUTS; ++i)
     {
         auto keyname = ini.get_string("Settings", input_ininame(input(i)));
-        if (keyname.has_value()) 
+        if (keyname.has_value())
         {
             SDL_Scancode key = SDL_GetScancodeFromName(keyname->c_str());
             if (key == SDL_SCANCODE_UNKNOWN) {
@@ -865,7 +865,7 @@ int emu::load_udata()
         return -1;
     }
     m_hiscore_bcd = hiscore;
-    
+
     logMESSAGE("Loaded user data");
     return 0;
 }
@@ -900,7 +900,7 @@ int emu::save_udata()
     if (!ini.flush()) {
         return -1;
     }
-    
+
     uint16_t hiscore = m.mem[HISCORE_START_ADDR] |
         (uint16_t(m.mem[HISCORE_START_ADDR + 1]) << 8);
 
@@ -946,13 +946,9 @@ int emu::save_udata()
 // https://bugzilla.mozilla.org/show_bug.cgi?id=1826224
 // https://bugzilla.mozilla.org/show_bug.cgi?id=1881627
 // https://github.com/emscripten-core/emscripten/issues/20628
-// emscripten_sleep() aka setTimeout() is broken on Windows Firefox.
-// Min sleep time is ~30ms (~30fps) which makes the game very slow on high 
-// refresh-rate displays where requestAnimationFrame() cannot be used.
-// Use busy-wait to limit to 60fps in this case.
-//
-// The proper way to solve this is to make the game independent of FPS,
-// but that is difficult to do without a patched ROM.
+// emscripten_sleep() aka setTimeout() are broken on Windows Firefox.
+// Min sleep time is ~30ms (~33fps), which is too slow for the game's 60Hz CRT.
+// Use requestAnimationFrame() instead, and busy wait if host refresh rate is > 60Hz.
 //
 EM_JS(int, web_has_broken_sleep, (), {
     return navigator.userAgent.includes("Windows") &&
@@ -960,8 +956,13 @@ EM_JS(int, web_has_broken_sleep, (), {
     });
 
 static const bool WEB_HAS_BROKEN_SLEEP = web_has_broken_sleep() != 0;
+
+// Audio glitches are worse when using requestAnimationFrame
+// on Chrome, so enable it only if necessary.
+// Related: https://issues.chromium.org/issues/40486473
 static const int WEB_MAINLOOP_FPS = WEB_HAS_BROKEN_SLEEP ? -1 : 60;
 #else
+
 static constexpr bool WEB_HAS_BROKEN_SLEEP = false;
 #endif
 
@@ -975,10 +976,10 @@ static void vsync(clk::time_point tframe_start)
         static constexpr tim::microseconds tframe_target(16667);
 
         auto tframe = clk::now() - tframe_start;
-        if (tframe < tframe_target) 
+        if (tframe < tframe_target)
         {
             auto twait = tframe_target - tframe;
-            
+
             static constexpr auto wake_interval_us = tim::microseconds(3000);
             static constexpr auto wake_tolerance = tim::microseconds(500);
             static const uint64_t perfctr_freq = SDL_GetPerformanceFrequency();
@@ -996,7 +997,7 @@ static void vsync(clk::time_point tframe_start)
             {
                 trem = tend - tcur;
 
-                if (!WEB_HAS_BROKEN_SLEEP && // busy loop only
+                if (!WEB_HAS_BROKEN_SLEEP &&
                     trem > wake_interval_us + wake_tolerance) {
 #ifdef _WIN32
                     win32_sleep_ns(wake_interval_us.count() * NS_PER_US);
@@ -1032,7 +1033,7 @@ void emu::send_input(input inp, bool pressed)
 bool emu::process_events()
 {
     SDL_Event event;
-    while (SDL_PollEvent(&event)) 
+    while (SDL_PollEvent(&event))
     {
         gui_captureinfo evt_capture;
         if (m_gui) {
@@ -1080,7 +1081,7 @@ static void emcc_mainloop() { emcc_mainloop_func(); }
 
 #define EMCC_MAINLOOP_BEGIN emcc_mainloop_func = [&]() -> void { do
 #define EMCC_MAINLOOP_END \
-    while (0); }; emscripten_set_main_loop(emcc_mainloop, -1, true)
+    while (0); }; emscripten_set_main_loop(emcc_mainloop, WEB_MAINLOOP_FPS, true)
 #endif
 
 int emu::run()
