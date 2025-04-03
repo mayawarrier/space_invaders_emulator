@@ -328,7 +328,7 @@ if (WIN32)
         ${CMAKE_SOURCE_DIR}/LICENSE
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/data
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/assets
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 elseif (EMSCRIPTEN)
@@ -337,9 +337,6 @@ elseif (EMSCRIPTEN)
         "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.wasm"
         "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.data"
         ${CMAKE_BINARY_DIR}/index.html
-        DESTINATION ${CMAKE_INSTALL_PREFIX})
-
-    install(DIRECTORY ${CMAKE_BINARY_DIR}/favicon
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 
     install(DIRECTORY ${CMAKE_BINARY_DIR}/assets
