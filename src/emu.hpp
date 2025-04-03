@@ -115,7 +115,7 @@ private:
 
 struct emu
 {
-    emu(const fs::path& rom_dir,
+    emu(const fs::path& assetdir,
         bool fullscreen = false,
         bool enable_ui = true);
 
@@ -139,7 +139,7 @@ private:
     static void log_dbginfo();
 
     int init_texture(SDL_Renderer* renderer);
-    int init_graphics(bool enable_ui, bool windowed);
+    int init_graphics(const fs::path& assetdir, bool enable_ui, bool windowed);
     int init_audio(const fs::path& audiodir);
     int load_rom(const fs::path& dir);
 

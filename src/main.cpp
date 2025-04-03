@@ -17,8 +17,8 @@ static int do_main(int argc, char* argv[])
     opts.add_options()
         ("h,help", "Show usage.")
 #ifndef __EMSCRIPTEN__
-        ("r,romdir", "Path to directory containing ROM/audio files.",
-            cxxopts::value<std::string>()->default_value("./data"), "<dir>")
+        ("a,assetdir", "Directory containing game assets (ROM/audio/fonts etc.)",
+            cxxopts::value<std::string>()->default_value("assets/"), "<dir>")
         ("f,fullscreen", "Launch in fullscreen mode.")
 #endif
         ("no-ui", "Disable emulator UI (menu/settings/help panels etc.)");
@@ -39,10 +39,10 @@ static int do_main(int argc, char* argv[])
     }
 
 #ifdef __EMSCRIPTEN__
-    emu emu("/data", false, !args["no-ui"].as<bool>());
+    emu emu("assets/", false, !args["no-ui"].as<bool>());
 #else
     emu emu( 
-        args["romdir"].as<std::string>(),
+        args["assetdir"].as<std::string>(),
         args["fullscreen"].as<bool>(),
         !args["no-ui"].as<bool>()
     );

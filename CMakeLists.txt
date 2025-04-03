@@ -16,7 +16,7 @@ endif()
 set(BUILDNUM_FILE "${CMAKE_SOURCE_DIR}/src/buildnum.h")
 
 find_program(GIT_EXECUTABLE git)
-if(NOT GIT_EXECUTABLE)
+if (NOT GIT_EXECUTABLE)
     message(WARNING "Git not found. Build number will be unavailable.")
     add_custom_command(
         OUTPUT ${BUILDNUM_FILE}
@@ -57,8 +57,8 @@ target_compile_definitions(spaceinvaders PRIVATE
     COMPILER_NAME=${CMAKE_CXX_COMPILER_ID}
     COMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION}
     OS_NAME=${CMAKE_SYSTEM_NAME}
-    OS_VERSION=${CMAKE_SYSTEM_VERSION}
-)
+    OS_VERSION=${CMAKE_SYSTEM_VERSION})
+
 if (DEFINED ${CMAKE_CXX_SIMULATE_ID})
     target_compile_definitions(spaceinvaders PRIVATE 
         COMPILER_FRONTNAME=${CMAKE_CXX_SIMULATE_ID})
@@ -81,26 +81,50 @@ if (EMSCRIPTEN)
         -sALLOW_MEMORY_GROWTH=1\
         -sEXPORTED_RUNTIME_METHODS=ccall\
         -lembind\
-        --preload-file data/")
+        --preload-file preload_assets/@assets/")
 endif()
-
-add_custom_command(
-    TARGET spaceinvaders 
-    PRE_BUILD # emscripten needs this pre_build
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/data
-        ${CMAKE_BINARY_DIR}/data
-    VERBATIM)
 
 if (EMSCRIPTEN)
+    set(PRELOAD_SRCDIR "${CMAKE_SOURCE_DIR}/assets")
+    set(PRELOAD_BINDIR "${CMAKE_BINARY_DIR}/preload_assets")
+    set(ASSET_SRCDIR "${CMAKE_SOURCE_DIR}/web/assets")
+    set(ASSET_BINDIR "${CMAKE_BINARY_DIR}/assets")
+
     add_custom_command(
-        TARGET spaceinvaders
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_SOURCE_DIR}/src/web
-            ${CMAKE_BINARY_DIR}
+        OUTPUT ${PRELOAD_BINDIR} ${ASSET_BINDIR}
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${PRELOAD_SRCDIR} ${PRELOAD_BINDIR}
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_SRCDIR} ${ASSET_BINDIR}
+        DEPENDS ${PRELOAD_SRCDIR} ${ASSET_SRCDIR}
         VERBATIM)
+
+    add_custom_target(copy_assets 
+        DEPENDS ${PRELOAD_BINDIR} ${ASSET_BINDIR})
+
+    add_custom_command(
+        OUTPUT "${CMAKE_BINARY_DIR}/index.html"
+        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/web/index.html" ${CMAKE_BINARY_DIR}
+        DEPENDS "${CMAKE_SOURCE_DIR}/web/index.html"
+        VERBATIM)
+
+    add_custom_target(copy_websrc 
+        DEPENDS "${CMAKE_BINARY_DIR}/index.html")
+
+    add_dependencies(spaceinvaders copy_websrc copy_assets)
+
+else()
+    set(ASSET_SRCDIR "${CMAKE_SOURCE_DIR}/assets")
+    set(ASSET_BINDIR "${CMAKE_BINARY_DIR}/assets")
+
+    add_custom_command(
+        OUTPUT ${ASSET_BINDIR}
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_SRCDIR} ${ASSET_BINDIR}
+        DEPENDS ${ASSET_SRCDIR}
+        VERBATIM)
+
+    add_custom_target(copy_assets DEPENDS ${ASSET_BINDIR})
+    add_dependencies(spaceinvaders copy_assets)
 endif()
+
 
 # -------------------------------- cxxopts --------------------------------
 set(FETCH_CXXOPTS_VERSION "v3.2.0")
@@ -126,8 +150,8 @@ if (EMSCRIPTEN)
 
 else()
     string(CONCAT ALLOW_SDL2_SRCBUILD_HELP 
-        "Allow building SDL2/SDL2_Mixer libraries from source "
-        "if no existing installations can be found.")
+        "Enable building SDL2/SDL2_Mixer libraries from source "
+        "if no installations can be found.")
 
     if (WIN32)
         option(ALLOW_SDL2_SRCBUILD ${ALLOW_SDL2_SRCBUILD_HELP} ON)
@@ -165,13 +189,12 @@ else()
 
     # If both ways fail or if user hasn't installed SDL, build from source.
     if (NOT FOUND_SDL2_CMAKE_CONFIG AND NOT FOUND_SDL2_PKGCONFIG)
-        set(SDL_NOTFOUND_MSG_PREFIX "Could not find SDL2 libraries and/or config files.")
         if (ALLOW_SDL2_SRCBUILD)
-            message(WARNING "${SDL_NOTFOUND_MSG_PREFIX} \
+            message(WARNING "Could not find SDL2 libraries and/or config files.
                 SDL2 libraries will be built from source.")
         else()
-            message(FATAL_ERROR "${SDL_NOTFOUND_MSG_PREFIX} \
-                Set ALLOW_SDL2_SRCBUILD=ON to allow building SDL2 from source.")
+            message(FATAL_ERROR "Could not find SDL2 libraries and/or config files.
+                Set ALLOW_SDL2_SRCBUILD=ON to allow SDL2 to be built from source.")
         endif()
 
         if (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")

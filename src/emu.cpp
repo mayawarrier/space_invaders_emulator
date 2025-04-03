@@ -220,7 +220,7 @@ done:
     return 0;
 }
 
-int emu::init_graphics(bool enable_ui, bool fullscreen)
+int emu::init_graphics(const fs::path& assetdir, bool enable_ui, bool fullscreen)
 {
     logMESSAGE("Initializing graphics");
 
@@ -253,7 +253,7 @@ int emu::init_graphics(bool enable_ui, bool fullscreen)
     }
 
     if (enable_ui) {
-        m_gui = std::make_unique<emu_gui>(m_window, m_renderer, this);
+        m_gui = std::make_unique<emu_gui>(assetdir, m_window, m_renderer, this);
         if (!m_gui->ok()) { return -1; }
     }
 
@@ -545,13 +545,13 @@ bool emcc_on_viz_change(int, const EmscriptenVisibilityChangeEvent* event, void*
 }
 #endif
 
-emu::emu(const fs::path& romdir, bool fullscreen, bool enable_ui) :
+emu::emu(const fs::path& assetdir, bool fullscreen, bool enable_ui) :
     emu()
 {
     log_dbginfo();
 
-    if (init_graphics(enable_ui, fullscreen) != 0 ||
-        init_audio(romdir) != 0) {
+    if (init_graphics(assetdir, enable_ui, fullscreen) != 0 ||
+        init_audio(assetdir) != 0) {
         return;
     }
 
@@ -572,7 +572,7 @@ emu::emu(const fs::path& romdir, bool fullscreen, bool enable_ui) :
 #endif
 
     m.mem = std::make_unique<i8080_word_t[]>(65536);
-    if (load_rom(romdir) != 0) {
+    if (load_rom(assetdir) != 0) {
         return;
     }
 

@@ -85,6 +85,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void web_click_2p(void);
 struct emu_gui
 {
     emu_gui(
+        const fs::path& assetdir,
         SDL_Window* window, 
         SDL_Renderer* renderer, 
         emu_interface emu);
@@ -121,7 +122,7 @@ private:
     void draw_ctrlpanel(const char* id, const char* title,
         const std::pair<const char*, input> inputs[], int num_inputs, float panelsizeX);
 
-    int init_fontatlas();
+    int init_fontatlas(const char* ttf_filepath);
     ImFont* get_font_px(int size) const;
     ImFont* get_font(gui_font_type type, SDL_Point disp_size) const;
 

@@ -72,7 +72,7 @@ static const char* scancode_symbol(SDL_Scancode sc)
     return nullptr;
 }
 
-int emu_gui::init_fontatlas()
+int emu_gui::init_fontatlas(const char* ttf_filepath)
 {
     logMESSAGE("Building font atlas");
 
@@ -92,7 +92,7 @@ int emu_gui::init_fontatlas()
     for (int i = MIN_FONT_SIZE; i <= MAX_FONT_SIZE; ++i)
     {
         ImFont* font = io.Fonts->AddFontFromFileTTF(
-            "data/CascadiaMono.ttf", i, nullptr, glyph_ranges.Data);
+            ttf_filepath, i, nullptr, glyph_ranges.Data);
 
         m_fontatlas.insert({ i, font });
     }
@@ -153,6 +153,7 @@ static bool touch_supported()
 }
 
 emu_gui::emu_gui(
+    const fs::path& assetdir,
     SDL_Window* window, 
     SDL_Renderer* renderer, 
     emu_interface emu
@@ -192,7 +193,7 @@ emu_gui::emu_gui(
         logERROR("Failed to initialize ImGui with SDL backend");
         return;
     }
-    if (init_fontatlas() != 0) {
+    if (init_fontatlas((assetdir / "CascadiaMono.ttf").string().c_str()) != 0) {
         return;
     }
 
