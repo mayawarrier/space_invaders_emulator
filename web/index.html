@@ -6,9 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>Space Invaders Emulator</title>
 
-    <link rel="icon" href="favicon/favicon.ico">
-    <link rel="icon" type="image/png" sizes="192x192" href="favicon/android-chrome-192x192.png">
-    <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
+    <link rel="icon" href="assets/favicon/favicon.ico">
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon/android-chrome-192x192.png">
+    <link rel="apple-touch-icon" href="assets/favicon/apple-touch-icon.png">
 
     <style>
         * {
@@ -40,20 +40,21 @@
             display: flex;
             flex-direction: column;
             flex-grow: 1;
+            align-items: center;
             margin: 0;
             padding: 0;
         }
 
         #game-content {
             flex-grow: 1;
-            display: flex;
+            display: block;
             flex-direction: column;
             place-items: center;
             text-align: center;
             align-items: center;
             justify-content: center;
             margin: 0;
-            padding: 0;
+            padding-top: 2vh;
         }
 
         #status {
@@ -80,13 +81,19 @@
             margin-top: 1vh;
             text-align: center;
             background-color: rgba(0, 0, 0, 0.8);
-            padding-top: 0.5vh;
-            padding-bottom: 0.5vh;
+            padding: 0.5vh;
             font-size: 1.85vh;
             color: rgb(30, 245, 30);
-            width: auto;
+            width: calc(100% - 1vh);
             height: 5vh;
             overflow: hidden;
+        }
+
+        #logo {
+            margin-top: 1vh;
+            height: 7vh;
+            width: fit-content;
+            max-width: 100vw;
         }
 
         #background-canvas {
@@ -94,6 +101,18 @@
             top: 0;
             left: 0;
             z-index: -1;
+        }
+
+        .key {
+            background-color: rgba(0, 0, 0, 0.8);
+            border-style: solid;
+            border-width: 1px;
+            border-color: green;
+            font-size: 1.85vh;
+            cursor: pointer;
+            line-height: 1.5;
+            padding: 2px;
+            cursor: pointer;
         }
 
         .touch-controls {
@@ -207,10 +226,17 @@
     </div>
 
     <div id="main-container">
+        <img src="assets/logo.png" id="logo" />
+
         <div id="info-bar">
-            SPACE INVADERS <br/>
-            Press Enter to insert a coin, then 1 to start the game. <br />
-            Use ← → to move, Space to fire. <br />
+            <span>
+                Press <span class="key">Enter</span> to insert a coin, then 
+                <span class="key">1</span> to start 1-player mode.<br />
+            </span>
+            <span>
+                Use <span class="key">←</span> <span class="key">→</span> to move, and 
+                <span class="key">Space</span> to fire.<br />
+            </span>
         </div>
 
         <div id="game-content">
@@ -246,10 +272,11 @@
         });
 
         var criticalError = false;
-        
+
         var statusElem = document.getElementById('status');
         var spinnerElem = document.getElementById('spinner');
         var infoBarElem = document.getElementById('info-bar');
+        var gameContentElem = document.getElementById('game-content');
 
         var gameCtrlsElem = document.getElementById('game-controls');
         var p1p2SelectElem = document.getElementById('playerselect-controls');
@@ -259,7 +286,7 @@
         var rightButtonElem = document.getElementById('right-button');
         var leftButtonElem = document.getElementById('left-button');
         var fireButtonElem = document.getElementById('fire-button');
-       
+
         var gameCanvasElem = document.getElementById('canvas');
         gameCanvasElem.addEventListener("webglcontextlost", e => window.location.reload(), false);
 
@@ -308,8 +335,7 @@
                 e.preventDefault();
             },
 
-            attachTouchListeners(button2FuncMap)
-            {
+            attachTouchListeners(button2FuncMap) {
                 switch (this.touchType) {
                     case TouchType.POINTER_EVENTS:
                         for (const [button, func] of button2FuncMap) {
@@ -393,8 +419,7 @@
 
             canvas: gameCanvasElem,
 
-            onRuntimeInitialized()
-            {
+            onRuntimeInitialized() {
                 if (this.touchType != TouchType.NONE) {
                     const button2CppFunc = [
                         [rightButtonElem, 'web_touch_right'],
@@ -405,6 +430,9 @@
 
                     p1ButtonElem.onclick = e => this.ccall('web_click_1p');
                     p2ButtonElem.onclick = e => this.ccall('web_click_2p');
+
+                    gameContentElem.style.display = 'flex';
+                    gameContentElem.style.padding = '0';
                 }
                 else {
                     infoBarElem.style.display = 'flex';
@@ -467,7 +495,9 @@
                 this.canvas.height = window.innerHeight;
 
                 this.stars = [];
-                for (let i = 0; i < 100; i++) {
+                var numStars = Math.max(Math.round(100 * this.canvas.width / 1920), 40);
+
+                for (let i = 0; i < numStars; i++) {
                     this.stars.push({
                         x: Math.random() * this.canvas.width,
                         y: Math.random() * this.canvas.height,
