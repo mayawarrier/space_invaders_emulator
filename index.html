@@ -6,9 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
     <title>Space Invaders Emulator</title>
 
-    <link rel="icon" href="favicon/favicon.ico">
-    <link rel="icon" type="image/png" sizes="192x192" href="favicon/android-chrome-192x192.png">
-    <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
+    <link rel="icon" href="assets/favicon/favicon.ico">
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon/android-chrome-192x192.png">
+    <link rel="apple-touch-icon" href="assets/favicon/apple-touch-icon.png">
 
     <style>
         * {
@@ -28,14 +28,72 @@
             font-family: arial;
             background: url('assets/background.jpg') no-repeat bottom center fixed;
             background-size: cover;
-            display: grid;
-            place-items: center;
-            text-align: center;
-            align-items: start;
+            display: flex;
+            flex-direction: column;
+            align-items: center;           
             margin: 0;
             padding: 0;
             height: 100%;
+        }
+
+        #main-container {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+        }
+
+        #game-content {
+            flex-grow: 1;
+            display: block;
+            flex-direction: column;
+            place-items: center;
+            text-align: center;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding-top: 2vh;
+        }
+
+        #status {
+            display: inline-block;
+            vertical-align: top;
+            margin: 30px auto 30px 20px;
+            text-align: center;
+            font-weight: bold;
+            color: rgb(120, 120, 120);
+        }
+
+        #status-bar {
+            display: block;
+            margin: 0 auto;
+            text-align: center;
+            background-color: lightgray;
             width: 100%;
+        }
+
+        #info-bar {
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            margin-top: 1vh;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 0.5vh;
+            font-size: 1.85vh;
+            color: rgb(30, 245, 30);
+            width: calc(100% - 1vh);
+            height: 5vh;
+            overflow: hidden;
+        }
+
+        #logo {
+            margin-top: 1vh;
+            height: 7vh;
+            width: fit-content;
+            max-width: 100vw;
         }
 
         #background-canvas {
@@ -43,6 +101,18 @@
             top: 0;
             left: 0;
             z-index: -1;
+        }
+
+        .key {
+            background-color: rgba(0, 0, 0, 0.8);
+            border-style: solid;
+            border-width: 1px;
+            border-color: green;
+            font-size: 1.85vh;
+            cursor: pointer;
+            line-height: 1.5;
+            padding: 2px;
+            cursor: pointer;
         }
 
         .touch-controls {
@@ -94,23 +164,6 @@
             margin-left: auto;
             margin-right: auto;
             display: block;
-        }
-
-        #status {
-            display: inline-block;
-            vertical-align: top;
-            margin: 30px auto 30px 20px;
-            text-align: center;
-            font-weight: bold;
-            color: rgb(120, 120, 120);
-        }
-
-        #statusBar {
-            display: block;
-            margin: 0 auto;
-            text-align: center;
-            background-color: lightgray;
-            width: 100vw;
         }
 
         div.emscripten {
@@ -167,28 +220,43 @@
 <body>
     <canvas id="background-canvas"></canvas>
 
-    <div id="statusBar">
+    <div id="status-bar">
         <div class="spinner" id='spinner'></div>
         <div class="emscripten" id="status">Loading...</div>
     </div>
 
-    <div id="content">
-        <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
-        <div class="touch-controls" id="game-controls">
-            <div class="touch-buttons-flexstart">
-                <button class="touch-button" id="fire-button" oncontextmenu="event.preventDefault()"></button>
-            </div>
-            <div class="touch-buttons-flexend">
-                <button class="touch-button" id="left-button" oncontextmenu="event.preventDefault()"></button>
-                <button class="touch-button" id="right-button" oncontextmenu="event.preventDefault()"></button>
-            </div>
+    <div id="main-container">
+        <img src="assets/logo.png" id="logo" />
+
+        <div id="info-bar">
+            <span>
+                Press <span class="key">Enter</span> to insert a coin, then 
+                <span class="key">1</span> to start 1-player mode.<br />
+            </span>
+            <span>
+                Use <span class="key">←</span> <span class="key">→</span> to move, and 
+                <span class="key">Space</span> to fire.<br />
+            </span>
         </div>
-        <div class="touch-controls" id="playerselect-controls">
-            <div class="touch-buttons-flexend">
-                <button class="touch-button" id="p1-button" oncontextmenu="event.preventDefault()"></button>
+
+        <div id="game-content">
+            <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+            <div class="touch-controls" id="game-controls">
+                <div class="touch-buttons-flexstart">
+                    <button class="touch-button" id="fire-button" oncontextmenu="event.preventDefault()"></button>
+                </div>
+                <div class="touch-buttons-flexend">
+                    <button class="touch-button" id="left-button" oncontextmenu="event.preventDefault()"></button>
+                    <button class="touch-button" id="right-button" oncontextmenu="event.preventDefault()"></button>
+                </div>
             </div>
-            <div class="touch-buttons-flexstart">
-                <button class="touch-button" id="p2-button" oncontextmenu="event.preventDefault()"></button>
+            <div class="touch-controls" id="playerselect-controls">
+                <div class="touch-buttons-flexend">
+                    <button class="touch-button" id="p1-button" oncontextmenu="event.preventDefault()"></button>
+                </div>
+                <div class="touch-buttons-flexstart">
+                    <button class="touch-button" id="p2-button" oncontextmenu="event.preventDefault()"></button>
+                </div>
             </div>
         </div>
     </div>
@@ -207,25 +275,27 @@
 
         var statusElem = document.getElementById('status');
         var spinnerElem = document.getElementById('spinner');
+        var infoBarElem = document.getElementById('info-bar');
+        var gameContentElem = document.getElementById('game-content');
+
         var gameCtrlsElem = document.getElementById('game-controls');
         var p1p2SelectElem = document.getElementById('playerselect-controls');
+        var p1ButtonElem = document.getElementById('p1-button');
+        var p2ButtonElem = document.getElementById('p2-button');
 
         var rightButtonElem = document.getElementById('right-button');
         var leftButtonElem = document.getElementById('left-button');
         var fireButtonElem = document.getElementById('fire-button');
 
-        var p1ButtonElem = document.getElementById('p1-button');
-        var p2ButtonElem = document.getElementById('p2-button');
-
         var gameCanvasElem = document.getElementById('canvas');
         gameCanvasElem.addEventListener("webglcontextlost", e => window.location.reload(), false);
 
-        // Disable double click zoom on mobile devices
+        // Disable double tap zoom on mobile devices
         document.ondblclick = e => e.preventDefault();
 
         // Emscripten Module
-        var Module = {
-
+        var Module =
+        {
             // Detect touch support.
             // This just checks if touch exists; the primary device may not be a touch device.
             // https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events
@@ -233,18 +303,17 @@
             // https://stackoverflow.com/questions/13225662/
             // https://stackoverflow.com/questions/4817029/
             touchType: (() => {
-                const hasMaxTouchPoints = 'maxTouchPoints' in navigator;
-                const hasCoarsePtr = window.matchMedia && window.matchMedia("(any-pointer: coarse)").matches;
-
-                if (window.PointerEvent && hasMaxTouchPoints) {
+                if (window.PointerEvent && 'maxTouchPoints' in navigator) {
                     return navigator.maxTouchPoints > 0 ? TouchType.POINTER_EVENTS : TouchType.NONE;
-                }
-                else if ((hasCoarsePtr || (hasMaxTouchPoints && navigator.maxTouchPoints > 0)) &&
-                    (window.TouchEvent || 'ontouchstart' in window)) {
-                    return TouchType.TOUCH_EVENTS;
                 }
                 else if (window.navigator.msPointerEnabled && 'msMaxTouchPoints' in navigator) {
                     return navigator.msMaxTouchPoints > 0 ? TouchType.MS_POINTER_EVENTS : TouchType.NONE;
+                }
+                // Some desktop browsers (eg. Chrome) falsely report TouchEvent support, causing the touch UI to be shown.
+                // In this case, fallback to mouse events (see attachTouchListeners). Note that most desktop browsers
+                // have supported pointer events for several years, so this is rarely an issue.
+                else if (window.TouchEvent || 'ontouchstart' in window) {
+                    return TouchType.TOUCH_EVENTS;
                 }
                 return TouchType.NONE;
             })(),
@@ -255,7 +324,8 @@
             },
 
             onPtrEvent(func, e, pressed) {
-                // some browsers do not set pointer capture by default on touch devices
+                // some browsers (eg. Android WebView) do not set pointer
+                // capture by default on touch devices
                 if (pressed) {
                     e.currentTarget.setPointerCapture(e.pointerId);
                 } else {
@@ -265,33 +335,34 @@
                 e.preventDefault();
             },
 
-            attachTouchListeners(button2FuncMap)
-            {
+            attachTouchListeners(button2FuncMap) {
                 switch (this.touchType) {
                     case TouchType.POINTER_EVENTS:
                         for (const [button, func] of button2FuncMap) {
-                            button.onpointerdown = (e) => this.onPtrEvent(func, e, true);
-                            button.onpointerup = (e) => this.onPtrEvent(func, e, false);
+                            button.onpointerdown =   (e) => this.onPtrEvent(func, e, true);
+                            button.onpointerup =     (e) => this.onPtrEvent(func, e, false);
                             button.onpointercancel = (e) => this.onPtrEvent(func, e, false);
                         }
                         break;
 
                     case TouchType.MS_POINTER_EVENTS:
                         for (const [button, func] of button2FuncMap) {
-                            button.onmspointerdown = (e) => this.onPtrEvent(func, e, true);
-                            button.onmspointerup = (e) => this.onPtrEvent(func, e, false);
+                            button.onmspointerdown =   (e) => this.onPtrEvent(func, e, true);
+                            button.onmspointerup =     (e) => this.onPtrEvent(func, e, false);
                             button.onmspointercancel = (e) => this.onPtrEvent(func, e, false);
                         }
                         break;
 
                     case TouchType.TOUCH_EVENTS:
                         for (const [button, func] of button2FuncMap) {
-                            button.addEventListener('touchstart',
-                                e => this.onTouchEvent(func, e, true), { passive: false });
-                            button.addEventListener('touchend',
-                                e => this.onTouchEvent(func, e, false), { passive: false });
-                            button.addEventListener('touchcancel',
-                                e => this.onTouchEvent(func, e, false), { passive: false });
+                            button.addEventListener('touchstart',  e => this.onTouchEvent(func, e, true), { passive: false });
+                            button.addEventListener('touchend',    e => this.onTouchEvent(func, e, false), { passive: false });
+                            button.addEventListener('touchcancel', e => this.onTouchEvent(func, e, false), { passive: false });
+
+                            // See note above about touch events on desktop browsers.
+                            // Fallback to mouse events on desktop. e.preventDefault() will prevent these from firing on touch devices.
+                            button.addEventListener('mousedown', e => this.onTouchEvent(func, e, true));
+                            button.addEventListener('mouseup',   e => this.onTouchEvent(func, e, false));
                         }
                         break;
 
@@ -304,7 +375,7 @@
                     'ontouchstart' in window) {
                     for (const [button,] of button2FuncMap) {
                         button.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
-                        button.addEventListener('touchend', e => e.preventDefault(), { passive: false });
+                        button.addEventListener('touchend',   e => e.preventDefault(), { passive: false });
                     }
                 }
             },
@@ -321,12 +392,12 @@
 
             touchTypeString() {
                 switch (this.touchType) {
-                    case TouchType.TOUCH_EVENTS:
-                        return stringToNewUTF8('TouchEvent');
                     case TouchType.POINTER_EVENTS:
                         return stringToNewUTF8('PointerEvent');
                     case TouchType.MS_POINTER_EVENTS:
                         return stringToNewUTF8('MSPointerEvent');
+                    case TouchType.TOUCH_EVENTS:
+                        return stringToNewUTF8('TouchEvent');
                     default:
                         return stringToNewUTF8('None');
                 }
@@ -349,15 +420,23 @@
             canvas: gameCanvasElem,
 
             onRuntimeInitialized() {
-                const button2CppFunc = [
-                    [rightButtonElem, 'web_touch_right'],
-                    [leftButtonElem, 'web_touch_left'],
-                    [fireButtonElem, 'web_touch_fire']
-                ];
-                this.attachTouchListeners(button2CppFunc);
+                if (this.touchType != TouchType.NONE) {
+                    const button2CppFunc = [
+                        [rightButtonElem, 'web_touch_right'],
+                        [leftButtonElem, 'web_touch_left'],
+                        [fireButtonElem, 'web_touch_fire']
+                    ];
+                    this.attachTouchListeners(button2CppFunc);
 
-                p1ButtonElem.onclick = e => this.ccall('web_click_1p');
-                p2ButtonElem.onclick = e => this.ccall('web_click_2p');
+                    p1ButtonElem.onclick = e => this.ccall('web_click_1p');
+                    p2ButtonElem.onclick = e => this.ccall('web_click_2p');
+
+                    gameContentElem.style.display = 'flex';
+                    gameContentElem.style.padding = '0';
+                }
+                else {
+                    infoBarElem.style.display = 'flex';
+                }
             },
 
             setStatus: (text) => {
@@ -416,7 +495,9 @@
                 this.canvas.height = window.innerHeight;
 
                 this.stars = [];
-                for (let i = 0; i < 150; i++) {
+                var numStars = Math.max(Math.round(100 * this.canvas.width / 1920), 40);
+
+                for (let i = 0; i < numStars; i++) {
                     this.stars.push({
                         x: Math.random() * this.canvas.width,
                         y: Math.random() * this.canvas.height,
