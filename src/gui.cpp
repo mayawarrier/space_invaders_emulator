@@ -981,7 +981,7 @@ gui_sizeinfo emu_gui::get_sizeinfo(SDL_Point disp_size) const
     int menu_height = get_font_px_size(FONT_MENUBAR, disp_size) + // text
         int(ImGui::GetStyle().FramePadding.y * 2.0f) + 2 * MENUBAR_PADDING;  // padding
 
-    float resv_outwnd_ypct = is_emscripten() && m_touchenabled ? 0.25f : 0.20f;
+    float resv_outwnd_ypct = is_emscripten() ? (m_touchenabled ? 0.25f : 0.20f) : 0.1f;
     int resv_outwndY = int(std::lroundf(resv_outwnd_ypct * disp_size.y));
 
     return {

@@ -3,7 +3,10 @@
 #include <exception>
 
 #include <SDL_main.h>
+
+#ifndef __EMSCRIPTEN__
 #include <cxxopts.hpp>
+#endif
 
 #include "emu.hpp"
 
@@ -13,15 +16,13 @@
 
 static int do_main(int argc, char* argv[])
 {
-    cxxopts::Options opts("spaceinvaders", "1978 Space Invaders arcade cabinet emulator.");
+#ifndef __EMSCRIPTEN__
+    cxxopts::Options opts("spaceinvaders", "1978 Space Invaders emulator.");
     opts.add_options()
         ("h,help", "Show usage.")
-#ifndef __EMSCRIPTEN__
-        ("a,assetdir", "Directory containing game assets (ROM/audio/fonts etc.)",
+        ("a,asset-dir", "Directory containing game assets (ROM/audio/fonts etc.)",
             cxxopts::value<std::string>()->default_value("assets/"), "<dir>")
-        ("f,fullscreen", "Launch in fullscreen mode.")
-#endif
-        ("no-ui", "Disable emulator UI (menu/settings/help panels etc.)");
+        ("disable-ui", "Disable emulator UI (menu/settings/help panels etc.)");
         
     cxxopts::ParseResult args;
     try {
@@ -38,19 +39,17 @@ static int do_main(int argc, char* argv[])
         return 0;
     }
 
-#ifdef __EMSCRIPTEN__
-    emu emu("assets/", false, !args["no-ui"].as<bool>());
-#else
-    emu emu( 
-        args["assetdir"].as<std::string>(),
-        args["fullscreen"].as<bool>(),
-        !args["no-ui"].as<bool>()
+    emu emu(
+        args["asset-dir"].as<std::string>(),
+        !args["disable-ui"].as<bool>()
     );
+#else
+    emu emu("assets/", true);
 #endif
+
     if (!emu.ok()) {
         return -1;
     }
-
     // Start!
     return emu.run();
 }
@@ -73,8 +72,5 @@ int main(int argc, char* argv[])
         std::system("pause");
     }
 #endif
-    if (is_emscripten() && err) {
-        throw err;
-    }
     return err;
 }

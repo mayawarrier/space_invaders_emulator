@@ -4,11 +4,18 @@
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-    <title>Space Invaders Emulator</title>
+    <title>Space Invaders</title>
 
     <link rel="icon" href="assets/favicon/favicon.ico">
     <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon/android-chrome-192x192.png">
     <link rel="apple-touch-icon" href="assets/favicon/apple-touch-icon.png">
+
+    <link rel="preload" as="image" href="assets/background.jpg" />
+    <link rel="preload" as="image" href="assets/logo.png" />
+
+    <link rel="preload" as="image" href="assets/arcade_button.png" media="(any-pointer: coarse)"/>
+    <link rel="preload" as="image" href="assets/1p_arcade_button.png" media="(any-pointer: coarse)" />
+    <link rel="preload" as="image" href="assets/2p_arcade_button.png" media="(any-pointer: coarse)"/>
 
     <style>
         * {
@@ -30,7 +37,7 @@
             background-size: cover;
             display: flex;
             flex-direction: column;
-            align-items: center;           
+            align-items: center;
             margin: 0;
             padding: 0;
             height: 100%;
@@ -75,7 +82,7 @@
         }
 
         #info-bar {
-            display: none;
+            display: flex;
             flex-direction: column;
             justify-content: center;
             margin-top: 1vh;
@@ -137,7 +144,7 @@
             border: none;
             outline: none;
         }
-            
+
         .touch-buttons-flexstart {
             display: flex;
             justify-content: flex-start;
@@ -156,6 +163,7 @@
         #p1-button {
             background: url('assets/1p_arcade_button.png') no-repeat center/cover;
         }
+
         #p2-button {
             background: url('assets/2p_arcade_button.png') no-repeat center/cover;
         }
@@ -176,71 +184,18 @@
             border: 0px none;
             background-color: black;
         }
-
-        .spinner {
-            height: 30px;
-            width: 30px;
-            margin: 0;
-            margin-top: 20px;
-            margin-left: 20px;
-            display: inline-block;
-            vertical-align: top;
-            -webkit-animation: rotation .8s linear infinite;
-            -moz-animation: rotation .8s linear infinite;
-            -o-animation: rotation .8s linear infinite;
-            animation: rotation 0.8s linear infinite;
-            border-left: 5px solid rgb(235, 235, 235);
-            border-right: 5px solid rgb(235, 235, 235);
-            border-bottom: 5px solid rgb(235, 235, 235);
-            border-top: 5px solid rgb(120, 120, 120);
-            border-radius: 100%;
-        }
-
-        @-webkit-keyframes rotation {
-            from { -webkit-transform: rotate(0deg); }
-            to { -webkit-transform: rotate(360deg); }
-        }
-
-        @-moz-keyframes rotation {
-            from { -moz-transform: rotate(0deg); }
-            to { -moz-transform: rotate(360deg); }
-        }
-
-        @-o-keyframes rotation {
-            from { -o-transform: rotate(0deg); }
-            to { -o-transform: rotate(360deg); }
-        }
-
-        @keyframes rotation {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
     </style>
 </head>
 <body>
     <canvas id="background-canvas"></canvas>
 
-    <div id="status-bar">
-        <div class="spinner" id='spinner'></div>
-        <div class="emscripten" id="status">Loading...</div>
-    </div>
-
     <div id="main-container">
         <img src="assets/logo.png" id="logo" />
-
-        <div id="info-bar">
-            <span>
-                Press <span class="key">Enter</span> to insert a coin, then 
-                <span class="key">1</span> to start 1-player mode.<br />
-            </span>
-            <span>
-                Use <span class="key">←</span> <span class="key">→</span> to move, and 
-                <span class="key">Space</span> to fire.<br />
-            </span>
-        </div>
+        <div id="info-bar"></div>
 
         <div id="game-content">
             <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+
             <div class="touch-controls" id="game-controls">
                 <div class="touch-buttons-flexstart">
                     <button class="touch-button" id="fire-button" oncontextmenu="event.preventDefault()"></button>
@@ -273,8 +228,6 @@
 
         var criticalError = false;
 
-        var statusElem = document.getElementById('status');
-        var spinnerElem = document.getElementById('spinner');
         var infoBarElem = document.getElementById('info-bar');
         var gameContentElem = document.getElementById('game-content');
 
@@ -289,9 +242,6 @@
 
         var gameCanvasElem = document.getElementById('canvas');
         gameCanvasElem.addEventListener("webglcontextlost", e => window.location.reload(), false);
-
-        // Disable double tap zoom on mobile devices
-        document.ondblclick = e => e.preventDefault();
 
         // Emscripten Module
         var Module =
@@ -381,10 +331,10 @@
             },
 
             setErrorStatus: (text) => {
-                if (statusElem.style.height == '0px') {
-                    statusElem.style.display = 'inline-block'
-                    statusElem.style.height = 'auto';
-                    statusElem.innerHTML = text;
+                if (infoBarElem.style.height == '0px') {
+                    infoBarElem.style.display = 'inline-block'
+                    infoBarElem.style.height = 'auto';
+                    infoBarElem.innerHTML = text;
                 }
             },
 
@@ -433,19 +383,29 @@
 
                     gameContentElem.style.display = 'flex';
                     gameContentElem.style.padding = '0';
-                }
-                else {
-                    infoBarElem.style.display = 'flex';
+                    infoBarElem.style.display = 'none';
                 }
             },
 
+            lastStatusTime: 0,
+
             setStatus: (text) => {
                 if (text) {
-                    statusElem.innerHTML = text;
+                    var now = Date.now();
+                    if (now - Module.lastStatusTime > 30) {
+                        Module.lastStatusTime = now;
+                        infoBarElem.innerHTML = text;
+                    }
                 } else {
-                    spinnerElem.remove();
-                    statusElem.style.height = 0;
-                    statusElem.style.display = 'none';
+                    // status updates complete, show info
+                    infoBarElem.innerHTML =
+                        '<span>' +
+                            'Press <span class="key">Enter</span> to insert a coin, then ' +
+                            '<span class="key">1</span> to start 1-player mode.<br/>' +
+                        '</span><span>' +
+                            'Use <span class="key">←</span> <span class="key">→</span> to move, and ' +
+                            '<span class="key">Space</span> to fire.<br/>' +
+                        '</span>';
                 }
             },
             // --------------------------------------------------------
@@ -476,6 +436,9 @@
                 }
             }
         });
+
+        // Disable double tap zoom on mobile devices
+        document.ondblclick = e => e.preventDefault();
 
         class Starfield
         {

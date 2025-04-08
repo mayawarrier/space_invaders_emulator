@@ -13,26 +13,7 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
-set(BUILDNUM_FILE "${CMAKE_SOURCE_DIR}/src/buildnum.h")
-
-find_program(GIT_EXECUTABLE git)
-if (NOT GIT_EXECUTABLE)
-    message(WARNING "Git not found. Build number will be unavailable.")
-    add_custom_command(
-        OUTPUT ${BUILDNUM_FILE}
-        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM 0" > ${BUILDNUM_FILE}
-        VERBATIM)
-else()
-    add_custom_command(
-        OUTPUT ${BUILDNUM_FILE}
-        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM " > ${BUILDNUM_FILE}
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD >> ${BUILDNUM_FILE} || 
-                ${CMAKE_COMMAND} -E echo_append "0" >> ${BUILDNUM_FILE}
-        VERBATIM)
-endif()
-
 set(SOURCES 
-    ${BUILDNUM_FILE}
     "src/i8080/i8080.hpp" 
     "src/i8080/i8080_opcodes.h"
     "src/i8080/i8080.cpp" 
@@ -97,8 +78,13 @@ if (EMSCRIPTEN)
         DEPENDS ${PRELOAD_SRCDIR} ${ASSET_SRCDIR}
         VERBATIM)
 
-    add_custom_target(copy_assets 
-        DEPENDS ${PRELOAD_BINDIR} ${ASSET_BINDIR})
+    add_custom_target(copy_assets DEPENDS ${PRELOAD_BINDIR} ${ASSET_BINDIR})
+    add_dependencies(spaceinvaders copy_assets)
+
+    # Output directories are not cleaned by default. Ninja clean also fails without this
+    # https://stackoverflow.com/questions/53734146
+    set_property(TARGET spaceinvaders APPEND 
+        PROPERTY ADDITIONAL_CLEAN_FILES ${PRELOAD_BINDIR} ${ASSET_BINDIR})
 
     add_custom_command(
         OUTPUT "${CMAKE_BINARY_DIR}/index.html"
@@ -106,10 +92,8 @@ if (EMSCRIPTEN)
         DEPENDS "${CMAKE_SOURCE_DIR}/web/index.html"
         VERBATIM)
 
-    add_custom_target(copy_websrc 
-        DEPENDS "${CMAKE_BINARY_DIR}/index.html")
-
-    add_dependencies(spaceinvaders copy_websrc copy_assets)
+    add_custom_target(copy_websrc DEPENDS "${CMAKE_BINARY_DIR}/index.html")
+    add_dependencies(spaceinvaders copy_websrc)
 
 else()
     set(ASSET_SRCDIR "${CMAKE_SOURCE_DIR}/assets")
@@ -123,18 +107,45 @@ else()
 
     add_custom_target(copy_assets DEPENDS ${ASSET_BINDIR})
     add_dependencies(spaceinvaders copy_assets)
+    # See note above about output directories.
+    set_property(TARGET spaceinvaders APPEND 
+        PROPERTY ADDITIONAL_CLEAN_FILES ${ASSET_BINDIR})
 endif()
 
+set(BUILDNUM_FILE "${CMAKE_BINARY_DIR}/buildnum.h")
+
+find_program(GIT_EXECUTABLE git)
+if (NOT GIT_EXECUTABLE)
+    message(WARNING "Git not found. Build number will be unavailable.")
+    add_custom_command(
+        OUTPUT ${BUILDNUM_FILE}
+        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM 0" > ${BUILDNUM_FILE}
+        VERBATIM)
+else()
+    add_custom_command(
+        OUTPUT ${BUILDNUM_FILE}
+        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM " > ${BUILDNUM_FILE}
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD >> ${BUILDNUM_FILE} || 
+                ${CMAKE_COMMAND} -E echo_append "0" >> ${BUILDNUM_FILE}
+        VERBATIM)
+
+    add_custom_target(GIT_BUILDNUM DEPENDS ${BUILDNUM_FILE})
+    add_dependencies(spaceinvaders GIT_BUILDNUM)
+    target_include_directories(spaceinvaders PRIVATE ${CMAKE_BINARY_DIR})
+endif()
 
 # -------------------------------- cxxopts --------------------------------
-set(FETCH_CXXOPTS_VERSION "v3.2.0")
 
-FetchContent_Declare(cxxopts
-    GIT_REPOSITORY  https://github.com/jarro2783/cxxopts
-    GIT_TAG         ${FETCH_CXXOPTS_VERSION})
-FetchContent_MakeAvailable(cxxopts) 
+if (NOT EMSCRIPTEN)
+    set(FETCH_CXXOPTS_VERSION "v3.2.0")
 
-target_link_libraries(spaceinvaders PRIVATE cxxopts)
+    FetchContent_Declare(cxxopts
+        GIT_REPOSITORY  https://github.com/jarro2783/cxxopts
+        GIT_TAG         ${FETCH_CXXOPTS_VERSION})
+    FetchContent_MakeAvailable(cxxopts) 
+
+    target_link_libraries(spaceinvaders PRIVATE cxxopts)
+endif()
 
 # ---------------------------------- SDL ----------------------------------
 
@@ -149,9 +160,8 @@ if (EMSCRIPTEN)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_SDL=2 -s USE_SDL_MIXER=2")
 
 else()
-    string(CONCAT ALLOW_SDL2_SRCBUILD_HELP 
-        "Enable building SDL2/SDL2_Mixer libraries from source "
-        "if no installations can be found.")
+    set(ALLOW_SDL2_SRCBUILD_HELP 
+        "If SDL2/SDL2_Mixer libraries cannot be found, build them from source.")
 
     if (WIN32)
         option(ALLOW_SDL2_SRCBUILD ${ALLOW_SDL2_SRCBUILD_HELP} ON)
@@ -194,7 +204,7 @@ else()
                 SDL2 libraries will be built from source.")
         else()
             message(FATAL_ERROR "Could not find SDL2 libraries and/or config files.
-                Set ALLOW_SDL2_SRCBUILD=ON to allow SDL2 to be built from source.")
+                Set ALLOW_SDL2_SRCBUILD to allow building from source.")
         endif()
 
         if (WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -261,6 +271,11 @@ else()
                 "$<TARGET_FILE:${TARGET_NAME_SDL2_MIXER}>" 
                 "$<TARGET_FILE_DIR:spaceinvaders>"
             VERBATIM)
+
+        set_property(TARGET spaceinvaders APPEND 
+            PROPERTY ADDITIONAL_CLEAN_FILES 
+            "$<TARGET_FILE_DIR:spaceinvaders>/$<TARGET_FILE_NAME:${TARGET_NAME_SDL2}>"
+            "$<TARGET_FILE_DIR:spaceinvaders>/$<TARGET_FILE_NAME:${TARGET_NAME_SDL2_MIXER}>")
     endif()
 endif()
 

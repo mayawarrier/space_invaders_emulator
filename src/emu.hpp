@@ -116,7 +116,6 @@ private:
 struct emu
 {
     emu(const fs::path& assetdir,
-        bool fullscreen = false,
         bool enable_ui = true);
 
     ~emu();
@@ -126,12 +125,6 @@ struct emu
     // Start running.
     // Returns <0 on error, otherwise 0 when window is closed.
     int run();
-    
-#ifdef __EMSCRIPTEN__
-    friend bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata);
-    friend bool emcc_on_viz_change(int, const EmscriptenVisibilityChangeEvent* event, void*);
-#endif
-    friend emu_interface;
 
 private:
     emu();
@@ -139,7 +132,7 @@ private:
     static void log_dbginfo();
 
     int init_texture(SDL_Renderer* renderer);
-    int init_graphics(const fs::path& assetdir, bool enable_ui, bool windowed);
+    int init_graphics(const fs::path& assetdir, bool enable_ui);
     int init_audio(const fs::path& audiodir);
     int load_rom(const fs::path& dir);
 
@@ -147,9 +140,14 @@ private:
     int save_udata();
 
     int resize_window();
-
-    bool process_events();
     void send_input(input inp, bool pressed);
+
+    enum mainloop_action {
+        MAINLOOP_EXIT,
+        MAINLOOP_SKIP,
+        MAINLOOP_CONTINUE
+    };
+    mainloop_action process_events();
     
     bool get_switch(int index) const;
     void set_switch(int index, bool value);
@@ -175,13 +173,24 @@ private:
 
     int m_volume;
     bool m_audiopaused;
+
+    bool m_hiscore_in_vmem;
     uint16_t m_hiscore_bcd;
+
     float m_delta_t;
 
 #ifdef __EMSCRIPTEN__
     bool m_resizepending;
+    bool m_paused;
 #endif
     bool m_ok;
+
+public:
+#ifdef __EMSCRIPTEN__
+    friend bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void*);
+    friend bool emcc_on_viz_change(int, const EmscriptenVisibilityChangeEvent*, void*);
+#endif
+    friend emu_interface;
 };
 
 inline bool emu_interface::in_demo_mode() const {

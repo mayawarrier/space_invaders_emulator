@@ -5,4 +5,3 @@ build/
 install/
 *SDL2/
 *SDL2_mixer/
-src/buildnum.h

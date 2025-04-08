@@ -154,10 +154,10 @@ enum colr_idx : uint8_t
 };
 
 static const std::array<pix_fmt, 3> PIXFMTS = {
-    // black,      green,      red,        white
-pix_fmt(SDL_PIXELFORMAT_BGR565,   { 0x0000,     0x1FE3,     0x18FF,     0xFFFF,    }),
-pix_fmt(SDL_PIXELFORMAT_ARGB8888, { 0xFF000000, 0xFF1EFE1E, 0xFFFE1E1E, 0xFFFFFFFF }),
-pix_fmt(SDL_PIXELFORMAT_ABGR8888, { 0xFF000000, 0xFF1EFE1E, 0xFF1E1EFE, 0xFFFFFFFF }),
+                                     // black,      green,      red,        white
+    pix_fmt(SDL_PIXELFORMAT_BGR565,   { 0x0000,     0x1FE3,     0x18FF,     0xFFFF,    }),
+    pix_fmt(SDL_PIXELFORMAT_ARGB8888, { 0xFF000000, 0xFF1EFE1E, 0xFFFE1E1E, 0xFFFFFFFF }),
+    pix_fmt(SDL_PIXELFORMAT_ABGR8888, { 0xFF000000, 0xFF1EFE1E, 0xFF1E1EFE, 0xFFFFFFFF }),
 };
 
 static const char* pixfmt_name(uint32_t fmt)
@@ -220,7 +220,7 @@ done:
     return 0;
 }
 
-int emu::init_graphics(const fs::path& assetdir, bool enable_ui, bool fullscreen)
+int emu::init_graphics(const fs::path& assetdir, bool enable_ui)
 {
     logMESSAGE("Initializing graphics");
 
@@ -247,10 +247,6 @@ int emu::init_graphics(const fs::path& assetdir, bool enable_ui, bool fullscreen
 
     int e = init_texture(m_renderer);
     if (e) { return e; }
-
-    if (fullscreen) { // todo, not working
-        //SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN);
-    }
 
     if (enable_ui) {
         m_gui = std::make_unique<emu_gui>(assetdir, m_window, m_renderer, this);
@@ -512,6 +508,7 @@ emu::emu() :
     m_audiopaused(false),
     m_delta_t(-1),
     m_hiscore_bcd(0),
+    m_hiscore_in_vmem(false),
 #ifdef __EMSCRIPTEN__
     m_resizepending(false),
 #endif
@@ -534,36 +531,36 @@ bool emcc_on_window_resize(int, const EmscriptenUiEvent*, void* udata)
 }
 bool emcc_on_viz_change(int, const EmscriptenVisibilityChangeEvent* event, void* udata)
 {
-    // SDL_QUIT aka browser unload() event is very unreliable and
-    // beforeunload does not work reliably either on mobile browsers.
-    // Viz change seems to be the most reliable way to save state.
-    // https://developer.chrome.com/docs/web-platform/page-lifecycle-api
-    if (event->hidden) {
+    if (event->hidden || event->visibilityState == EMSCRIPTEN_VISIBILITY_UNLOADED) {
         static_cast<emu*>(udata)->save_udata();
     }
     return true;
 }
 #endif
 
-emu::emu(const fs::path& assetdir, bool fullscreen, bool enable_ui) :
+emu::emu(const fs::path& assetdir, bool enable_ui) :
     emu()
 {
     log_dbginfo();
 
-    if (init_graphics(assetdir, enable_ui, fullscreen) != 0 ||
+    if (init_graphics(assetdir, enable_ui) != 0 ||
         init_audio(assetdir) != 0) {
         return;
     }
 
 #ifdef __EMSCRIPTEN__
     EMSCRIPTEN_RESULT res;
-
+    
     res = emscripten_set_resize_callback(
         EMSCRIPTEN_EVENT_TARGET_WINDOW, this, true, emcc_on_window_resize);
     if (res != EMSCRIPTEN_RESULT_SUCCESS) {
         logERROR("emscripten_set_resize_callback(): %s", emcc_result_name(res));
         return;
     }
+    // SDL_QUIT aka browser unload() event is very unreliable and
+    // beforeunload does not work reliably either on mobile browsers.
+    // visibilitychange is the best option to save state.
+    // https://developer.chrome.com/docs/web-platform/page-lifecycle-api
     res = emscripten_set_visibilitychange_callback(this, true, emcc_on_viz_change);
     if (res != EMSCRIPTEN_RESULT_SUCCESS) {
         logERROR("emscripten_set_visibilitychange_callback(): %s", emcc_result_name(res));
@@ -597,8 +594,8 @@ emu::emu(const fs::path& assetdir, bool fullscreen, bool enable_ui) :
 emu::~emu()
 {
 #ifdef __EMSCRIPTEN__
-    emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, NULL, 0, NULL);
     emscripten_set_visibilitychange_callback(NULL, 0, NULL);
+    emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, NULL, 0, NULL);
 #endif
 
     for (int i = 0; i < NUM_SOUNDS; ++i) {
@@ -865,6 +862,7 @@ int emu::load_udata()
         return -1;
     }
     m_hiscore_bcd = hiscore;
+    m_hiscore_in_vmem = false;
 
     logMESSAGE("Loaded user data");
     return 0;
@@ -901,42 +899,45 @@ int emu::save_udata()
         return -1;
     }
 
-    uint16_t hiscore = m.mem[HISCORE_START_ADDR] |
-        (uint16_t(m.mem[HISCORE_START_ADDR + 1]) << 8);
+    if (m_hiscore_in_vmem)
+    {
+        uint16_t hiscore = m.mem[HISCORE_START_ADDR] |
+            (uint16_t(m.mem[HISCORE_START_ADDR + 1]) << 8);
 
-    uint16_t cksum = checksum(hiscore);
+        uint16_t cksum = checksum(hiscore);
 
 #ifdef __EMSCRIPTEN__
-    std::string value;
+        std::string value;
 
-    char buf[5];
-    auto res = std::to_chars(buf, buf + 5, hiscore);
-    value.append(buf + 5 - res.ptr, '0');
-    value.append(buf, res.ptr - buf);
+        char buf[5];
+        auto res = std::to_chars(buf, buf + 5, hiscore);
+        value.append(buf + 5 - res.ptr, '0');
+        value.append(buf, res.ptr - buf);
 
-    res = std::to_chars(buf, buf + 5, cksum);
-    value.append(buf + 5 - res.ptr, '0');
-    value.append(buf, res.ptr - buf);
+        res = std::to_chars(buf, buf + 5, cksum);
+        value.append(buf + 5 - res.ptr, '0');
+        value.append(buf, res.ptr - buf);
 
-    ini.write_section("HiScore");
-    ini.write_keyvalue("value", value);
-    if (!ini.flush()) {
-        logERROR("Could not save hiscore");
-        return -1;
-    }
+        ini.write_section("HiScore");
+        ini.write_keyvalue("value", value);
+        if (!ini.flush()) {
+            logERROR("Could not save hiscore");
+            return -1;
+        }
 #else
-    uint8_t buf[4] = {};
-    std::memcpy(buf, &hiscore, 2);
-    std::memcpy(buf + 2, &cksum, 2);
+        uint8_t buf[4] = {};
+        std::memcpy(buf, &hiscore, 2);
+        std::memcpy(buf + 2, &cksum, 2);
 
-    auto file = SAFE_FOPEN(HISCORE_PATH().c_str(), "wb");
-    if (!file || std::fwrite(buf, 1, 4, file.get()) != 4) {
-        logERROR("Could not open or write highscore file");
-        return -1;
-    }
+        auto file = SAFE_FOPEN(HISCORE_PATH().c_str(), "wb");
+        if (!file || std::fwrite(buf, 1, 4, file.get()) != 4) {
+            logERROR("Could not open or write highscore file");
+            return -1;
+        }
 #endif
+    }
 
-    if (!is_emscripten()) { // too frequent on emscripten
+    if constexpr (!is_emscripten()) { // too frequent on emscripten
         logMESSAGE("Saved user data");
     }
     return 0;
@@ -1004,7 +1005,7 @@ static void vsync(clk::time_point tframe_start)
 #else
                     SDL_Delay(wake_interval_us.count() / US_PER_MS);
 #endif  
-                    // adjust for call overhead
+                    // adjust for overhead
                     tend -= tim::microseconds(5);
                 }
                 else {
@@ -1030,7 +1031,7 @@ void emu::send_input(input inp, bool pressed)
 }
 
 // Handle all input events, window events etc.
-bool emu::process_events()
+emu::mainloop_action emu::process_events()
 {
     SDL_Event event;
     while (SDL_PollEvent(&event))
@@ -1052,11 +1053,11 @@ bool emu::process_events()
 
         case SDL_QUIT:
             // emscripten udata saved on viz change
-            if (!is_emscripten()) {
+            if constexpr (!is_emscripten()) {
                 logMESSAGE("Quitting...");
                 save_udata();
             }
-            return false;
+            return MAINLOOP_EXIT;
         }
     }
 #ifdef __EMSCRIPTEN__
@@ -1065,13 +1066,17 @@ bool emu::process_events()
         resize_window(); // ignore failure
         m_resizepending = false;
     }
-#endif
-    // throttle when minimized
+    if (SDL_GetWindowFlags(m_window) & SDL_WINDOW_HIDDEN) {
+        return MAINLOOP_SKIP;
+    }
+#else
     if (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED) {
         SDL_Delay(20);
+        return MAINLOOP_SKIP;
     }
+#endif
 
-    return true;
+    return MAINLOOP_CONTINUE;
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1103,13 +1108,20 @@ int emu::run()
     while (true)
 #endif
     {
-        bool running = process_events();
-        if (!running) { break; }
+        emu::mainloop_action action = process_events();
+        if constexpr (is_emscripten()) {
+            if (action != MAINLOOP_CONTINUE) { return; }
+        } 
+        else if (action == MAINLOOP_EXIT) { break; }
+        else if (action == MAINLOOP_SKIP) { continue; }
+
+        SDL_assert(action == MAINLOOP_CONTINUE);
 
         // nasty workaround, since the score table is erased in frame 0
         if (frame_idx == 1) [[unlikely]] {
             m.mem[HISCORE_START_ADDR] = uint8_t(m_hiscore_bcd);
             m.mem[HISCORE_START_ADDR + 1] = uint8_t(m_hiscore_bcd >> 8);
+            m_hiscore_in_vmem = true;
         }
 
         if (!m_gui || m_gui->current_view() == VIEW_GAME)
