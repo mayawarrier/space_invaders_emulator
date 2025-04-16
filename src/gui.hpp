@@ -112,10 +112,9 @@ private:
     void draw_about_content();
     void draw_settings_content();
 
-    int draw_menubar(const SDL_Rect& viewport);
+    gui_view draw_menubar(const SDL_Rect& viewport);
 
-    void draw_view(const char* title, const SDL_Rect& viewport, 
-        void(emu_gui::*draw_content)(), bool* p_closed);
+    void draw_view(gui_view view, const SDL_Rect& viewport, bool* p_wndclosed);
 
     void draw_header(const char* title, gui_align align = ALIGN_LEFT);
 
@@ -141,7 +140,7 @@ private:
     SDL_Renderer* m_renderer;
     gui_fontatlas m_fontatlas;
     ImFont* m_fonts[NUM_FONT_TYPES];
-    int m_cur_view;
+    gui_view m_cur_view;
 
     SDL_Scancode m_lastkeypress; // cur frame
     bool m_inputkey_focused[NUM_INPUTS];
