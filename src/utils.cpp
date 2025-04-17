@@ -49,22 +49,21 @@ static bool LOG_COLOR_CONSOLE = false;
 
 int log_init()
 {
-    if constexpr (!is_emscripten())
-    {
-        LOGFILE = SAFE_FOPENA("spaceinvaders.log", "w");
-        if (!LOGFILE) {
-            // can't log an error, show a message box
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-                "Error", "Could not open log file spaceinvaders.log", NULL);
-            return -1;
-        }
+#ifndef __EMSCRIPTEN__
+    LOGFILE = SAFE_FOPENA("spaceinvaders.log", "w");
+    if (!LOGFILE) {
+        // can't log an error, show a message box
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+            "Error", "Could not create spaceinvaders.log file", NULL);
+        return -1;
+    }
 
 #ifdef _WIN32
-        LOG_COLOR_CONSOLE = win32_enable_console_colors();
+    LOG_COLOR_CONSOLE = win32_enable_console_colors();
 #elif defined(HAS_POSIX_2001)
-        LOG_COLOR_CONSOLE = posix_has_term_colors();
+    LOG_COLOR_CONSOLE = posix_has_term_colors();
 #endif
-    }
+#endif
     return 0;
 }
 
@@ -130,7 +129,7 @@ do {                                                \
 void logERROR(const char* fmt, ...)
 {
 #ifdef __EMSCRIPTEN__
-    GEN_EMCC_LOG(EM_LOG_CONSOLE | EM_LOG_ERROR | EM_LOG_C_STACK, fmt);
+    GEN_EMCC_LOG(EM_LOG_CONSOLE | EM_LOG_ERROR, fmt);
 #else
     GEN_LOG(stderr, fmt, "Error: ", "\033[1;31mError:\033[0m ");
 #endif
@@ -158,14 +157,14 @@ void logMESSAGE(const char* fmt, ...)
 const char* emcc_result_name(EMSCRIPTEN_RESULT result)
 {
     switch (result) {
-    case EMSCRIPTEN_RESULT_SUCCESS: return "EMSCRIPTEN_RESULT_SUCCESS";
-    case EMSCRIPTEN_RESULT_DEFERRED: return "EMSCRIPTEN_RESULT_DEFERRED";
-    case EMSCRIPTEN_RESULT_NOT_SUPPORTED: return "EMSCRIPTEN_RESULT_NOT_SUPPORTED";
+    case EMSCRIPTEN_RESULT_SUCCESS:             return "EMSCRIPTEN_RESULT_SUCCESS";
+    case EMSCRIPTEN_RESULT_DEFERRED:            return "EMSCRIPTEN_RESULT_DEFERRED";
+    case EMSCRIPTEN_RESULT_NOT_SUPPORTED:       return "EMSCRIPTEN_RESULT_NOT_SUPPORTED";
     case EMSCRIPTEN_RESULT_FAILED_NOT_DEFERRED: return "EMSCRIPTEN_RESULT_FAILED_NOT_DEFERRED";
-    case EMSCRIPTEN_RESULT_INVALID_TARGET: return "EMSCRIPTEN_RESULT_INVALID_TARGET";
-    case EMSCRIPTEN_RESULT_UNKNOWN_TARGET: return "EMSCRIPTEN_RESULT_UNKNOWN_TARGET";
-    case EMSCRIPTEN_RESULT_FAILED: return "EMSCRIPTEN_RESULT_FAILED";
-    case EMSCRIPTEN_RESULT_NO_DATA: return "EMSCRIPTEN_RESULT_NO_DATA";
+    case EMSCRIPTEN_RESULT_INVALID_TARGET:      return "EMSCRIPTEN_RESULT_INVALID_TARGET";
+    case EMSCRIPTEN_RESULT_UNKNOWN_TARGET:      return "EMSCRIPTEN_RESULT_UNKNOWN_TARGET";
+    case EMSCRIPTEN_RESULT_FAILED:              return "EMSCRIPTEN_RESULT_FAILED";
+    case EMSCRIPTEN_RESULT_NO_DATA:             return "EMSCRIPTEN_RESULT_NO_DATA";
     default: return "Unknown result code";
     }
 }

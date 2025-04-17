@@ -95,6 +95,15 @@
             height: 5vh;
             overflow: hidden;
         }
+            #info-bar a:link,
+            #info-bar a:visited {
+                color: #00ffff;
+            }
+            #info-bar a:hover {
+                color: #ffffff;
+                text-shadow: 0 0 10px #00ffff;
+                cursor: pointer;
+            }
 
         #logo {
             margin-top: 1vh;
@@ -217,7 +226,7 @@
     </div>
 
     <script type='text/javascript'>
-        const bugReportLink = 'https://github.com/mayawarrier/space_invaders_emulator/issues'
+        const bugReportLink = 'https://github.com/mayawarrier/space_invaders_emulator/issues/new'
 
         const TouchType = Object.freeze({
             NONE: 0,
@@ -225,8 +234,6 @@
             POINTER_EVENTS: 2,
             MS_POINTER_EVENTS: 3
         });
-
-        var criticalError = false;
 
         var infoBarElem = document.getElementById('info-bar');
         var gameContentElem = document.getElementById('game-content');
@@ -241,7 +248,7 @@
         var fireButtonElem = document.getElementById('fire-button');
 
         var gameCanvasElem = document.getElementById('canvas');
-        gameCanvasElem.addEventListener("webglcontextlost", e => window.location.reload(), false);
+        gameCanvasElem.addEventListener("webglcontextlost", (e) => window.location.reload(), false);
 
         // Emscripten Module
         var Module =
@@ -305,14 +312,14 @@
 
                     case TouchType.TOUCH_EVENTS:
                         for (const [button, func] of button2FuncMap) {
-                            button.addEventListener('touchstart',  e => this.onTouchEvent(func, e, true), { passive: false });
-                            button.addEventListener('touchend',    e => this.onTouchEvent(func, e, false), { passive: false });
-                            button.addEventListener('touchcancel', e => this.onTouchEvent(func, e, false), { passive: false });
+                            button.addEventListener('touchstart',  (e) => this.onTouchEvent(func, e, true), { passive: false });
+                            button.addEventListener('touchend',    (e) => this.onTouchEvent(func, e, false), { passive: false });
+                            button.addEventListener('touchcancel', (e) => this.onTouchEvent(func, e, false), { passive: false });
 
                             // See note above about touch events on desktop browsers.
                             // Fallback to mouse events on desktop. e.preventDefault() will prevent these from firing on touch devices.
-                            button.addEventListener('mousedown', e => this.onTouchEvent(func, e, true));
-                            button.addEventListener('mouseup',   e => this.onTouchEvent(func, e, false));
+                            button.addEventListener('mousedown', (e) => this.onTouchEvent(func, e, true));
+                            button.addEventListener('mouseup',   (e) => this.onTouchEvent(func, e, false));
                         }
                         break;
 
@@ -324,17 +331,9 @@
                     this.touchType != TouchType.NONE &&
                     'ontouchstart' in window) {
                     for (const [button,] of button2FuncMap) {
-                        button.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
-                        button.addEventListener('touchend',   e => e.preventDefault(), { passive: false });
+                        button.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+                        button.addEventListener('touchend',   (e) => e.preventDefault(), { passive: false });
                     }
-                }
-            },
-
-            setErrorStatus: (text) => {
-                if (infoBarElem.style.height == '0px') {
-                    infoBarElem.style.display = 'inline-block'
-                    infoBarElem.style.height = 'auto';
-                    infoBarElem.innerHTML = text;
                 }
             },
 
@@ -409,20 +408,37 @@
                 }
             },
             // --------------------------------------------------------
+
+            criticalError: false,
+
+            onCriticalError(event) {
+                this.setStatus = (text) => {
+                    if (text) console.error('[post-exception status] ' + text);
+                };
+                if (event.error.stack) {
+                    console.error('Stack trace: ' + event.error.stack.toString())
+                }
+                gameContentElem.remove();
+
+                infoBarElem.style.display = 'flex';
+                infoBarElem.style.height = '15vh';
+                infoBarElem.style.marginTop = '10vh';
+                infoBarElem.innerHTML =
+                    'Something went wrong!<br/>' +
+                    '<a href="' + bugReportLink + '">Click here to report this error.</a>' +
+                    'Please include the console logs in your report.';
+
+                this.criticalError = true;
+                event.preventDefault();
+            },
         };
 
         Module.setStatus('Loading...');
 
-        window.onerror = (event) => {
-            Module.setStatus = (text) => {
-                if (text) console.error('[post-exception status] ' + text);
-            };
-            Module.setErrorStatus('Internal error. <a href="' + bugReportLink + '">Please file a bug report.</a>');
-            criticalError = true;
-        };
+        window.addEventListener('error', (e) => Module.onCriticalError(e));
 
         window.addEventListener('beforeunload', () => {
-            if (criticalError) {
+            if (Module.criticalError) {
                 localStorage.setItem('reloadNeeded', true)
             }
         });
@@ -479,7 +495,6 @@
                         star.y = 0;
                         star.x = Math.random() * this.canvas.width;
                     }
-
                     this.canvasCtx.fillStyle = "rgba(255, 255, 255, 0.8)";
                     this.canvasCtx.fillRect(star.x, star.y, star.size, star.size);
                 }

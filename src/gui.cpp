@@ -190,7 +190,7 @@ emu_gui::emu_gui(
 
     if (!ImGui_ImplSDL2_InitForSDLRenderer(window, renderer) ||
         !ImGui_ImplSDLRenderer2_Init(renderer)) {
-        logERROR("Failed to initialize ImGui with SDL backend");
+        logERROR("Failed to initialize ImGui");
         return;
     }
     if (init_fontatlas((assetdir / "CascadiaMono.ttf").string().c_str()) != 0) {
@@ -946,16 +946,14 @@ void emu_gui::draw_about_content()
         ImGui::Dummy(ImVec2(0, 10));
 
         const char* content =
-            "This emulator runs the original Space Invaders arcade game from 1978!\n\n"
-            "It recreates the hardware environment the game expects - simulating the CPU, memory, "
-            "and I/O devices so the game behaves just like it would on a real arcade machine.\n\n"
-            "At the core is a full emulation of the Intel 8080 processor and other essential "
-            "chips on the original motherboard.\n\n";
+            "This emulator runs the 1978 Space Invaders game without any modifications to the original code.\n\n"
+            "Instead of rewriting the game, it recreates the hardware environment the game was designed for - simulating "
+            "the CPU, memory, and I/O devices so the game thinks it's running on a real arcade machine.\n\n";
 
         ImGui::TextUnformatted(content);
 
         static constexpr std::pair<const char*, const char*> links[] = {
-            { "Computer Archeology website", "https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html" },
+            { "Computer Archeology website", "https://www.computerarcheology.com/Arcade/SpaceInvaders/" },
             { "RadioShack Intel 8080 Manual", "https://archive.org/details/8080-8085_Assembly_Language_Programming_1977_Intel" },
             { "Intel 8080 Datasheet", "https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf" }
         };

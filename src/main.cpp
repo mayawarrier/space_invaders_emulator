@@ -14,6 +14,9 @@
 #include "win32.hpp"
 #endif
 
+#define BUG_REPORT_LINK "https://github.com/mayawarrier/space_invaders_emulator/issues/new"
+
+
 static int do_main(int argc, char* argv[])
 {
 #ifndef __EMSCRIPTEN__
@@ -33,16 +36,13 @@ static int do_main(int argc, char* argv[])
         return -1;
     }
 
-    if (args["help"].as<bool>()) 
-    {
+    if (args["help"].as<bool>()) {
         std::printf("%s\n", opts.help().c_str());       
         return 0;
     }
 
-    emu emu(
-        args["asset-dir"].as<std::string>(),
-        !args["disable-ui"].as<bool>()
-    );
+    emu emu(args["asset-dir"].as<std::string>(),
+        !args["disable-ui"].as<bool>());
 #else
     emu emu("assets/", true);
 #endif
@@ -54,11 +54,28 @@ static int do_main(int argc, char* argv[])
     return emu.run();
 }
 
+static int on_exit(int err, bool show_modal = true)
+{
+#ifdef __EMSCRIPTEN__
+    // This triggers the error UI.
+    // onExit() doesn't seem to work
+    if (err != 0) { throw err; }
+#else
+    if (err != 0 && show_modal) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", 
+            "An unexpected error occurred.\n"
+            "Please report this error at " BUG_REPORT_LINK ".\n"
+            "Include the file 'spaceinvaders.log' in your report.\n", nullptr);
+    }
+#endif
+    return err;
+}
+
 int main(int argc, char* argv[])
 {
     int err = log_init();
     if (err != 0) { 
-        return err; 
+        return on_exit(err, false);
     }
 
 #ifdef _WIN32
@@ -72,5 +89,5 @@ int main(int argc, char* argv[])
         std::system("pause");
     }
 #endif
-    return err;
+    return on_exit(err);
 }

@@ -58,11 +58,11 @@ elseif (WIN32)
 endif()
 
 if (EMSCRIPTEN)
-    set_target_properties(spaceinvaders PROPERTIES LINK_FLAGS "\
-        -sALLOW_MEMORY_GROWTH=1\
-        -sEXPORTED_RUNTIME_METHODS=ccall\
-        -lembind\
-        --preload-file preload_assets/@assets/")
+    target_link_options(spaceinvaders PRIVATE
+        "-sALLOW_MEMORY_GROWTH=1"
+        "-sEXPORTED_RUNTIME_METHODS=ccall"
+        "-lembind"
+        "--preload-file=preload_assets/@assets/")
 endif()
 
 if (EMSCRIPTEN)
@@ -81,7 +81,7 @@ if (EMSCRIPTEN)
     add_custom_target(copy_assets DEPENDS ${PRELOAD_BINDIR} ${ASSET_BINDIR})
     add_dependencies(spaceinvaders copy_assets)
 
-    # Output directories are not cleaned by default. Ninja clean also fails without this
+    # Output directories are not cleaned by default. Ninja clean fails without this
     # https://stackoverflow.com/questions/53734146
     set_property(TARGET spaceinvaders APPEND 
         PROPERTY ADDITIONAL_CLEAN_FILES ${PRELOAD_BINDIR} ${ASSET_BINDIR})
@@ -107,7 +107,7 @@ else()
 
     add_custom_target(copy_assets DEPENDS ${ASSET_BINDIR})
     add_dependencies(spaceinvaders copy_assets)
-    # See note above about output directories.
+    # See note above about cleaning output directories.
     set_property(TARGET spaceinvaders APPEND 
         PROPERTY ADDITIONAL_CLEAN_FILES ${ASSET_BINDIR})
 endif()
@@ -272,8 +272,8 @@ else()
                 "$<TARGET_FILE_DIR:spaceinvaders>"
             VERBATIM)
 
-        set_property(TARGET spaceinvaders APPEND 
-            PROPERTY ADDITIONAL_CLEAN_FILES 
+        set_property(TARGET spaceinvaders 
+            APPEND PROPERTY ADDITIONAL_CLEAN_FILES 
             "$<TARGET_FILE_DIR:spaceinvaders>/$<TARGET_FILE_NAME:${TARGET_NAME_SDL2}>"
             "$<TARGET_FILE_DIR:spaceinvaders>/$<TARGET_FILE_NAME:${TARGET_NAME_SDL2_MIXER}>")
     endif()
