@@ -66,7 +66,8 @@ constexpr bool is_emscripten()
 #endif
 }
 
-// this works only if built using the cmake script
+// this only works if NDEBUG is defined in Release mode
+// (default for CMake)
 constexpr bool is_debug()
 {
 #ifdef NDEBUG
@@ -238,10 +239,10 @@ inline std::string concat_sv_to_str(
 struct inireader
 {
     inireader() {
-        m_storage = emscripten::val::global("localStorage");
+        m_storage = emscripten::val::global(path_cstr());
     }
 
-    const char* path_cstr() const { return "inireader"; }
+    const char* path_cstr() const { return "localStorage"; }
 
     std::optional<std::string> get_string(std::string_view section, std::string_view key)
     {

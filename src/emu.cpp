@@ -507,7 +507,7 @@ emu::emu() :
     m_volume(0),
     m_audiopaused(false),
     m_delta_t(-1),
-    m_hiscore_bcd(0),
+    m_hiscore(0),
     m_hiscore_in_vmem(false),
 #ifdef __EMSCRIPTEN__
     m_resizepending(false),
@@ -771,6 +771,59 @@ static uint16_t checksum(uint16_t in)
     return ((s2 << 8) | s1);
 }
 
+
+int emu::read_hiscore(uint16_t& out_hiscore)
+{
+    uint16_t hiscore, cksum;
+
+#ifdef __EMSCRIPTEN__
+    inireader ini;
+    auto value = ini.get_string("HiScore", "value");
+    if (!value.has_value()) {
+        out_hiscore = 0;
+        return 0; // okay, will be saved on exit
+    }
+    if (value->size() != 10) {
+        logERROR("Invalid highscore value");
+        return -1;
+    }
+
+    const char* str = value->c_str();
+    auto res1 = std::from_chars(str, str + 5, hiscore);
+    auto res2 = std::from_chars(str + 5, str + 10, cksum);
+
+    if (res1.ec != std::errc() || res1.ptr != str + 5 ||
+        res2.ec != std::errc() || res2.ptr != str + 10) {
+        logERROR("Invalid highscore value");
+        return -1;
+    }
+#else
+    if (!fs::exists(HISCORE_PATH())) {
+        out_hiscore = 0;
+        return 0; // okay, will be saved on exit
+    }
+
+    uint8_t buf[4];
+    auto file = SAFE_FOPEN(HISCORE_PATH().c_str(), "rb");
+    if (!file || std::fread(buf, 1, 4, file.get()) != 4) {
+        logERROR("Could not open or read highscore file");
+        return -1;
+    }
+
+    std::memcpy(&hiscore, buf, 2);
+    std::memcpy(&cksum, buf + 2, 2);
+#endif
+
+    uint16_t cksum_calc = checksum(hiscore);
+    if (cksum != cksum_calc) {
+        logERROR("Highscore checksum does not match");
+        return -1;
+    }
+
+    out_hiscore = hiscore;
+    return 0;
+}
+
 int emu::load_udata()
 {
 #ifdef __EMSCRIPTEN__
@@ -820,48 +873,9 @@ int emu::load_udata()
         }
     }
 
-    uint16_t hiscore, cksum;
-
-#ifdef __EMSCRIPTEN__
-    auto value = ini.get_string("HiScore", "value");
-    if (!value.has_value()) {
-        return 0; // okay, hiscore will be saved on exit
-    }
-    if (value->size() != 10) {
-        logERROR("Invalid highscore value");
+    if (read_hiscore(m_hiscore) != 0) {
         return -1;
     }
-
-    const char* str = value->c_str();
-    auto res1 = std::from_chars(str, str + 5, hiscore);
-    auto res2 = std::from_chars(str + 5, str + 10, cksum);
-
-    if (res1.ec != std::errc() || res1.ptr != str + 5 ||
-        res2.ec != std::errc() || res2.ptr != str + 10) {
-        logERROR("Invalid highscore value");
-        return -1;
-    }
-#else
-    uint8_t buf[4];
-    auto file = SAFE_FOPEN(HISCORE_PATH().c_str(), "rb");
-    if (!file) {
-        return 0; // okay, hiscore will be saved on exit
-    }
-    if (std::fread(buf, 1, 4, file.get()) != 4) {
-        logERROR("Could not read highscore file");
-        return -1;
-    }
-
-    std::memcpy(&hiscore, buf, 2);
-    std::memcpy(&cksum, buf + 2, 2);
-#endif
-
-    uint16_t cksum_calc = checksum(hiscore);
-    if (cksum != cksum_calc) {
-        logERROR("Highscore is corrupt");
-        return -1;
-    }
-    m_hiscore_bcd = hiscore;
     m_hiscore_in_vmem = false;
 
     logMESSAGE("Loaded user data");
@@ -896,45 +910,58 @@ int emu::save_udata()
     }
 
     if (!ini.flush()) {
+        logERROR("Could not flush ini file");
         return -1;
     }
 
     if (m_hiscore_in_vmem)
     {
-        uint16_t hiscore = m.mem[HISCORE_START_ADDR] |
+        uint16_t new_hiscore = m.mem[HISCORE_START_ADDR] |
             (uint16_t(m.mem[HISCORE_START_ADDR + 1]) << 8);
 
-        uint16_t cksum = checksum(hiscore);
+        // in case two instances of the game are running, 
+        // don't overwrite a higher score set by the other instance
+        uint16_t cur_hiscore;
+        if (read_hiscore(cur_hiscore) == 0 && cur_hiscore > new_hiscore) {
+            logMESSAGE("Skipped saving hiscore, current is greater");
+        }
+        else {
+            uint16_t cksum = checksum(new_hiscore);
 
 #ifdef __EMSCRIPTEN__
-        std::string value;
+            std::string value;
 
-        char buf[5];
-        auto res = std::to_chars(buf, buf + 5, hiscore);
-        value.append(buf + 5 - res.ptr, '0');
-        value.append(buf, res.ptr - buf);
+            char buf[5];
+            auto res = std::to_chars(buf, buf + 5, new_hiscore);
+            value.append(buf + 5 - res.ptr, '0');
+            value.append(buf, res.ptr - buf);
 
-        res = std::to_chars(buf, buf + 5, cksum);
-        value.append(buf + 5 - res.ptr, '0');
-        value.append(buf, res.ptr - buf);
+            res = std::to_chars(buf, buf + 5, cksum);
+            value.append(buf + 5 - res.ptr, '0');
+            value.append(buf, res.ptr - buf);
 
-        ini.write_section("HiScore");
-        ini.write_keyvalue("value", value);
-        if (!ini.flush()) {
-            logERROR("Could not save hiscore");
-            return -1;
-        }
+            ini.write_section("HiScore");
+            ini.write_keyvalue("value", value);
+            if (!ini.flush()) {
+                logERROR("Could not save hiscore");
+                return -1;
+            }
 #else
-        uint8_t buf[4] = {};
-        std::memcpy(buf, &hiscore, 2);
-        std::memcpy(buf + 2, &cksum, 2);
+            uint8_t buf[4] = {};
+            std::memcpy(buf, &new_hiscore, 2);
+            std::memcpy(buf + 2, &cksum, 2);
 
-        auto file = SAFE_FOPEN(HISCORE_PATH().c_str(), "wb");
-        if (!file || std::fwrite(buf, 1, 4, file.get()) != 4) {
-            logERROR("Could not open or write highscore file");
-            return -1;
-        }
+            auto file = SAFE_FOPEN(HISCORE_PATH().c_str(), "wb");
+            if (!file || std::fwrite(buf, 1, 4, file.get()) != 4) {
+                logERROR("Could not open or write highscore file");
+                return -1;
+            }
+            if (std::fflush(file.get()) != 0) {
+                logERROR("Could not flush highscore file");
+                return -1;
+            }
 #endif
+        }
     }
 
     if constexpr (!is_emscripten()) { // too frequent on emscripten
@@ -958,9 +985,9 @@ EM_JS(int, web_has_broken_sleep, (), {
 
 static const bool WEB_HAS_BROKEN_SLEEP = web_has_broken_sleep() != 0;
 
-// Audio glitches are worse when using requestAnimationFrame
+// Audio glitches seem worse when using requestAnimationFrame
 // on Chrome, so enable it only if necessary.
-// Related: https://issues.chromium.org/issues/40486473
+// Probably related: https://issues.chromium.org/issues/40486473
 static const int WEB_MAINLOOP_FPS = WEB_HAS_BROKEN_SLEEP ? -1 : 60;
 #else
 
@@ -1119,8 +1146,8 @@ int emu::run()
 
         // nasty workaround, since the score table is erased in frame 0
         if (frame_idx == 1) [[unlikely]] {
-            m.mem[HISCORE_START_ADDR] = uint8_t(m_hiscore_bcd);
-            m.mem[HISCORE_START_ADDR + 1] = uint8_t(m_hiscore_bcd >> 8);
+            m.mem[HISCORE_START_ADDR] = uint8_t(m_hiscore);
+            m.mem[HISCORE_START_ADDR + 1] = uint8_t(m_hiscore >> 8);
             m_hiscore_in_vmem = true;
         }
 

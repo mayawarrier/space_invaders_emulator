@@ -136,6 +136,7 @@ private:
     int init_audio(const fs::path& audiodir);
     int load_rom(const fs::path& dir);
 
+    int read_hiscore(uint16_t& out_hiscore);
     int load_udata();
     int save_udata();
 
@@ -175,7 +176,7 @@ private:
     bool m_audiopaused;
 
     bool m_hiscore_in_vmem;
-    uint16_t m_hiscore_bcd;
+    uint16_t m_hiscore; // bcd format
 
     float m_delta_t;
 
