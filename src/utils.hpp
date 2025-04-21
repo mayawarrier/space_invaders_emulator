@@ -31,23 +31,22 @@
 #define US_PER_MS 1000
 #define US_PER_S  1000000
 
+#define LOGFILE_NAME "spaceinvaders.log"
 
 #ifdef __clang__
-#define PUSH_WARNINGS _Pragma("clang diagnostic push")
-#define POP_WARNINGS  _Pragma("clang diagnostic pop")
-#define IGNORE_WFORMAT_SECURITY \
-_Pragma("clang diagnostic ignored \"-Wformat-security\"")
-
+    #define PUSH_WARNINGS _Pragma("clang diagnostic push")
+    #define POP_WARNINGS  _Pragma("clang diagnostic pop")
+    #define IGNORE_WFORMAT_SECURITY \
+    _Pragma("clang diagnostic ignored \"-Wformat-security\"")
 #elif defined(__GNUC__)
-#define PUSH_WARNINGS _Pragma("GCC diagnostic push")
-#define POP_WARNINGS  _Pragma("GCC diagnostic pop")
-#define IGNORE_WFORMAT_SECURITY \
-_Pragma("GCC diagnostic ignored \"-Wformat-security\"")
-
+    #define PUSH_WARNINGS _Pragma("GCC diagnostic push")
+    #define POP_WARNINGS  _Pragma("GCC diagnostic pop")
+    #define IGNORE_WFORMAT_SECURITY \
+    _Pragma("GCC diagnostic ignored \"-Wformat-security\"")
 #else
-#define PUSH_WARNINGS
-#define POP_WARNINGS
-#define IGNORE_WFORMAT_SECURITY
+    #define PUSH_WARNINGS
+    #define POP_WARNINGS
+    #define IGNORE_WFORMAT_SECURITY
 #endif
 
 namespace fs = std::filesystem;
@@ -78,10 +77,6 @@ constexpr bool is_debug()
 }
 
 int log_init();
-
-// Raw log function.
-void log_write(std::FILE* stream, 
-    const char* msg, bool endline = false);
 
 void logERROR(const char* fmt, ...);
 void logWARNING(const char* fmt, ...);

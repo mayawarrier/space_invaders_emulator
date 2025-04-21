@@ -14,8 +14,9 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(SOURCES 
+    "src/build_info.cpp"
+    "src/i8080/i8080_opcodes.hpp"
     "src/i8080/i8080.hpp" 
-    "src/i8080/i8080_opcodes.h"
     "src/i8080/i8080.cpp" 
     "src/utils.hpp"
     "src/utils.cpp"
@@ -32,22 +33,102 @@ if (WIN32)
 endif()
 
 add_executable(spaceinvaders ${SOURCES})
+
 set_property(TARGET spaceinvaders PROPERTY CXX_STANDARD 20) 
 
 target_compile_definitions(spaceinvaders PRIVATE
-    COMPILER_NAME=${CMAKE_CXX_COMPILER_ID}
-    COMPILER_VERSION=${CMAKE_CXX_COMPILER_VERSION}
+    CC_NAME=${CMAKE_CXX_COMPILER_ID}
+    CC_VERSION=${CMAKE_CXX_COMPILER_VERSION}
+    $<$<BOOL:${CMAKE_CXX_SIMULATE_ID}>:CC_SIMNAME=${CMAKE_CXX_SIMULATE_ID}>
     OS_NAME=${CMAKE_SYSTEM_NAME}
     OS_VERSION=${CMAKE_SYSTEM_VERSION})
-
-if (DEFINED ${CMAKE_CXX_SIMULATE_ID})
-    target_compile_definitions(spaceinvaders PRIVATE 
-        COMPILER_FRONTNAME=${CMAKE_CXX_SIMULATE_ID})
-endif()
 
 # allow fopen, etc.
 if (WIN32) 
     target_compile_definitions(spaceinvaders PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
+if (EMSCRIPTEN)
+    set(EMBED_SRCDIR "${CMAKE_SOURCE_DIR}/assets")
+    set(EMBED_BINDIR "${CMAKE_BINARY_DIR}/embed_assets")
+    set(PREJS_SRCFILE "${CMAKE_SOURCE_DIR}/web/src/index-prejs.js")
+    set(PREJS_BINFILE "${CMAKE_BINARY_DIR}/index-prejs.h")
+
+    # dummy file, touched to force a relink when assets/pre-js change
+    set(RELINK_FILE "${CMAKE_BINARY_DIR}/emcc_relink.h")
+
+    add_custom_command(
+        OUTPUT ${RELINK_FILE} ${EMBED_BINDIR} ${PREJS_BINFILE} 
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${EMBED_SRCDIR} ${EMBED_BINDIR}
+        COMMAND ${CMAKE_COMMAND} -E copy ${PREJS_SRCFILE} ${PREJS_BINFILE}
+        COMMAND ${CMAKE_COMMAND} -E touch ${RELINK_FILE}
+        DEPENDS ${EMBED_SRCDIR} ${PREJS_SRCFILE}
+        VERBATIM)
+
+    add_custom_target(relink_files DEPENDS ${RELINK_FILE} ${EMBED_BINDIR} ${PREJS_BINFILE})
+    add_dependencies(spaceinvaders relink_files)
+    target_include_directories(spaceinvaders PRIVATE ${CMAKE_BINARY_DIR})
+
+    set(ASSET_SRCDIR "${CMAKE_SOURCE_DIR}/web/assets")
+    set(ASSET_BINDIR "${CMAKE_BINARY_DIR}/assets")
+    set(WEB_SRCFILE "${CMAKE_SOURCE_DIR}/web/src/index.html")
+    set(WEB_BINFILE "${CMAKE_BINARY_DIR}/index.html")
+
+    add_custom_command(
+        OUTPUT ${ASSET_BINDIR} ${WEB_BINFILE}
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_SRCDIR} ${ASSET_BINDIR}
+        COMMAND ${CMAKE_COMMAND} -E copy ${WEB_SRCFILE} ${WEB_BINFILE}
+        DEPENDS ${ASSET_SRCDIR} ${WEB_SRCFILE}
+        VERBATIM)
+
+    add_custom_target(web_files DEPENDS ${ASSET_BINDIR} ${WEB_BINFILE})
+    add_dependencies(spaceinvaders web_files)
+
+    # Output directories are not cleaned by default. Ninja clean fails without this
+    # https://stackoverflow.com/questions/53734146
+    set_property(TARGET spaceinvaders APPEND 
+        PROPERTY ADDITIONAL_CLEAN_FILES ${EMBED_BINDIR} ${ASSET_BINDIR})
+
+else()
+    set(ASSET_SRCDIR "${CMAKE_SOURCE_DIR}/assets")
+    set(ASSET_BINDIR "${CMAKE_BINARY_DIR}/assets")
+
+    add_custom_command(
+        OUTPUT ${ASSET_BINDIR}
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_SRCDIR} ${ASSET_BINDIR}
+        DEPENDS ${ASSET_SRCDIR}
+        VERBATIM)
+
+    add_custom_target(emu_assets DEPENDS ${ASSET_BINDIR})
+    add_dependencies(spaceinvaders emu_assets)
+
+    # See note above about cleaning output directories.
+    set_property(TARGET spaceinvaders APPEND 
+        PROPERTY ADDITIONAL_CLEAN_FILES ${ASSET_BINDIR})
+endif()
+
+set(BUILDNUM_FILE "${CMAKE_BINARY_DIR}/build_num.h")
+
+# CMake cache must be deleted if git is installed after the first run.
+find_program(GIT_EXECUTABLE git)
+
+if (NOT GIT_EXECUTABLE)
+    message(WARNING "Git not found. Build number will be unavailable.")
+    add_custom_command(
+        OUTPUT ${BUILDNUM_FILE}
+        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM 0" > ${BUILDNUM_FILE}
+        VERBATIM)
+else()
+    # this runs every build!
+    add_custom_target(buildnum
+        BYPRODUCTS ${BUILDNUM_FILE}
+        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM " > ${BUILDNUM_FILE}
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD >> ${BUILDNUM_FILE} || 
+                ${CMAKE_COMMAND} -E echo_append "0" >> ${BUILDNUM_FILE}
+        VERBATIM)
+
+    add_dependencies(spaceinvaders buildnum)
+    target_include_directories(spaceinvaders PRIVATE ${CMAKE_BINARY_DIR})
 endif()
 
 # remove console
@@ -62,76 +143,8 @@ if (EMSCRIPTEN)
         "-sALLOW_MEMORY_GROWTH=1"
         "-sEXPORTED_RUNTIME_METHODS=ccall"
         "-lembind"
-        "--preload-file=preload_assets/@assets/")
-endif()
-
-if (EMSCRIPTEN)
-    set(PRELOAD_SRCDIR "${CMAKE_SOURCE_DIR}/assets")
-    set(PRELOAD_BINDIR "${CMAKE_BINARY_DIR}/preload_assets")
-    set(ASSET_SRCDIR "${CMAKE_SOURCE_DIR}/web/assets")
-    set(ASSET_BINDIR "${CMAKE_BINARY_DIR}/assets")
-
-    add_custom_command(
-        OUTPUT ${PRELOAD_BINDIR} ${ASSET_BINDIR}
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${PRELOAD_SRCDIR} ${PRELOAD_BINDIR}
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_SRCDIR} ${ASSET_BINDIR}
-        DEPENDS ${PRELOAD_SRCDIR} ${ASSET_SRCDIR}
-        VERBATIM)
-
-    add_custom_target(copy_assets DEPENDS ${PRELOAD_BINDIR} ${ASSET_BINDIR})
-    add_dependencies(spaceinvaders copy_assets)
-
-    # Output directories are not cleaned by default. Ninja clean fails without this
-    # https://stackoverflow.com/questions/53734146
-    set_property(TARGET spaceinvaders APPEND 
-        PROPERTY ADDITIONAL_CLEAN_FILES ${PRELOAD_BINDIR} ${ASSET_BINDIR})
-
-    add_custom_command(
-        OUTPUT "${CMAKE_BINARY_DIR}/index.html"
-        COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/web/index.html" ${CMAKE_BINARY_DIR}
-        DEPENDS "${CMAKE_SOURCE_DIR}/web/index.html"
-        VERBATIM)
-
-    add_custom_target(copy_websrc DEPENDS "${CMAKE_BINARY_DIR}/index.html")
-    add_dependencies(spaceinvaders copy_websrc)
-
-else()
-    set(ASSET_SRCDIR "${CMAKE_SOURCE_DIR}/assets")
-    set(ASSET_BINDIR "${CMAKE_BINARY_DIR}/assets")
-
-    add_custom_command(
-        OUTPUT ${ASSET_BINDIR}
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_SRCDIR} ${ASSET_BINDIR}
-        DEPENDS ${ASSET_SRCDIR}
-        VERBATIM)
-
-    add_custom_target(copy_assets DEPENDS ${ASSET_BINDIR})
-    add_dependencies(spaceinvaders copy_assets)
-    # See note above about cleaning output directories.
-    set_property(TARGET spaceinvaders APPEND 
-        PROPERTY ADDITIONAL_CLEAN_FILES ${ASSET_BINDIR})
-endif()
-
-set(BUILDNUM_FILE "${CMAKE_BINARY_DIR}/buildnum.h")
-
-find_program(GIT_EXECUTABLE git)
-if (NOT GIT_EXECUTABLE)
-    message(WARNING "Git not found. Build number will be unavailable.")
-    add_custom_command(
-        OUTPUT ${BUILDNUM_FILE}
-        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM 0" > ${BUILDNUM_FILE}
-        VERBATIM)
-else()
-    add_custom_command(
-        OUTPUT ${BUILDNUM_FILE}
-        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM " > ${BUILDNUM_FILE}
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD >> ${BUILDNUM_FILE} || 
-                ${CMAKE_COMMAND} -E echo_append "0" >> ${BUILDNUM_FILE}
-        VERBATIM)
-
-    add_custom_target(GIT_BUILDNUM DEPENDS ${BUILDNUM_FILE})
-    add_dependencies(spaceinvaders GIT_BUILDNUM)
-    target_include_directories(spaceinvaders PRIVATE ${CMAKE_BINARY_DIR})
+        "--embed-file=${EMBED_BINDIR}/@assets/"
+        "--pre-js=${PREJS_BINFILE}")
 endif()
 
 # -------------------------------- cxxopts --------------------------------
@@ -350,7 +363,6 @@ elseif (EMSCRIPTEN)
     install(FILES
         "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.js"
         "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.wasm"
-        "$<TARGET_FILE_DIR:spaceinvaders>/spaceinvaders.data"
         ${CMAKE_BINARY_DIR}/index.html
         DESTINATION ${CMAKE_INSTALL_PREFIX})
 

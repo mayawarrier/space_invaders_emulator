@@ -7,7 +7,7 @@
 // 
 
 #include "i8080.hpp"
-#include "i8080_opcodes.h"
+#include "i8080_opcodes.hpp"
 
 #include <cstring>
 

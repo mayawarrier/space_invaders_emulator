@@ -10,7 +10,7 @@
 #include <cmath>
 #include <string_view>
 
-#include "i8080/i8080_opcodes.h"
+#include "i8080/i8080_opcodes.hpp"
 #include "gui.hpp"
 #include "emu.hpp"
 
@@ -474,9 +474,9 @@ static void cpu_io_write(i8080* cpu, i8080_word_t port, i8080_word_t word)
 void emu::log_dbginfo()
 {
     logMESSAGE("Platform: "
-        XSTR(COMPILER_NAME) " " XSTR(COMPILER_VERSION)
-#ifdef COMPILER_FRONTNAME
-        " (" XSTR(COMPILER_FRONTNAME) " frontend)"
+        XSTR(CC_NAME) " " XSTR(CC_VERSION)
+#ifdef CC_SIMNAME
+        " (" XSTR(CC_SIMNAME) " frontend)"
 #endif
         ", " XSTR(OS_NAME) " " XSTR(OS_VERSION));
 
@@ -1136,12 +1136,12 @@ int emu::run()
 #endif
     {
         emu::mainloop_action action = process_events();
-        if constexpr (is_emscripten()) {
-            if (action != MAINLOOP_CONTINUE) { return; }
-        } 
-        else if (action == MAINLOOP_EXIT) { break; }
+#ifdef __EMSCRIPTEN__
+        if (action != MAINLOOP_CONTINUE) { return; }
+#else
+        if (action == MAINLOOP_EXIT) { break; }
         else if (action == MAINLOOP_SKIP) { continue; }
-
+#endif
         SDL_assert(action == MAINLOOP_CONTINUE);
 
         // nasty workaround, since the score table is erased in frame 0

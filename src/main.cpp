@@ -16,7 +16,6 @@
 
 #define BUG_REPORT_LINK "https://github.com/mayawarrier/space_invaders_emulator/issues/new"
 
-
 static int do_main(int argc, char* argv[])
 {
 #ifndef __EMSCRIPTEN__
@@ -65,7 +64,7 @@ static int on_exit(int err, bool show_modal = true)
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", 
             "An unexpected error occurred.\n"
             "Please report this error at " BUG_REPORT_LINK ".\n"
-            "Include the file 'spaceinvaders.log' in your report.\n", nullptr);
+            "Include the file '" LOGFILE_NAME "' in your report.\n", nullptr);
     }
 #endif
     return err;

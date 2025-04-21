@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en-us">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <title>Space Invaders</title>
+
+    <link rel="icon" href="assets/favicon/favicon.ico">
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon/android-chrome-192x192.png">
+    <link rel="apple-touch-icon" href="assets/favicon/apple-touch-icon.png">
+
+    <link rel="preload" as="image" href="assets/background.jpg" />
+    <link rel="preload" as="image" href="assets/logo.png" />
+
+    <link rel="preload" as="image" href="assets/arcade_button.png" media="(any-pointer: coarse)"/>
+    <link rel="preload" as="image" href="assets/1p_arcade_button.png" media="(any-pointer: coarse)" />
+    <link rel="preload" as="image" href="assets/2p_arcade_button.png" media="(any-pointer: coarse)"/>
+
+    <style>
+        * {
+            touch-action: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        html {
+            height: 100%;
+            width: 100%;
+        }
+
+        body {
+            font-family: arial;
+            background: url('assets/background.jpg') no-repeat bottom center fixed;
+            background-size: cover;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+
+        #main-container {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+        }
+
+        #game-content {
+            flex-grow: 1;
+            display: block;
+            flex-direction: column;
+            place-items: center;
+            text-align: center;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding-top: 2vh;
+        }
+
+        #status {
+            display: inline-block;
+            vertical-align: top;
+            margin: 30px auto 30px 20px;
+            text-align: center;
+            font-weight: bold;
+            color: rgb(120, 120, 120);
+        }
+
+        #status-bar {
+            display: block;
+            margin: 0 auto;
+            text-align: center;
+            background-color: lightgray;
+            width: 100%;
+        }
+
+        #info-bar {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            margin-top: 1vh;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 0.5vh;
+            font-size: 1.85vh;
+            color: rgb(30, 245, 30);
+            width: calc(100% - 1vh);
+            height: 5vh;
+            overflow: hidden;
+        }
+            #info-bar a:link,
+            #info-bar a:visited {
+                color: #00ffff;
+            }
+            #info-bar a:hover {
+                color: #ffffff;
+                text-shadow: 0 0 10px #00ffff;
+                cursor: pointer;
+            }
+
+        #logo {
+            margin-top: 1vh;
+            height: 7vh;
+            width: fit-content;
+            max-width: 100vw;
+        }
+
+        #background-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: -1;
+        }
+
+        .key {
+            background-color: rgba(0, 0, 0, 0.8);
+            border-style: solid;
+            border-width: 1px;
+            border-color: green;
+            font-size: 1.85vh;
+            cursor: pointer;
+            line-height: 1.5;
+            padding: 2px;
+            cursor: pointer;
+        }
+
+        .touch-controls {
+            margin-top: 1vh;
+            height: 13vh;
+            grid-template-columns: repeat(2, 1fr);
+            align-items: center;
+            display: none;
+        }
+
+        #game-controls {
+            gap: 10px;
+        }
+
+        #playerselect-controls {
+            gap: 100px;
+        }
+
+        .touch-button {
+            height: 13vh;
+            width: 13vh;
+            border: none;
+            outline: none;
+        }
+
+        .touch-buttons-flexstart {
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .touch-buttons-flexend {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        #fire-button, #left-button, #right-button {
+            background: url('assets/arcade_button.png') no-repeat center/cover;
+        }
+
+        #p1-button {
+            background: url('assets/1p_arcade_button.png') no-repeat center/cover;
+        }
+
+        #p2-button {
+            background: url('assets/2p_arcade_button.png') no-repeat center/cover;
+        }
+
+        .emscripten {
+            margin-left: auto;
+            margin-right: auto;
+            display: block;
+        }
+
+        div.emscripten {
+            text-align: center;
+        }
+
+        /* mouse coords will be wrong if there is any border/padding */
+        canvas.emscripten {
+            padding: 0px;
+            border: 0px none;
+            background-color: black;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="background-canvas"></canvas>
+
+    <div id="main-container">
+        <img src="assets/logo.png" id="logo" />
+        <div id="info-bar"></div>
+
+        <div id="game-content">
+            <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
+
+            <div class="touch-controls" id="game-controls">
+                <div class="touch-buttons-flexstart">
+                    <button class="touch-button" id="fire-button" oncontextmenu="event.preventDefault()"></button>
+                </div>
+                <div class="touch-buttons-flexend">
+                    <button class="touch-button" id="left-button" oncontextmenu="event.preventDefault()"></button>
+                    <button class="touch-button" id="right-button" oncontextmenu="event.preventDefault()"></button>
+                </div>
+            </div>
+            <div class="touch-controls" id="playerselect-controls">
+                <div class="touch-buttons-flexend">
+                    <button class="touch-button" id="p1-button" oncontextmenu="event.preventDefault()"></button>
+                </div>
+                <div class="touch-buttons-flexstart">
+                    <button class="touch-button" id="p2-button" oncontextmenu="event.preventDefault()"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script async type="text/javascript" src="spaceinvaders.js"></script>
+</body>
+</html>

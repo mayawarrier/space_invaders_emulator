@@ -6,10 +6,6 @@
 #include "emu.hpp"
 #include "gui.hpp"
 
-#if __has_include("buildnum.h")
-#include "buildnum.h"
-#endif
-
 PUSH_WARNINGS
 IGNORE_WFORMAT_SECURITY
 
@@ -32,16 +28,7 @@ static constexpr ImGuiWindowFlags WND_DEFAULT_FLAGS =
 static emu_gui* ACTIVE_GUI = nullptr;
 #endif
 
-
-static const char* build_num()
-{
-#if defined(BUILD_NUM)
-    const char* value = XSTR(BUILD_NUM);
-    return std::string_view(value) == "0" ? nullptr : value;
-#else
-    return nullptr;
-#endif
-}
+extern const char* build_num();
 
 static constexpr int MIN_FONT_SIZE = 5;
 static constexpr int MAX_FONT_SIZE = 50;

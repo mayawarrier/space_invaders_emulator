@@ -29,7 +29,7 @@ static std::string err_to_str(DWORD ecode)
     if (ret.ends_with("\r\n")) {
         ret.erase(ret.size() - 2, 2);
     }
-    if (ret.ends_with("\n")) {
+    else if (ret.ends_with("\n")) {
         ret.pop_back();
     }
     return ret;
@@ -72,7 +72,8 @@ bool win32_recreate_console()
     else {
         // if failed to attach, either there is no console 
         // (GUI launch), or the program was compiled as a
-        // console app (in which case we don't need a new console)
+        // console app (in which case a usable console 
+        // already exists)
         return false;
     }
 }
@@ -80,18 +81,18 @@ bool win32_recreate_console()
 bool win32_enable_console_colors()
 {
     // sufficient for both stdout and stderr
-    HANDLE hndOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hndOut == INVALID_HANDLE_VALUE || hndOut == NULL) {
+    HANDLE hnd_out = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hnd_out == INVALID_HANDLE_VALUE || hnd_out == NULL) {
         return false;
     }
 
-    DWORD conMode = 0;
-    if (!GetConsoleMode(hndOut, &conMode)) {
+    DWORD con_mode = 0;
+    if (!GetConsoleMode(hnd_out, &con_mode)) {
         log_lasterror("GetConsoleMode");
         return false;
     }
-    conMode |= ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    if (!SetConsoleMode(hndOut, conMode)) {
+    con_mode |= ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    if (!SetConsoleMode(hnd_out, con_mode)) {
         log_lasterror("SetConsoleMode");
         return false;
     }

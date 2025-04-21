@@ -4,26 +4,27 @@
 #include <SDL.h>
 
 #ifdef _WIN32
-#include "win32.hpp"
-
+    #include "win32.hpp"
 #elif defined(__EMSCRIPTEN__)
-#include <emscripten.h>
-
+    #include <emscripten.h>
 #elif defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
-#include <unistd.h>
+    #include <unistd.h>
     #if defined(_POSIX_VERSION) && _POSIX_VERSION >= 200112L
-    #define HAS_POSIX_2001 1
+        #define HAS_POSIX_2001 1
     #endif
 #endif
 
-
-#ifdef HAS_POSIX_2001
+#if defined(HAS_POSIX_2001) && !defined(__EMSCRIPTEN__)
 static bool posix_has_term_colors()
 {
     if (!isatty(STDOUT_FILENO) || !isatty(STDERR_FILENO)) {
         return false;
     }
-
+    const char* term = getenv("TERM");
+    if (!term) {
+        return false;
+    }
+    
     const char* color_terms[] = {
         "xterm",
         "xterm-color",
@@ -31,10 +32,6 @@ static bool posix_has_term_colors()
         "screen",
         "linux"
     };
-    const char* term = getenv("TERM");
-    if (!term) {
-        return false;
-    }
     for (int i = 0; i < SDL_arraysize(color_terms); ++i) {
         if (std::string_view(term).find(color_terms[i]) != std::string_view::npos) {
             return true;
@@ -49,38 +46,23 @@ static bool LOG_COLOR_CONSOLE = false;
 
 int log_init()
 {
-#ifndef __EMSCRIPTEN__
-    LOGFILE = SAFE_FOPENA("spaceinvaders.log", "w");
-    if (!LOGFILE) {
-        // can't log an error, show a message box
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-            "Error", "Could not create spaceinvaders.log file", NULL);
-        return -1;
-    }
+    if constexpr (!is_emscripten()) 
+    {
+        LOGFILE = SAFE_FOPENA(LOGFILE_NAME, "w");
+        if (!LOGFILE) {
+            // can't log an error, show a message box
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                "Error", "Could not create log file", NULL);
+            return -1;
+        }
 
 #ifdef _WIN32
-    LOG_COLOR_CONSOLE = win32_enable_console_colors();
-#elif defined(HAS_POSIX_2001)
-    LOG_COLOR_CONSOLE = posix_has_term_colors();
+        LOG_COLOR_CONSOLE = win32_enable_console_colors();
+#elif defined(HAS_POSIX_2001) && !defined(__EMSCRIPTEN__) 
+        LOG_COLOR_CONSOLE = posix_has_term_colors();
 #endif
-#endif
+    }
     return 0;
-}
-
-void log_write(std::FILE* stream, const char* msg, bool endline)
-{
-    std::fprintf(stream, "%s", msg);
-    if (endline) {
-        std::fputs("\n", stream);
-    }
-    if constexpr (!is_emscripten())
-    {
-        std::fprintf(LOGFILE.get(), "%s", msg);
-        if (endline) {
-            std::fputs("\n", LOGFILE.get());
-        }
-        std::fflush(LOGFILE.get());
-    }
 }
 
 static inline void do_log(std::FILE* stream, 
