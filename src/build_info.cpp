@@ -1,5 +1,5 @@
 
-// These includes force CMake to rebuild the executable when 
+// These includes force CMake to relink the executable when 
 // any of the following change:
 // 1) the build number,
 // 2) embedded assets (emscripten only) 

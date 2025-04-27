@@ -10,7 +10,7 @@
 #include "win32.hpp"
 
 
-static std::string err_to_str(DWORD ecode)
+static std::string err_to_str(DWORD ecode) noexcept
 {
     LPSTR msg = NULL;
     DWORD msgsize = FormatMessageA(
@@ -35,14 +35,14 @@ static std::string err_to_str(DWORD ecode)
     return ret;
 }
 
-static void log_lasterror(const char* fn_name)
+static void log_lasterror(const char* fn_name) noexcept
 {
     DWORD err = GetLastError();
     logERROR("%s(), error %u: %s", 
         fn_name, (unsigned)err, err_to_str(err).c_str());
 }
 
-bool win32_recreate_console()
+bool win32_recreate_console() noexcept
 {
     if (AttachConsole(ATTACH_PARENT_PROCESS))
     {
@@ -78,7 +78,7 @@ bool win32_recreate_console()
     }
 }
 
-bool win32_enable_console_colors()
+bool win32_enable_console_colors() noexcept
 {
     // sufficient for both stdout and stderr
     HANDLE hnd_out = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -104,7 +104,7 @@ bool win32_enable_console_colors()
 
 static thread_local HANDLE HIGHRES_TIMER = NULL;
 
-void win32_sleep_ns(uint64_t ns)
+void win32_sleep_ns(uint64_t ns) noexcept
 {
     if (!HIGHRES_TIMER) 
     {

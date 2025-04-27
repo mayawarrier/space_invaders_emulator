@@ -41,27 +41,25 @@ static bool posix_has_term_colors()
 }
 #endif
 
-static scopedFILE LOGFILE(nullptr, nullptr);
+static file_ptr LOGFILE(nullptr, nullptr);
 static bool LOG_COLOR_CONSOLE = false;
 
 int log_init()
 {
-    if constexpr (!is_emscripten()) 
-    {
-        LOGFILE = SAFE_FOPENA(LOGFILE_NAME, "w");
-        if (!LOGFILE) {
-            // can't log an error, show a message box
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-                "Error", "Could not create log file", NULL);
-            return -1;
-        }
-
-#ifdef _WIN32
-        LOG_COLOR_CONSOLE = win32_enable_console_colors();
-#elif defined(HAS_POSIX_2001) && !defined(__EMSCRIPTEN__) 
-        LOG_COLOR_CONSOLE = posix_has_term_colors();
-#endif
+#ifndef __EMSCRIPTEN__
+    LOGFILE = SAFE_FOPENA(LOGFILE_NAME, "w");
+    if (!LOGFILE) {
+        // can't log an error, show a message box
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+            "Error", "Could not create log file", NULL);
+        return -1;
     }
+#endif
+#ifdef _WIN32
+    LOG_COLOR_CONSOLE = win32_enable_console_colors();
+#elif defined(HAS_POSIX_2001) && !defined(__EMSCRIPTEN__) 
+    LOG_COLOR_CONSOLE = posix_has_term_colors();
+#endif
     return 0;
 }
 
@@ -185,7 +183,7 @@ static bool getline_v(std::string_view& src, std::string_view& line)
 inireader::inireader(const fs::path& path) :
     m_pathstr(path.string()), m_ok(false)
 {
-    scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
+    file_ptr file = SAFE_FOPEN(path.c_str(), "rb");
     if (!file) {
         logERROR("Could not open file %s", path.string().c_str());
         return;
@@ -225,19 +223,4 @@ inireader::inireader(const fs::path& path) :
 
     m_ok = true;
 }
-
-std::string_view inireader::get_value_sv(std::string_view section, std::string_view key)
-{
-    auto sectitr = m_map.find(section);
-    if (sectitr != m_map.end())
-    {
-        auto& entries = sectitr->second;
-        auto valueitr = entries.find(key);
-        if (valueitr != entries.end()) {
-            return valueitr->second;
-        }
-    }
-    return {};
-}
-
 #endif

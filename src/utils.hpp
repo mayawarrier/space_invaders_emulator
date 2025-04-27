@@ -19,7 +19,6 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-#include <emscripten/val.h>
 #endif
 
 #define CONCAT(x, y) x##y
@@ -55,7 +54,6 @@ namespace tim = std::chrono;
 using clk = tim::steady_clock;
 using uint = unsigned int;
 
-
 constexpr bool is_emscripten()
 {
 #ifdef __EMSCRIPTEN__
@@ -83,14 +81,22 @@ void logWARNING(const char* fmt, ...);
 void logMESSAGE(const char* fmt, ...);
 
 
-using scopedFILE = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
+using file_ptr = std::unique_ptr<std::FILE, int(*)(std::FILE*)>;
 
-#define SAFE_FOPENA(fname, mode) scopedFILE(std::fopen(fname, mode), std::fclose)
+#define SAFE_FOPENA(fname, mode) file_ptr(std::fopen(fname, mode), std::fclose)
+
 #if defined(_MSC_VER) || defined(__MINGW32__)
-#define SAFE_FOPEN(fname, mode) scopedFILE(::_wfopen(fname, CONCAT(L, mode)), std::fclose)
+#define SAFE_FOPEN(fname, mode) file_ptr(::_wfopen(fname, CONCAT(L, mode)), std::fclose)
 #else
 #define SAFE_FOPEN(fname, mode) SAFE_FOPENA(fname, mode)
 #endif
+
+using malloc_ptr_t = std::unique_ptr<void, void(*)(void*)>;
+
+inline malloc_ptr_t make_malloc_ptr(void* ptr)
+{
+    return { ptr, std::free };
+}
 
 // this has good codegen
 template <typename T>
@@ -219,7 +225,7 @@ bool parse_num(std::string_view str, T& val)
 }
 
 // sorta replacement for C++26 operator+(string, string_view) 
-inline std::string concat_sv_to_str(
+inline std::string concat_sv(
     std::initializer_list<std::string_view> list)
 {
     std::string ret;
@@ -233,49 +239,47 @@ inline std::string concat_sv_to_str(
 
 struct inireader
 {
-    inireader() {
-        m_storage = emscripten::val::global(path_cstr());
-    }
-
     const char* path_cstr() const { return "localStorage"; }
 
     std::optional<std::string> get_string(std::string_view section, std::string_view key)
     {
-        emscripten::val value = get_emcc_value(section, key);
-        if (value.isNull()) {
+        auto value = get_value(section, key);
+        if (!value) {
             return {};
         }
-        return value.as<std::string>();
+        return std::string((char*)value.get());
     }
 
     template <typename T> requires std::is_arithmetic_v<T>
     std::optional<T> get_num(std::string_view section, std::string_view key)
     {
         T ret;
-        emscripten::val value = get_emcc_value(section, key);
-        if (value.isNull() || !parse_num(value.as<std::string>(), ret)) {
+        auto value = get_value(section, key);
+        if (!value || !parse_num((char*)value.get(), ret)) {
             return {};
         }
         return ret;
     }
+
 private:
-    emscripten::val get_emcc_value(std::string_view section, std::string_view key)
+    malloc_ptr_t get_value(std::string_view section, std::string_view key)
     {
-        return m_storage.call<emscripten::val>(
-            "getItem", 
-            concat_sv_to_str({ section, "_", key })
-        );
+        auto actualkey = concat_sv({ section, "_", key });
+
+        void* ptr = EM_ASM_PTR({
+            var ret = localStorage.getItem(UTF8ToString($0));
+            if (ret == null) {
+                return 0;
+            }
+            return stringToNewUTF8(ret);
+        }, actualkey.c_str());
+
+        return make_malloc_ptr(ptr);
     }
-private:
-    emscripten::val m_storage;
 };
 
 struct iniwriter
 {
-    iniwriter() {
-        m_storage = emscripten::val::global("localStorage");
-    }
-
     bool write_section(std::string_view name) { 
         m_section = name; 
         return true; 
@@ -283,18 +287,20 @@ struct iniwriter
 
     bool write_keyvalue(std::string_view key, std::string_view value)
     {
-        m_storage.call<void>(
-            "setItem",
-            concat_sv_to_str({ m_section, "_", key }), 
-            std::string(value)
-        );
+        auto actualkey = concat_sv({ m_section, "_", key });
+        
+        EM_ASM({
+            var key = UTF8ToString($0);
+            var value = UTF8ToString($1, $2);
+            localStorage.setItem(key, value);
+        }, actualkey.c_str(), value.data(), value.length());
+
         return true;
     }
 
     bool flush() { return true; }
 
 private:
-    emscripten::val m_storage;
     std::string m_section;
 };
 
@@ -327,9 +333,22 @@ struct inireader
         }
         return value;
     }
+
 private:
     // not null-terminated!
-    std::string_view get_value_sv(std::string_view section, std::string_view key);
+    std::string_view get_value_sv(std::string_view section, std::string_view key)
+    {
+        auto sectitr = m_map.find(section);
+        if (sectitr != m_map.end())
+        {
+            auto& entries = sectitr->second;
+            auto valueitr = entries.find(key);
+            if (valueitr != entries.end()) {
+                return valueitr->second;
+            }
+        }
+        return {};
+    }
 
 private:
     using section_t = std::unordered_map<std::string_view, std::string_view>;
@@ -359,12 +378,12 @@ struct iniwriter
 
     bool write_section(std::string_view name)
     {
-        return write_str(concat_sv_to_str({ "[", name, "]\n" }));
+        return write_str(concat_sv({ "[", name, "]\n" }));
     }
 
     bool write_keyvalue(std::string_view key, std::string_view value)
     {
-        return write_str(concat_sv_to_str({ key, " = ", value, "\n" }));
+        return write_str(concat_sv({ key, " = ", value, "\n" }));
     }
 
     bool flush() { return std::fflush(m_file.get()) == 0; }
@@ -380,7 +399,7 @@ private:
     }
 
 private:
-    scopedFILE m_file;
+    file_ptr m_file;
     std::string m_pathstr;
     bool m_ok;
 };

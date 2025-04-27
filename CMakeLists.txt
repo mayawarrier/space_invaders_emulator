@@ -35,6 +35,7 @@ endif()
 add_executable(spaceinvaders ${SOURCES})
 
 set_property(TARGET spaceinvaders PROPERTY CXX_STANDARD 20) 
+set_property(TARGET spaceinvaders PROPERTY CXX_STANDARD_REQUIRED ON)
 
 target_compile_definitions(spaceinvaders PRIVATE
     CC_NAME=${CMAKE_CXX_COMPILER_ID}
@@ -49,10 +50,33 @@ if (WIN32)
 endif()
 
 if (EMSCRIPTEN)
+    # reduces binary size. not necessary for other platforms
+    target_compile_options(spaceinvaders PUBLIC -fno-rtti -fno-exceptions)
+    target_compile_definitions(spaceinvaders PRIVATE DISABLE_EXCEPTIONS_AND_RTTI)
+endif()
+
+# remove console
+if (MINGW)
+    target_link_options(spaceinvaders PRIVATE "-Wl,-subsystem,windows")
+elseif (WIN32)
+    target_link_options(spaceinvaders PRIVATE "/SUBSYSTEM:WINDOWS")
+endif()
+
+if (EMSCRIPTEN)
+    target_link_options(spaceinvaders PRIVATE
+        "-sALLOW_MEMORY_GROWTH=1"
+        "-sEXPORTED_RUNTIME_METHODS=ccall")
+endif()
+
+if (EMSCRIPTEN)
     set(EMBED_SRCDIR "${CMAKE_SOURCE_DIR}/assets")
     set(EMBED_BINDIR "${CMAKE_BINARY_DIR}/embed_assets")
     set(PREJS_SRCFILE "${CMAKE_SOURCE_DIR}/web/src/index-prejs.js")
-    set(PREJS_BINFILE "${CMAKE_BINARY_DIR}/index-prejs.h")
+    set(PREJS_BINFILE "${CMAKE_BINARY_DIR}/index-prejs.js")
+
+    target_link_options(spaceinvaders PRIVATE
+        "--embed-file=${EMBED_BINDIR}/@assets/"
+        "--pre-js=${PREJS_BINFILE}")
 
     # dummy file, touched to force a relink when assets/pre-js change
     set(RELINK_FILE "${CMAKE_BINARY_DIR}/emcc_relink.h")
@@ -66,6 +90,11 @@ if (EMSCRIPTEN)
         VERBATIM)
 
     add_custom_target(relink_files DEPENDS ${RELINK_FILE} ${EMBED_BINDIR} ${PREJS_BINFILE})
+
+    # Output directories are not cleaned by default. Ninja clean fails without this
+    # https://stackoverflow.com/questions/53734146
+    set_property(TARGET relink_files APPEND PROPERTY ADDITIONAL_CLEAN_FILES ${EMBED_BINDIR}})
+
     add_dependencies(spaceinvaders relink_files)
     target_include_directories(spaceinvaders PRIVATE ${CMAKE_BINARY_DIR})
 
@@ -82,12 +111,10 @@ if (EMSCRIPTEN)
         VERBATIM)
 
     add_custom_target(web_files DEPENDS ${ASSET_BINDIR} ${WEB_BINFILE})
-    add_dependencies(spaceinvaders web_files)
+    # See note above about cleaning output directories.
+    set_property(TARGET relink_files APPEND PROPERTY ADDITIONAL_CLEAN_FILES ${ASSET_BINDIR})
 
-    # Output directories are not cleaned by default. Ninja clean fails without this
-    # https://stackoverflow.com/questions/53734146
-    set_property(TARGET spaceinvaders APPEND 
-        PROPERTY ADDITIONAL_CLEAN_FILES ${EMBED_BINDIR} ${ASSET_BINDIR})
+    add_dependencies(spaceinvaders web_files)
 
 else()
     set(ASSET_SRCDIR "${CMAKE_SOURCE_DIR}/assets")
@@ -100,51 +127,48 @@ else()
         VERBATIM)
 
     add_custom_target(emu_assets DEPENDS ${ASSET_BINDIR})
-    add_dependencies(spaceinvaders emu_assets)
-
     # See note above about cleaning output directories.
-    set_property(TARGET spaceinvaders APPEND 
-        PROPERTY ADDITIONAL_CLEAN_FILES ${ASSET_BINDIR})
+    set_property(TARGET emu_assets APPEND PROPERTY ADDITIONAL_CLEAN_FILES ${ASSET_BINDIR}) 
+
+    add_dependencies(spaceinvaders emu_assets)
 endif()
 
 set(BUILDNUM_FILE "${CMAKE_BINARY_DIR}/build_num.h")
+set(BUILDNUM_SCRIPT "${CMAKE_BINARY_DIR}/gen_buildnum.cmake")
 
-# CMake cache must be deleted if git is installed after the first run.
 find_program(GIT_EXECUTABLE git)
-
 if (NOT GIT_EXECUTABLE)
-    message(WARNING "Git not found. Build number will be unavailable.")
-    add_custom_command(
-        OUTPUT ${BUILDNUM_FILE}
-        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM 0" > ${BUILDNUM_FILE}
-        VERBATIM)
+    message(WARNING "Could not find Git. Build number will not be generated.\
+        If CMake was run before installing Git, clear the CMake cache and re-run.")
+
+    file(WRITE ${BUILDNUM_FILE} "#define BUILD_NUM 0")
+
 else()
+    file(GENERATE OUTPUT "${BUILDNUM_SCRIPT}" CONTENT "
+    file(WRITE \"${BUILDNUM_FILE}\" \"#define BUILD_NUM \")
+
+    execute_process(
+        COMMAND \"${GIT_EXECUTABLE}\" rev-parse --short HEAD
+        RESULT_VARIABLE GIT_RESULT
+        OUTPUT_VARIABLE GIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+    if(GIT_RESULT EQUAL 0)
+        file(APPEND \"${BUILDNUM_FILE}\" \"\${GIT_HASH}\\n\")
+    else()
+        message(WARNING \"git rev-parse failed. Build number will not be generated.\")
+        file(APPEND \"${BUILDNUM_FILE}\" \"0\\n\")
+    endif()
+    ")
+
     # this runs every build!
     add_custom_target(buildnum
-        BYPRODUCTS ${BUILDNUM_FILE}
-        COMMAND ${CMAKE_COMMAND} -E echo_append "#define BUILD_NUM " > ${BUILDNUM_FILE}
-        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD >> ${BUILDNUM_FILE} || 
-                ${CMAKE_COMMAND} -E echo_append "0" >> ${BUILDNUM_FILE}
+        BYPRODUCTS "${BUILDNUM_FILE}"
+        COMMAND ${CMAKE_COMMAND} -P "${BUILDNUM_SCRIPT}"
         VERBATIM)
 
     add_dependencies(spaceinvaders buildnum)
     target_include_directories(spaceinvaders PRIVATE ${CMAKE_BINARY_DIR})
-endif()
-
-# remove console
-if (MINGW)
-    target_link_options(spaceinvaders PRIVATE "-Wl,-subsystem,windows")
-elseif (WIN32)
-    target_link_options(spaceinvaders PRIVATE "/SUBSYSTEM:WINDOWS")
-endif()
-
-if (EMSCRIPTEN)
-    target_link_options(spaceinvaders PRIVATE
-        "-sALLOW_MEMORY_GROWTH=1"
-        "-sEXPORTED_RUNTIME_METHODS=ccall"
-        "-lembind"
-        "--embed-file=${EMBED_BINDIR}/@assets/"
-        "--pre-js=${PREJS_BINFILE}")
 endif()
 
 # -------------------------------- cxxopts --------------------------------
@@ -213,10 +237,10 @@ else()
     # If both ways fail or if user hasn't installed SDL, build from source.
     if (NOT FOUND_SDL2_CMAKE_CONFIG AND NOT FOUND_SDL2_PKGCONFIG)
         if (ALLOW_SDL2_SRCBUILD)
-            message(WARNING "Could not find SDL2 libraries and/or config files.
+            message(WARNING "Could not find SDL2 libraries and/or config files.\
                 SDL2 libraries will be built from source.")
         else()
-            message(FATAL_ERROR "Could not find SDL2 libraries and/or config files.
+            message(FATAL_ERROR "Could not find SDL2 libraries and/or config files.\
                 Set ALLOW_SDL2_SRCBUILD to allow building from source.")
         endif()
 

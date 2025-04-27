@@ -1,10 +1,16 @@
 
 #include <cstdlib>
+#ifndef DISABLE_EXCEPTIONS_AND_RTTI
 #include <exception>
+#endif
 
 #include <SDL_main.h>
 
 #ifndef __EMSCRIPTEN__
+#ifdef DISABLE_EXCEPTIONS_AND_RTTI
+    #define CXXOPTS_NO_RTTI 1
+    #define CXXOPTS_NO_EXCEPTIONS 1
+#endif
 #include <cxxopts.hpp>
 #endif
 
@@ -18,7 +24,9 @@
 
 static int do_main(int argc, char* argv[])
 {
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+    emu emu("assets/", true);
+#else
     cxxopts::Options opts("spaceinvaders", "1978 Space Invaders emulator.");
     opts.add_options()
         ("h,help", "Show usage.")
@@ -26,24 +34,15 @@ static int do_main(int argc, char* argv[])
             cxxopts::value<std::string>()->default_value("assets/"), "<dir>")
         ("disable-ui", "Disable emulator UI (menu/settings/help panels etc.)");
         
-    cxxopts::ParseResult args;
-    try {
-        args = opts.parse(argc, argv);
-    }
-    catch (std::exception& e) {
-        logERROR(e.what());
-        return -1;
-    }
+    auto args = opts.parse(argc, argv);
 
     if (args["help"].as<bool>()) {
         std::printf("%s\n", opts.help().c_str());       
         return 0;
     }
 
-    emu emu(args["asset-dir"].as<std::string>(),
+    emu emu(args["asset-dir"].as<std::string>(), 
         !args["disable-ui"].as<bool>());
-#else
-    emu emu("assets/", true);
 #endif
 
     if (!emu.ok()) {
@@ -53,12 +52,11 @@ static int do_main(int argc, char* argv[])
     return emu.run();
 }
 
-static int on_exit(int err, bool show_modal = true)
+static int on_exit(int err, bool show_modal = true) noexcept
 {
 #ifdef __EMSCRIPTEN__
-    // This triggers the error UI.
-    // onExit() doesn't seem to work
-    if (err != 0) { throw err; }
+    // This triggers the error UI. onExit() doesn't seem to work
+    if (err != 0) { std::abort(); }
 #else
     if (err != 0 && show_modal) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", 
@@ -72,21 +70,35 @@ static int on_exit(int err, bool show_modal = true)
 
 int main(int argc, char* argv[])
 {
-    int err = log_init();
-    if (err != 0) { 
-        return on_exit(err, false);
-    }
+#ifndef DISABLE_EXCEPTIONS_AND_RTTI
+    try {
+#endif
+        int err = log_init();
+        if (err != 0) {
+            return on_exit(err, false);
+        }
+#ifdef _WIN32
+        bool pause_at_exit = win32_recreate_console();
+#endif
+        err = do_main(argc, argv);
 
 #ifdef _WIN32
-    bool pause_at_exit = win32_recreate_console();
+        if (pause_at_exit) {
+            // allow user to read console before it quits
+            std::system("pause");
+        }
 #endif
-    err = do_main(argc, argv);
+        return on_exit(err);
 
-#ifdef _WIN32
-    if (pause_at_exit) {
-        // allow user to read console before it quits
-        std::system("pause");
+#ifndef DISABLE_EXCEPTIONS_AND_RTTI
+    } 
+    catch (const std::exception& e) {
+        logERROR("Exception: %s", e.what());
+        return on_exit(-1);
+    }
+    catch (...) {
+        logERROR("Unknown exception occurred");
+        return on_exit(-1);
     }
 #endif
-    return on_exit(err);
 }

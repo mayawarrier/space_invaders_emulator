@@ -8,6 +8,7 @@
 //
 
 #include <cmath>
+#include <cstring>
 #include <string_view>
 
 #include "i8080/i8080_opcodes.hpp"
@@ -333,7 +334,7 @@ int emu::init_audio(const fs::path& audio_dir)
 
 static int load_file(const fs::path& path, i8080_word_t* mem, unsigned size)
 {
-    scopedFILE file = SAFE_FOPEN(path.c_str(), "rb");
+    file_ptr file = SAFE_FOPEN(path.c_str(), "rb");
     if (!file) {
         logERROR("Could not open file %s", path.string().c_str());
         return -1;
@@ -737,12 +738,17 @@ void emu::render_screen()
 #ifndef __EMSCRIPTEN__
 static const fs::path& APPDATA_DIR()
 {
-    static fs::path g_path = [] {
+    static fs::path g_path = [] 
+    {
         char* pathstr = SDL_GetPrefPath("SpaceInvaders", "v1");
+#if __cpp_lib_char8_t >= 201907L
+        fs::path path((const char8_t*)(pathstr));
+#else
         fs::path path = fs::u8path(pathstr);
+#endif
         SDL_free(pathstr);
         return path;
-        }();
+    }();
     return g_path;
 }
 
@@ -1093,6 +1099,7 @@ emu::mainloop_action emu::process_events()
         resize_window(); // ignore failure
         m_resizepending = false;
     }
+
     if (SDL_GetWindowFlags(m_window) & SDL_WINDOW_HIDDEN) {
         return MAINLOOP_SKIP;
     }
@@ -1132,18 +1139,28 @@ int emu::run()
 #ifdef __EMSCRIPTEN__
     EMCC_MAINLOOP_BEGIN
 #else
-    while (true)
+    bool running = true;
+    while (running)
 #endif
     {
         emu::mainloop_action action = process_events();
 #ifdef __EMSCRIPTEN__
         if (action != MAINLOOP_CONTINUE) { return; }
 #else
-        if (action == MAINLOOP_EXIT) { break; }
-        else if (action == MAINLOOP_SKIP) { continue; }
+        switch (action)
+        {
+        case MAINLOOP_EXIT: 
+            running = false; 
+            break;
+        case MAINLOOP_SKIP: 
+            continue;
+        case MAINLOOP_CONTINUE: 
+            break;
+        default: 
+            SDL_assert(false); 
+            break;
+        }
 #endif
-        SDL_assert(action == MAINLOOP_CONTINUE);
-
         // nasty workaround, since the score table is erased in frame 0
         if (frame_idx == 1) [[unlikely]] {
             m.mem[HISCORE_START_ADDR] = uint8_t(m_hiscore);
