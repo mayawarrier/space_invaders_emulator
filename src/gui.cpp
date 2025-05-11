@@ -443,8 +443,12 @@ static std::string format_escape(const char* str)
     return ret;
 }
 
-static void draw_url(const char* text, const char* url, int id_seed = 0)
+static void draw_url(const char* text, const char* url, 
+    bool same_line = true, bool show_tooltip = true, int id_seed = 0)
 {
+    if (same_line) {
+        ImGui::SameLine();
+    }
     const ImU32 color = PRIMARY_COLOR.alpha(0.6).to_imcolor();
 
     float posX = ImGui::GetCursorPosX();
@@ -460,9 +464,11 @@ static void draw_url(const char* text, const char* url, int id_seed = 0)
     ImGui::PopID();
     if (ImGui::IsItemHovered()) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
-        ImGui::SetTooltip(format_escape(url).c_str());
-        ImGui::PopStyleVar();
+        if (show_tooltip) {
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
+            ImGui::SetTooltip(format_escape(url).c_str());
+            ImGui::PopStyleVar();
+        }
     }
     ImGui::SameLine();
 
@@ -476,6 +482,10 @@ static void draw_url(const char* text, const char* url, int id_seed = 0)
         ImVec2(dpos.x, dpos.y + txtsize.y + 1),
         ImVec2(dpos.x + txtsize.x, dpos.y + txtsize.y + 1),
         color, 1.0f);
+
+    if (same_line) {
+        ImGui::SameLine();
+    }
 }
 
 static bool draw_dip_switch(int index, bool value, float width = -1)
@@ -919,13 +929,25 @@ void emu_gui::draw_about_content()
             ImGui::TextUnformatted("Space Invaders Emulator");
         }
 
-        ImGui::TextUnformatted("Maya Warrier");
-        draw_url("mayawarrier.github.io", "https://mayawarrier.github.io/");
+        ImGui::TextUnformatted("Copyright (c) 2024-25 Maya Warrier\n");
+        draw_url("mayawarrier.github.io", "https://mayawarrier.github.io/", false);
         ImGui::NewLine();
 
-        ImGui::TextUnformatted("Source code available at"); ImGui::SameLine();
-        draw_url("GitHub", "https://github.com/mayawarrier/space_invaders_emulator/");
-        ImGui::TextUnformatted("under the MIT license.\n\n");
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        {
+            ImGui::TextUnformatted("Source code available on ");
+            draw_url("GitHub", "https://github.com/mayawarrier/space_invaders_emulator/");
+            ImGui::TextUnformatted(".\n\n");
+        }
+        ImGui::PopStyleVar();
+        
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        {
+            ImGui::TextUnformatted("See the list of ");
+            draw_url("third-party licenses", "THIRD_PARTY_LICENSES.txt", true, false);
+            ImGui::TextUnformatted(".\n\n");
+        }
+        ImGui::PopStyleVar();
 
         ImGui::NewLine();
 
@@ -933,9 +955,10 @@ void emu_gui::draw_about_content()
         ImGui::Dummy(ImVec2(0, 10));
 
         const char* content =
-            "This emulator runs the 1978 Space Invaders game without any modifications to the original code.\n\n"
-            "Instead of rewriting the game, it recreates the hardware environment the game was designed for - simulating "
-            "the CPU, memory, and I/O devices so the game thinks it's running on a real arcade machine.\n\n";
+            "Relive the classic 1978 Space Invaders arcade game!\n\n"
+            "This isn't a remake or a port - it's an emulator that recreates the hardware "
+            "environment the game was designed for. It simulates the CPU, memory, and I/O devices, allowing "
+            "the game code to run as if it's still in an arcade machine.\n\n";
 
         ImGui::TextUnformatted(content);
 
@@ -945,9 +968,9 @@ void emu_gui::draw_about_content()
             { "Intel 8080 Datasheet", "https://deramp.com/downloads/intel/8080%20Data%20Sheet.pdf" }
         };
 
-        ImGui::TextUnformatted("Learn more about the hardware:");
+        ImGui::TextUnformatted("Learn more:");
         for (auto& link : links) {
-            draw_url(link.first, link.second);
+            draw_url(link.first, link.second, false);
         }
 
         ImGui::NewLine();
