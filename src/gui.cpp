@@ -180,7 +180,7 @@ emu_gui::emu_gui(
         logERROR("Failed to initialize ImGui");
         return;
     }
-    if (init_fontatlas((assetdir / "CascadiaMono.ttf").string().c_str()) != 0) {
+    if (init_fontatlas((assetdir / "font.ttf").string().c_str()) != 0) {
         return;
     }
 
@@ -929,13 +929,13 @@ void emu_gui::draw_about_content()
             ImGui::TextUnformatted("Space Invaders Emulator");
         }
 
-        ImGui::TextUnformatted("Copyright (c) 2024-25 Maya Warrier\n");
+        ImGui::TextUnformatted("2024-25 Maya Warrier\n");
         draw_url("mayawarrier.github.io", "https://mayawarrier.github.io/", false);
         ImGui::NewLine();
 
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
         {
-            ImGui::TextUnformatted("Source code available on ");
+            ImGui::TextUnformatted("Source code on ");
             draw_url("GitHub", "https://github.com/mayawarrier/space_invaders_emulator/");
             ImGui::TextUnformatted(".\n\n");
         }
@@ -955,10 +955,10 @@ void emu_gui::draw_about_content()
         ImGui::Dummy(ImVec2(0, 10));
 
         const char* content =
-            "Relive the classic 1978 Space Invaders arcade game!\n\n"
-            "This isn't a remake or a port - it's an emulator that recreates the hardware "
-            "environment the game was designed for. It simulates the CPU, memory, and I/O devices, allowing "
-            "the game code to run as if it's still in an arcade machine.\n\n";
+            "Experience the classic Space Invaders arcade game from 1978!\n\n"
+            "The original game code is run unmodified. The emulator reproduces the hardware environment "
+            "expected by the game - simulating the CPU, memory, and I/O devices so the game thinks "
+            "it's running on an arcade machine.\n\n";
 
         ImGui::TextUnformatted(content);
 

@@ -32,7 +32,7 @@ static int do_main(int argc, char* argv[])
         ("h,help", "Show usage.")
         ("a,asset-dir", "Directory containing game assets (ROM/audio/fonts etc.)",
             cxxopts::value<std::string>()->default_value("assets/"), "<dir>")
-        ("disable-ui", "Disable emulator UI (menu/settings/help panels etc.)");
+        ("disable-ui", "Disable emulator UI (menu/settings/about pages etc.)");
         
     auto args = opts.parse(argc, argv);
 
