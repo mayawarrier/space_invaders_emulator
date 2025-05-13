@@ -10,10 +10,11 @@ Emulator for the classic Space Invaders arcade game from 1978!
 historical, and educational interest. All rights to the original game remain with the copyright holders.*
 
 ## Screenshots
-<img src=".github/game2.png" width="250" >
-<img src=".github/game.png" width="250" >
-<img src=".github/settings.png" width="250" >
-
+<p float="left">
+<img src=".github/game2.png" width="250">
+<img src=".github/game.png" width="250">
+<img src=".github/settings.png" width="250">
+</p>
 
 ## Build Prerequisites
 - C++20 compiler (>= GCC 10, >= Clang 10, >= Visual Studio 2019)
