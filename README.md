@@ -9,6 +9,8 @@ Emulator for the classic Space Invaders arcade game from 1978!
 *This emulator includes the original Space Invaders ROM and audio and is hosted publicly for non-commercial, 
 historical, and educational interest. All rights to the original game remain with the copyright holders.*
 
+Play the game online at: https://mayawarrier.github.io/space_invaders_emulator/
+
 ## Screenshots
 <p float="left">
 <img src=".github/game2.png" width="250">
@@ -24,18 +26,17 @@ historical, and educational interest. All rights to the original game remain wit
   [SDL2_mixer](https://github.com/libsdl-org/SDL_mixer) for native build
 
 #### Installing SDL2 and SDL2_mixer
-- Installing is optional, they can be fetched and built automatically by the build script
+- Installing these are optional, they can be fetched and built automatically by the build script
   (pass -DALLOW_SDL2_SRCBUILD=ON to CMake)
 - If you wish to install:
-   - On Linux install the following packages (or equivalent for your distro):   
+   - On Linux, add the following packages (or equivalent for your distro):   
 	 libsdl2-2.0-0, libsdl2-dev, libsdl2-mixer-2.0-0, libsdl2-mixer-dev 
    - On Windows, download the [SDL2](https://github.com/libsdl-org/SDL/releases/download/release-2.30.3/SDL2-devel-2.30.3-VC.zip) 
 	 and [SDL2_mixer](https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.0/SDL2_mixer-devel-2.8.0-VC.zip) dev libraries and extract
    the contents to folders named "SDL2" and "SDL2_mixer" respectively. Place them in a [standard install location](https://cmake.org/cmake/help/latest/variable/CMAKE_SYSTEM_PREFIX_PATH.html#variable:CMAKE_SYSTEM_PREFIX_PATH) or in the same folder as the build script.
 
 ## Building
-Once you have installed the prerequisites, run the following commands to build.  
-The commands below apply to *most* use cases. You might need to modify it for yours.
+Once you have installed the prerequisites, run the commands below.
 
 ### Native Build
 ```
@@ -48,19 +49,19 @@ cmake .. -DCMAKE_INSTALL_PREFIX="../release"
 cmake --build .
 cmake --install .
 ```
-This creates a Release build in the folder `release`.  
+This creates a Release build in the folder `release`. Use `-DCMAKE_BUILD_TYPE=Debug` for a Debug build.    
 Pass `-DALLOW_SDL2_SRCBUILD=ON` to CMake to automatically fetch and build SDL2 libraries.
 
 ### Web Build
-Follow [these instructions](https://emscripten.org/docs/getting_started/downloads.html) first to setup Emscripten and add it to your PATH using emsdk,
-then run the commands below.
+Follow [these instructions](https://emscripten.org/docs/getting_started/downloads.html) to install Emscripten using emsdk.     
+Then run the commands below, replacing `<path-to-emsdk>` with the correct path:
 ```
 git clone https://github.com/mayawarrier/space_invaders_emulator.git
 cd space_invaders_emulator
-web/scripts/./web-build -Install
+web/scripts/./web-build -Install -EmsdkPath <path-to-emsdk>
 ```
-This creates a Release build in the `out/install/Emscripten-Release`.    
-You can run this using `web/scripts/./web-run -Install -Browser chrome` (starts a development server).
+This creates a Release build in the folder `out/install/Emscripten-Release`. Use `-BuildType Debug` for a Debug build.      
+You can run the emulator with `web/scripts/./web-run -Install -Browser chrome` (starts a development server).
 
 ## Run options
 ```
