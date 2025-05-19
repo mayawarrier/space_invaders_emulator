@@ -154,11 +154,10 @@ enum colr_idx : uint8_t
     COLRIDX_WHITE,
 };
 
-static const std::array<pix_fmt, 3> PIXFMTS = {
+static const std::array<pix_fmt, 2> PIXFMTS = {
                                      // black,      green,      red,        white
-    pix_fmt(SDL_PIXELFORMAT_BGR565,   { 0x0000,     0x1FE3,     0x18FF,     0xFFFF,    }),
     pix_fmt(SDL_PIXELFORMAT_ARGB8888, { 0xFF000000, 0xFF1EFE1E, 0xFFFE1E1E, 0xFFFFFFFF }),
-    pix_fmt(SDL_PIXELFORMAT_ABGR8888, { 0xFF000000, 0xFF1EFE1E, 0xFF1E1EFE, 0xFFFFFFFF }),
+    pix_fmt(SDL_PIXELFORMAT_ABGR8888, { 0xFF000000, 0xFF1EFE1E, 0xFF1E1EFE, 0xFFFFFFFF })
 };
 
 static const char* pixfmt_name(uint32_t fmt)
@@ -170,22 +169,14 @@ static const char* pixfmt_name(uint32_t fmt)
     return str.data();
 }
 
-int emu::init_texture(SDL_Renderer* renderer)
+int emu::init_texture(SDL_Renderer* renderer, const SDL_RendererInfo& rend_info)
 {
-    SDL_RendererInfo rendinfo;
-    if (SDL_GetRendererInfo(renderer, &rendinfo) != 0) {
-        logERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
-        return -1;
-    }
-
-    logMESSAGE("Render backend: %s", rendinfo.name);
-
     // Get first supported texture format
     // see https://stackoverflow.com/questions/56143991/
-    for (auto& pixfmt : PIXFMTS) {
-        for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i)
-        {
-            if (rendinfo.texture_formats[i] == pixfmt.fmt) {
+    for (uint32_t i = 0; i < rend_info.num_texture_formats; ++i) 
+    {
+        for (auto& pixfmt : PIXFMTS) {
+            if (rend_info.texture_formats[i] == pixfmt.fmt) {
                 logMESSAGE("Texture format: %s", pixfmt_name(pixfmt.fmt));
                 m_pixfmt = &pixfmt;
                 goto done;
@@ -201,9 +192,9 @@ done:
             suppfmts += pixfmt_name(pixfmt.fmt);
         }
         std::string hasfmts;
-        for (uint32_t i = 0; i < rendinfo.num_texture_formats; ++i) {
+        for (uint32_t i = 0; i < rend_info.num_texture_formats; ++i) {
             if (!hasfmts.empty()) { hasfmts += ", "; }
-            hasfmts += pixfmt_name(rendinfo.texture_formats[i]);
+            hasfmts += pixfmt_name(rend_info.texture_formats[i]);
         }
 
         logERROR("Could not find a supported texture format.\n"
@@ -221,19 +212,17 @@ done:
     return 0;
 }
 
-int emu::init_graphics(const fs::path& assetdir, bool enable_ui)
+int emu::init_graphics(const fs::path& assetdir, const std::string& render_hint, bool enable_ui)
 {
     logMESSAGE("Initializing graphics");
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         logERROR("SDL_Init(): %s", SDL_GetError());
         return -1;
     }
-
-    // prevents freezes and lag on Windows
-#ifdef _WIN32
-    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
-#endif
+    if (!render_hint.empty()) {
+        SDL_SetHint(SDL_HINT_RENDER_DRIVER, render_hint.c_str());
+    }
 
     m_window = SDL_CreateWindow("Space Invaders", 0, 0, 0, 0, SDL_WINDOW_HIDDEN);
     if (!m_window) {
@@ -246,7 +235,20 @@ int emu::init_graphics(const fs::path& assetdir, bool enable_ui)
         return -1;
     }
 
-    int e = init_texture(m_renderer);
+    SDL_RendererInfo rendinfo;
+    if (SDL_GetRendererInfo(m_renderer, &rendinfo) != 0) {
+        logERROR("SDL_GetRendererInfo(): %s", SDL_GetError());
+        return -1;
+    }
+
+    if (!render_hint.empty() && std::strcmp(rendinfo.name, render_hint.c_str()) != 0) {
+        logWARNING("Failed to initialize '%s' backend, "
+            "using %s backend instead", render_hint.c_str(), rendinfo.name);
+    } else {
+        logMESSAGE("Render backend: %s", rendinfo.name);
+    }
+
+    int e = init_texture(m_renderer, rendinfo);
     if (e) { return e; }
 
     if (enable_ui) {
@@ -539,12 +541,12 @@ bool emcc_on_viz_change(int, const EmscriptenVisibilityChangeEvent* event, void*
 }
 #endif
 
-emu::emu(const fs::path& assetdir, bool enable_ui) :
+emu::emu(const fs::path& assetdir, const std::string& render_hint, bool enable_ui) :
     emu()
 {
     log_dbginfo();
 
-    if (init_graphics(assetdir, enable_ui) != 0 ||
+    if (init_graphics(assetdir, render_hint, enable_ui) != 0 ||
         init_audio(assetdir) != 0) {
         return;
     }
@@ -706,9 +708,11 @@ void emu::render_screen()
     void* pixels; int pitch;
     SDL_LockTexture(m_viewporttex, NULL, &pixels, &pitch);
 
+    const uint texpitch = pitch / 4;
+    uint32_t* texpixels = static_cast<uint32_t*>(pixels);
+
     uint VRAM_idx = 0;
     i8080_word_t* VRAM_start = &m.mem[VRAM_START_ADDR];
-    const uint texpitch = pitch / m_pixfmt->bypp; // not always eq to original width!
 
     // Unpack (8 on/off pixels per byte) and rotate counter-clockwise
     for (uint x = 0; x < RES_NATIVE_X; ++x)
@@ -723,11 +727,7 @@ void emu::render_screen()
                 uint32_t color = m_pixfmt->colors[colridx];
 
                 uint idx = texpitch * (RES_NATIVE_Y - y - bit - 1) + x;
-                switch (m_pixfmt->bpp)
-                {
-                case 16: static_cast<uint16_t*>(pixels)[idx] = uint16_t(color); break;
-                case 32: static_cast<uint32_t*>(pixels)[idx] = color;           break;
-                }
+                texpixels[idx] = color;
             }
         }
     }
@@ -980,7 +980,7 @@ int emu::save_udata()
 // https://bugzilla.mozilla.org/show_bug.cgi?id=1826224
 // https://bugzilla.mozilla.org/show_bug.cgi?id=1881627
 // https://github.com/emscripten-core/emscripten/issues/20628
-// emscripten_sleep() aka setTimeout() are broken on Windows Firefox.
+// emscripten_sleep() aka setTimeout() is broken on Windows Firefox.
 // Min sleep time is ~30ms (~33fps), which is too slow for the game's 60Hz CRT.
 // Use requestAnimationFrame() instead, and busy wait if host refresh rate is > 60Hz.
 //

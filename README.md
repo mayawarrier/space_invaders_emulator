@@ -21,19 +21,21 @@ Play the game online at: https://mayawarrier.github.io/space_invaders_emulator/
 ## Build Prerequisites
 - C++20 compiler (>= GCC 10, >= Clang 10, >= Visual Studio 2019)
 - [CMake](https://cmake.org/) 3.15 or higher
-- [Emscripten SDK](https://github.com/emscripten-core/emsdk) for Web build
+- Python3 + [Emscripten SDK](https://github.com/emscripten-core/emsdk) for Web build
 - [SDL2](https://github.com/libsdl-org/SDL) (>= 2.0.17) and 
   [SDL2_mixer](https://github.com/libsdl-org/SDL_mixer) for native build
 
 #### Installing SDL2 and SDL2_mixer
-- Installing these are optional, they can be fetched and built automatically by the build script
+- These packages are only required for the native build.
+- Installation is optional, they can be fetched and built automatically by the build script
   (pass -DALLOW_SDL2_SRCBUILD=ON to CMake)
 - If you wish to install:
    - On Linux, add the following packages (or equivalent for your distro):   
 	 libsdl2-2.0-0, libsdl2-dev, libsdl2-mixer-2.0-0, libsdl2-mixer-dev 
    - On Windows, download the [SDL2](https://github.com/libsdl-org/SDL/releases/download/release-2.30.3/SDL2-devel-2.30.3-VC.zip) 
 	 and [SDL2_mixer](https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.0/SDL2_mixer-devel-2.8.0-VC.zip) dev libraries and extract
-   the contents to folders named "SDL2" and "SDL2_mixer" respectively. Place them in a [standard install location](https://cmake.org/cmake/help/latest/variable/CMAKE_SYSTEM_PREFIX_PATH.html#variable:CMAKE_SYSTEM_PREFIX_PATH) or in the same folder as the build script.
+   all the files to folders named "SDL2" and "SDL2_mixer" respectively. 
+   Place them in a [standard install location](https://cmake.org/cmake/help/latest/variable/CMAKE_SYSTEM_PREFIX_PATH.html#variable:CMAKE_SYSTEM_PREFIX_PATH) or in the same folder as the repo.
 
 ## Building
 Once you have installed the prerequisites, run the commands below.
@@ -69,10 +71,11 @@ You can run the emulator with `web/scripts/./web-run -Install -Browser chrome` (
 Usage:
   spaceinvaders [OPTION...]
 
-  -h, --help             Show usage.
-  -a, --asset-dir <dir>  Directory containing game assets (ROM/audio/fonts
-                         etc.) (default: assets/)
-      --disable-ui       Disable emulator UI (menu/settings/about pages
-                         etc.)
+  -h, --help             Show this help message.
+  -a, --asset-dir <dir>  Path to game assets (ROM/audio/fonts etc.)
+                         (default: assets/)
+  -r, --renderer <rend>  Render backend to use. See SDL_HINT_RENDER_DRIVER.
+                         If not provided, will be determined automatically.
+      --disable-menu     Disable menu bar.
 
 ```

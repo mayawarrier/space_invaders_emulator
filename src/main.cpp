@@ -14,35 +14,48 @@
 #include <cxxopts.hpp>
 #endif
 
-#include "emu.hpp"
-
 #ifdef _WIN32
 #include "win32.hpp"
 #endif
+
+#include "emu.hpp"
 
 #define BUG_REPORT_LINK "https://github.com/mayawarrier/space_invaders_emulator/issues/new"
 
 static int do_main(int argc, char* argv[])
 {
 #ifdef __EMSCRIPTEN__
-    emu emu("assets/", true);
+    emu emu("assets/");
 #else
     cxxopts::Options opts("spaceinvaders", "1978 Space Invaders emulator.");
     opts.add_options()
-        ("h,help", "Show usage.")
-        ("a,asset-dir", "Directory containing game assets (ROM/audio/fonts etc.)",
+        ("h,help", "Show this help message.")
+        ("a,asset-dir", "Path to game assets (ROM/audio/fonts etc.)",
             cxxopts::value<std::string>()->default_value("assets/"), "<dir>")
-        ("disable-ui", "Disable emulator UI (menu/settings/about pages etc.)");
+        ("r,renderer", "Render backend to use. See SDL_HINT_RENDER_DRIVER. If not provided, "
+            "will be determined automatically.", cxxopts::value<std::string>(), "<rend>")
+        ("disable-menu", "Disable menu bar.");
         
     auto args = opts.parse(argc, argv);
 
     if (args["help"].as<bool>()) {
-        std::printf("%s\n", opts.help().c_str());       
+#ifdef _WIN32
+        bool pause_console = win32_recreate_console();
+#endif
+        std::printf("%s\n", opts.help().c_str());
+
+#ifdef _WIN32
+        if (pause_console) {
+            std::system("pause");
+        }
+#endif
         return 0;
     }
 
-    emu emu(args["asset-dir"].as<std::string>(), 
-        !args["disable-ui"].as<bool>());
+    emu emu(
+        args["asset-dir"].as<std::string>(), 
+        args["renderer"].count() == 0 ? "" : args["renderer"].as<std::string>(),
+        !args["disable-menu"].as<bool>());
 #endif
 
     if (!emu.ok()) {
@@ -77,17 +90,8 @@ int main(int argc, char* argv[])
         if (err != 0) {
             return on_exit(err, false);
         }
-#ifdef _WIN32
-        bool pause_at_exit = win32_recreate_console();
-#endif
-        err = do_main(argc, argv);
 
-#ifdef _WIN32
-        if (pause_at_exit) {
-            // allow user to read console before it quits
-            std::system("pause");
-        }
-#endif
+        err = do_main(argc, argv);
         return on_exit(err);
 
 #ifndef DISABLE_EXCEPTIONS_AND_RTTI

@@ -4,13 +4,11 @@
 
 #include <cstdint>
 
-//
 // If launched from a console, spawn a new console.
 //
-// Due to a Windows limitation, it is impossible to correctly print to 
-// the console that launched this program (see https://stackoverflow.com/questions/493536),
-// unless the program is compiled as a console application. But this will always 
-// spawn a console at startup, even if launched normally, which is undesirable.
+// Due to a Windows limitation, it is impossible for GUI apps to correctly
+// print to the console that launched the app (see https://stackoverflow.com/questions/493536).
+// Compiling as a console app will always spawn a console at startup, which is undesirable.
 //
 bool win32_recreate_console() noexcept;
 

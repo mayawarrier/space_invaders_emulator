@@ -38,8 +38,8 @@ static std::string err_to_str(DWORD ecode) noexcept
 static void log_lasterror(const char* fn_name) noexcept
 {
     DWORD err = GetLastError();
-    logERROR("%s(), error %u: %s", 
-        fn_name, (unsigned)err, err_to_str(err).c_str());
+    logERROR("%s(), error %lu: %s", 
+        fn_name, err, err_to_str(err).c_str());
 }
 
 bool win32_recreate_console() noexcept
@@ -54,8 +54,10 @@ bool win32_recreate_console() noexcept
             log_lasterror("AllocConsole");
             return false;
         }
-        
-        // Reopen C IO streams so printf() etc work
+
+        // Reopen C IO streams so printf() etc work.
+        // No need to reopen C++ IO streams, since on 
+        // Windows they are implemented using C IO
         if (!std::freopen("CONIN$", "r", stdin) ||
             !std::freopen("CONOUT$", "w", stdout) ||
             !std::freopen("CONOUT$", "w", stderr))
@@ -63,46 +65,51 @@ bool win32_recreate_console() noexcept
             logERROR("Failed to reopen C IO streams\n");
             return false;
         }
-        // No need to reopen C++ IO streams, since on 
-        // Windows they are implemented using C IO
-    
-        logMESSAGE("Created new Win32 console\n");
+ 
         return true;
     }
     else {
         // if failed to attach, either there is no console 
         // (GUI launch), or the program was compiled as a
-        // console app (in which case a usable console 
-        // already exists)
+        // console app (in which case there's nothing to do).
         return false;
     }
 }
 
-bool win32_enable_console_colors() noexcept
+static bool set_color_mode(DWORD nstdhandle) noexcept
 {
-    // sufficient for both stdout and stderr
-    HANDLE hnd_out = GetStdHandle(STD_OUTPUT_HANDLE);
-    if (hnd_out == INVALID_HANDLE_VALUE || hnd_out == NULL) {
+    HANDLE hnd = GetStdHandle(nstdhandle);
+    if (hnd == INVALID_HANDLE_VALUE || hnd == NULL) {
         return false;
     }
 
     DWORD con_mode = 0;
-    if (!GetConsoleMode(hnd_out, &con_mode)) {
+    if (!GetConsoleMode(hnd, &con_mode)) {
         log_lasterror("GetConsoleMode");
         return false;
     }
     con_mode |= ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    if (!SetConsoleMode(hnd_out, con_mode)) {
+    if (!SetConsoleMode(hnd, con_mode)) {
         log_lasterror("SetConsoleMode");
         return false;
     }
+    return true;
+}
 
+bool win32_enable_console_colors() noexcept
+{
+    if (!set_color_mode(STD_OUTPUT_HANDLE)) {
+        return false;
+    }
+    if (!set_color_mode(STD_ERROR_HANDLE)) {
+        return false;
+    }
     return true;
 }
 
 #ifdef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 
-static thread_local HANDLE HIGHRES_TIMER = NULL;
+static HANDLE HIGHRES_TIMER = NULL;
 
 void win32_sleep_ns(uint64_t ns) noexcept
 {

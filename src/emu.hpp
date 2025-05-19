@@ -69,16 +69,14 @@ struct machine
 struct pix_fmt
 {
     uint32_t fmt;
-    uint bypp;
-    uint bpp;
     std::array<uint32_t, 4> colors;
 
     pix_fmt(uint32_t fmt, std::array<uint32_t, 4> pal) :
-        fmt(fmt), 
-        bypp(SDL_BYTESPERPIXEL(fmt)), 
-        bpp(SDL_BITSPERPIXEL(fmt)), 
+        fmt(fmt),
         colors(pal)
-    {}
+    {
+        SDL_assert(SDL_BYTESPERPIXEL(fmt) == 4);
+    }
 };
 
 struct emu;
@@ -115,7 +113,8 @@ private:
 
 struct emu
 {
-    emu(const fs::path& assetdir,
+    emu(const fs::path& asset_dir,
+        const std::string& render_hint = "",
         bool enable_ui = true);
 
     ~emu();
@@ -131,8 +130,8 @@ private:
 
     static void log_dbginfo();
 
-    int init_texture(SDL_Renderer* renderer);
-    int init_graphics(const fs::path& assetdir, bool enable_ui);
+    int init_texture(SDL_Renderer* renderer, const SDL_RendererInfo& rend_info);
+    int init_graphics(const fs::path& assetdir, const std::string& render_hint, bool enable_ui);
     int init_audio(const fs::path& audiodir);
     int load_rom(const fs::path& dir);
 
